@@ -3,14 +3,12 @@ package convox
 import (
 	"fmt"
 	"log"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/convox/rack/client"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/serenize/snaker"
 )
 
 func resourceConvoxApp() *schema.Resource {
@@ -30,85 +28,18 @@ func resourceConvoxApp() *schema.Resource {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
-			"params": &schema.Schema{
-				Type:     schema.TypeList,
-				Computed: true,
+			"environment": &schema.Schema{
+				Type:     schema.TypeMap,
 				Optional: true,
-				MaxItems: 1,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"cluster": &schema.Schema{
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-						"deployment_maximum": &schema.Schema{
-							Type:     schema.TypeInt,
-							Computed: true,
-							Optional: true,
-						},
-						"deployment_minimum": &schema.Schema{
-							Type:     schema.TypeInt,
-							Computed: true,
-							Optional: true,
-						},
-						"environment": &schema.Schema{
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-						"internal": &schema.Schema{
-							Type:     schema.TypeBool,
-							Computed: true,
-							Optional: true,
-						},
-						"key": &schema.Schema{
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-						"private": &schema.Schema{
-							Type:     schema.TypeBool,
-							Computed: true,
-							Optional: true,
-						},
-						"release": &schema.Schema{
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-						"repository": &schema.Schema{
-							Type:     schema.TypeString,
-							Computed: true,
-							Optional: true,
-						},
-						"security_group": &schema.Schema{
-							Type:     schema.TypeString,
-							Computed: true,
-							Optional: true,
-						},
-						"subnets": &schema.Schema{
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-						"subnets_private": &schema.Schema{
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-						"vpc": &schema.Schema{
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-						"vpc_cidr": &schema.Schema{
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-						"version": &schema.Schema{
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-					},
-				},
+			},
+			"params": &schema.Schema{
+				Type:     schema.TypeMap,
+				Optional: true,
+				Computed: true,
 			},
 		},
-		Read:   resourceConvoxAppRead,
 		Create: resourceConvoxAppCreate,
+		Read:   resourceConvoxAppRead,
 		Update: resourceConvoxAppUpdate,
 		Delete: resourceConvoxAppDelete,
 	}
@@ -117,7 +48,7 @@ func resourceConvoxApp() *schema.Resource {
 func resourceConvoxAppCreate(d *schema.ResourceData, meta interface{}) error {
 	c := rackClient(d, meta)
 	if c == nil {
-		return fmt.Errorf("client nil: %+v", meta)
+		return fmt.Errorf("Error rack client is nil: %#v", meta)
 	}
 
 	name := d.Get("name").(string)
@@ -131,7 +62,7 @@ func resourceConvoxAppCreate(d *schema.ResourceData, meta interface{}) error {
 	stateConf := &resource.StateChangeConf{
 		Pending: []string{"creating"},
 		Target:  []string{"running"},
-		Refresh: createAppRefreshFunc(c, app.Name),
+		Refresh: appRefreshFunc(c, app.Name),
 		Timeout: 10 * time.Minute,
 		Delay:   25 * time.Second,
 	}
@@ -143,23 +74,6 @@ func resourceConvoxAppCreate(d *schema.ResourceData, meta interface{}) error {
 	return resourceConvoxAppUpdate(d, meta)
 }
 
-func resourceConvoxAppUpdate(d *schema.ResourceData, meta interface{}) error {
-	d.Partial(true)
-	c := rackClient(d, meta)
-	if err := setParams(c, d); err != nil {
-		return err
-	}
-	d.SetPartial("params")
-
-	d.Partial(false)
-	return resourceConvoxAppRead(d, meta)
-}
-
-func resourceConvoxAppDelete(d *schema.ResourceData, meta interface{}) error {
-	c := rackClient(d, meta)
-	_, err := c.DeleteApp(d.Id())
-	return err
-}
 func resourceConvoxAppRead(d *schema.ResourceData, meta interface{}) error {
 	c := rackClient(d, meta)
 	app, err := c.GetApp(d.Get("name").(string))
@@ -174,75 +88,79 @@ func resourceConvoxAppRead(d *schema.ResourceData, meta interface{}) error {
 	if err != nil {
 		return err
 	}
-	return d.Set("params", []interface{}{paramsToMap(params)})
+	d.Set("params", params)
+
+	env, err := c.GetEnvironment(app.Name)
+	if err != nil {
+		return err
+	}
+	d.Set("environment", env)
+	return nil
+}
+
+func resourceConvoxAppUpdate(d *schema.ResourceData, meta interface{}) error {
+	d.Partial(true)
+	c := rackClient(d, meta)
+	if err := setParams(c, d); err != nil {
+		return err
+	}
+	d.SetPartial("params")
+
+	if err := setEnv(c, d); err != nil {
+		return err
+	}
+	d.SetPartial("environment")
+
+	d.Partial(false)
+	return resourceConvoxAppRead(d, meta)
+}
+
+func resourceConvoxAppDelete(d *schema.ResourceData, meta interface{}) error {
+	c := rackClient(d, meta)
+	_, err := c.DeleteApp(d.Id())
+	return err
 }
 
 func setParams(c *client.Client, d *schema.ResourceData) error {
-	if d.HasChange("params") {
-		oraw, nraw := d.GetChange("params")
-
-		// FIXME: oraw and nraw could be nil!
-		o := oraw.([]interface{})[0].(map[string]interface{})
-		n := nraw.([]interface{})[0].(map[string]interface{})
-		params := paramsFromMap(diffParams(o, n))
-		if len(params) > 0 {
-			log.Printf("[DEBUG] Setting params: (%#v) for %s", params, d.Id())
-
-			if err := c.SetParameters(d.Id(), params); err != nil {
-				return fmt.Errorf("Error setting params (%#v) for %s: %s", params, d.Id(), err)
-			}
-		}
+	if !d.HasChange("params") {
+		return nil
 	}
+
+	raw := d.Get("params").(map[string]interface{})
+	params := make(client.Parameters)
+	for key := range raw {
+		params[key] = raw[key].(string)
+	}
+
+	log.Printf("[DEBUG] Setting params: (%#v) for %s", params, d.Id())
+	if err := c.SetParameters(d.Id(), params); err != nil {
+		return fmt.Errorf("Error setting params (%#v) for %s: %s", params, d.Id(), err)
+	}
+
 	return nil
 }
-func paramsFromMap(m map[string]interface{}) client.Parameters {
-	result := make(client.Parameters)
-	for k, v := range m {
-		k = snaker.SnakeToCamel(k)
-		if k == "Vpc" || k == "VpcCidr" {
-			k = strings.ToUpper(k)
-		}
-		// FIXME: won't work when params supports complex types.
-		result[k] = fmt.Sprint(v)
+
+func setEnv(c *client.Client, d *schema.ResourceData) error {
+	if !d.HasChange("environment") {
+		return nil
 	}
-	return result
+
+	env := d.Get("environment").(map[string]interface{})
+	log.Printf("[DEBUG] Setting environment to (%#v) for %s", env, d.Id())
+	data := ""
+	for key, value := range env {
+		data += fmt.Sprintf("%s=%s\n", key, value)
+	}
+	_, rel, err := c.SetEnvironment(d.Id(), strings.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("Error setting vars (%#v) for %s: %s", env, d.Id(), err)
+	}
+	log.Printf("[INFO] Release (%s) created on: %s", rel, d.Id())
+
+	return nil
 }
 
-func paramsToMap(ps client.Parameters) map[string]interface{} {
-	result := make(map[string]interface{})
-	for k, v := range ps {
-		k = toSnake(k)
-		switch k {
-		case "internal", "private":
-			if strings.ToLower(v) == "no" {
-				result[k] = false
-				continue
-			}
-			result[k] = true
-		case "deployment_minimum", "deployment_maximum":
-			i, _ := strconv.Atoi(v)
-			result[k] = i
-		case "vpccidr":
-			result["vpc_cidr"] = v
-		default:
-			result[k] = v
-		}
-	}
-	return result
-}
-
-func diffParams(oldParams, newParams map[string]interface{}) map[string]interface{} {
-	changed := make(map[string]interface{})
-	for k, v := range newParams {
-		old, ok := oldParams[k]
-		if ok && old != v {
-			changed[k] = v
-		}
-	}
-	return changed
-}
-
-func createAppRefreshFunc(c *client.Client, app string) resource.StateRefreshFunc {
+func appRefreshFunc(c *client.Client, app string) resource.StateRefreshFunc {
 	return func() (interface{}, string, error) {
 		app, err := c.GetApp(app)
 		if err != nil {

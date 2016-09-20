@@ -14,16 +14,11 @@
       rack = "foo"
 
       params {
-        internal = false
+        Internal = false
       }
 
       environment {
-        key   = "foo"
-        value = "bar"
-      }
-
-      environment {
-        key   = "foofoo"
-        value = "barbar"
+        Foo = "bar"
+        FooBar = 10
       }
     }
