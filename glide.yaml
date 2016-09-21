@@ -1,0 +1,11 @@
+package: github.com/mattaitchison/terraform-provider-convox
+import:
+- package: github.com/convox/rack
+  subpackages:
+  - client
+- package: github.com/hashicorp/terraform
+  subpackages:
+  - helper/resource
+  - helper/schema
+  - plugin
+  - terraform
