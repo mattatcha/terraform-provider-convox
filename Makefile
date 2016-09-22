@@ -1,29 +1,50 @@
 NAME = terraform-provider-convox
 VERSION := $(shell git describe --tags --always --dirty)
-OS := $(shell go env GOOS)
-XC_OS := darwin linux
+GOOS := $(shell go env GOOS)
+GOARCH := $(shell go env GOARCH)
+XC_OSARCH := darwin/amd64 linux/amd64
+BUILD_DIR ?= build
+DIST_DIR ?= dist
+
 bindir ?= ~/.terraform.d/plugins
 
-all: tools build
+all: deps build
 
-build: $(OS)
+build: XC_OSARCH=$(GOOS)/$(GOARCH)
+build: build-all
 
-build-all: $(XC_OS)
-
-$(XC_OS):
-	GOOS=$@ go build -o build/$@/$(NAME) -ldflags "-X main.version=$(VERSION)" main.go
-
-install: build
-	install -m 755 build/$(OS)/$(NAME) $(bindir)/$(NAME)
+install: $(BUILD_DIR)/$(GOOS)_$(GOARCH)/$(NAME)
+	install -m 755 $< $(DESTDIR)$(bindir)/$(NAME)
 
 deps:
-	glide install
+	# go get -u github.com/Masterminds/glide
+	go get -u github.com/mitchellh/gox
+	# glide install
+
+build-all:
+	-rm -rf dist
+	gox \
+		-ldflags "-X main.version=${VERSION}" \
+		-osarch="${XC_OSARCH}" \
+		-output="${BUILD_DIR}/{{.OS}}_{{.Arch}}/${NAME}"
 
 clean:
-	-rm -rf build/*
+	-rm -rf $(BUILD_DIR)
+	-rm -rf $(DIST_DIR)
 
-tools:
-	curl -sSL https://glide.sh/get | sh
+ARTIFACTS := $(shell find $(BUILD_DIR) -mindepth 1 -maxdepth 1 -type d)
+dist:
+	mkdir -p ${DIST_DIR}
+	$(foreach dir, $(ARTIFACTS), \
+		tar -zcf "${DIST_DIR}/${NAME}_${VERSION}_$(shell basename ${dir}).tgz" -C $(dir) $(NAME);)
+changelog:
+	git log --no-merges \
+		--format='%C(auto,green)* %s%C(auto,reset)%n%w(0,2,2)%+b' \
+		--reverse "$(git describe --abbrev=0 --tags)..HEAD"
+release:
+	git log --no-merges \
+		--format='%C(auto,green)* %s%C(auto,reset)%n%w(0,2,2)%+b' \
+		--reverse "$(git describe --abbrev=0 --tags)..HEAD" \
+		| hub release create --draft -F - "v${VERSION}" $(foreach file,$(wildcard ${DIST_DIR}/*), -a $(file))
 
-
-.PHONY: all build install clean
+.PHONY: all build clean
