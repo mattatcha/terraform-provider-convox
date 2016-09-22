@@ -17,11 +17,11 @@ install: $(BUILD_DIR)/$(GOOS)_$(GOARCH)/$(NAME)
 	install -m 755 $< $(DESTDIR)$(bindir)/$(NAME)
 
 deps:
-	# go get -u github.com/Masterminds/glide
+	go get -u github.com/Masterminds/glide
 	go get -u github.com/mitchellh/gox
-	# glide install
+	glide install
 
-build-all:
+build-all: deps
 	-rm -rf dist
 	gox \
 		-ldflags "-X main.version=${VERSION}" \
@@ -37,14 +37,16 @@ dist:
 	mkdir -p ${DIST_DIR}
 	$(foreach dir, $(ARTIFACTS), \
 		tar -zcf "${DIST_DIR}/${NAME}_${VERSION}_$(shell basename ${dir}).tgz" -C $(dir) $(NAME);)
+
 changelog:
 	git log --no-merges \
 		--format='%C(auto,green)* %s%C(auto,reset)%n%w(0,2,2)%+b' \
 		--reverse "$(git describe --abbrev=0 --tags)..HEAD"
+
 release:
 	git log --no-merges \
 		--format='%C(auto,green)* %s%C(auto,reset)%n%w(0,2,2)%+b' \
 		--reverse "$(git describe --abbrev=0 --tags)..HEAD" \
-		| hub release create --draft -F - "v${VERSION}" $(foreach file,$(wildcard ${DIST_DIR}/*), -a $(file))
+		| hub release create --draft -m ${VERSION} -F - "v${VERSION}" $(foreach file,$(wildcard ${DIST_DIR}/*), -a $(file))
 
 .PHONY: all build clean
