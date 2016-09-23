@@ -37,6 +37,43 @@ func resourceConvoxApp() *schema.Resource {
 				Optional: true,
 				Computed: true,
 			},
+			"balancer_endpoint": &schema.Schema{
+				Type:     schema.TypeString,
+				Computed: true,
+			},
+			"formation": &schema.Schema{
+				Type:     schema.TypeList,
+				Computed: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"name": &schema.Schema{
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+						"balancer": &schema.Schema{
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+						"cpu": &schema.Schema{
+							Type:     schema.TypeInt,
+							Computed: true,
+						},
+						"count": &schema.Schema{
+							Type:     schema.TypeInt,
+							Computed: true,
+						},
+						"memory": &schema.Schema{
+							Type:     schema.TypeInt,
+							Computed: true,
+						},
+						"ports": &schema.Schema{
+							Type:     schema.TypeList,
+							Computed: true,
+							Elem:     &schema.Schema{Type: schema.TypeInt},
+						},
+					},
+				},
+			},
 		},
 		Create: resourceConvoxAppCreate,
 		Read:   resourceConvoxAppRead,
@@ -95,7 +132,14 @@ func resourceConvoxAppRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 	d.Set("environment", env)
-	return nil
+
+	formation, err := c.ListFormation(app.Name)
+	if err != nil {
+		return err
+	}
+
+	// log.Println("[DEBUG] formation:", formation[0].)
+	return readFormation(d, formation)
 }
 
 func resourceConvoxAppUpdate(d *schema.ResourceData, meta interface{}) error {
@@ -119,6 +163,26 @@ func resourceConvoxAppDelete(d *schema.ResourceData, meta interface{}) error {
 	c := rackClient(d, meta)
 	_, err := c.DeleteApp(d.Id())
 	return err
+}
+
+func readFormation(d *schema.ResourceData, v client.Formation) error {
+	if len(v) > 1 {
+		return fmt.Errorf("Error expected formation (%#v) to have a single item", v)
+	}
+
+	if len(v) == 1 {
+		m := map[string]interface{}{
+			"name":     v[0].Name,
+			"balancer": v[0].Balancer,
+			"cpu":      v[0].CPU,
+			"count":    v[0].Count,
+			"memory":   v[0].Memory,
+			"ports":    v[0].Ports,
+		}
+		d.Set("balancer_endpoint", v[0].Balancer)
+		d.Set("formation", []map[string]interface{}{m})
+	}
+	return nil
 }
 
 func setParams(c *client.Client, d *schema.ResourceData) error {

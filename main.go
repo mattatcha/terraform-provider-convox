@@ -8,7 +8,7 @@ import (
 	"github.com/hashicorp/terraform/plugin"
 )
 
-var version = "0.1.0-dev"
+var version = "0.1.3-dev"
 
 func main() {
 	log.Println("[INFO] convox provider version:", version)
