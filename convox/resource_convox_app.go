@@ -83,7 +83,7 @@ func resourceConvoxApp() *schema.Resource {
 }
 
 func resourceConvoxAppCreate(d *schema.ResourceData, meta interface{}) error {
-	c := rackClient(d, meta)
+	c := RackClient(d, meta)
 	if c == nil {
 		return fmt.Errorf("Error rack client is nil: %#v", meta)
 	}
@@ -112,7 +112,7 @@ func resourceConvoxAppCreate(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceConvoxAppRead(d *schema.ResourceData, meta interface{}) error {
-	c := rackClient(d, meta)
+	c := RackClient(d, meta)
 	app, err := c.GetApp(d.Get("name").(string))
 	if err != nil {
 		return err
@@ -144,7 +144,7 @@ func resourceConvoxAppRead(d *schema.ResourceData, meta interface{}) error {
 
 func resourceConvoxAppUpdate(d *schema.ResourceData, meta interface{}) error {
 	d.Partial(true)
-	c := rackClient(d, meta)
+	c := RackClient(d, meta)
 	if err := setParams(c, d); err != nil {
 		return err
 	}
@@ -160,7 +160,7 @@ func resourceConvoxAppUpdate(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceConvoxAppDelete(d *schema.ResourceData, meta interface{}) error {
-	c := rackClient(d, meta)
+	c := RackClient(d, meta)
 	_, err := c.DeleteApp(d.Id())
 	return err
 }
@@ -181,7 +181,10 @@ func readFormation(d *schema.ResourceData, v client.Formation) error {
 		}
 		d.Set("balancer_endpoint", v[0].Balancer)
 		d.Set("formation", []map[string]interface{}{m})
+	} else {
+		d.Set("formation", []map[string]interface{}{})
 	}
+
 	return nil
 }
 

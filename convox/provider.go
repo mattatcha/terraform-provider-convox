@@ -1,40 +1,46 @@
 package convox
 
 import (
-	"sync"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"log"
+	"os"
+	"path/filepath"
 
 	"github.com/convox/rack/client"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
+	homedir "github.com/mitchellh/go-homedir"
 )
 
-const clientVersion = "20160910125708"
+const (
+	DefaultHost   = "console.convox.com"
+	clientVersion = "20160910125708"
+)
 
 // Provider returns a terraform.ResourceProvider.
 func Provider() terraform.ResourceProvider {
 	return &schema.Provider{
 		Schema: map[string]*schema.Schema{
-			"rack": &schema.Schema{
-				Type:     schema.TypeSet,
-				Computed: true,
-				Optional: true,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"name": &schema.Schema{
-							Type:     schema.TypeString,
-							Required: true,
-						},
-						"hostname": &schema.Schema{
-							Type:     schema.TypeString,
-							Required: true,
-						},
-						"password": &schema.Schema{
-							Type:      schema.TypeString,
-							Required:  true,
-							Sensitive: true,
-						},
-					},
-				},
+			"host": &schema.Schema{
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("CONVOX_HOST", ""),
+				Description: "The convox host to use. If omitted 'host' will default to\n" +
+					"the first nonempty value in: \n" +
+					"[\"$CONVOX_RACK\" environment variable, \"config_path/host\" file,\"" + DefaultHost + "\"]",
+			},
+			"password": &schema.Schema{
+				Type:        schema.TypeString,
+				Required:    true,
+				Sensitive:   true,
+				DefaultFunc: schema.EnvDefaultFunc("CONVOX_PASSWORD", ""),
+			},
+			"config_path": &schema.Schema{
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: configDefaultFunc(),
 			},
 		},
 		DataSourcesMap: map[string]*schema.Resource{
@@ -48,34 +54,78 @@ func Provider() terraform.ResourceProvider {
 }
 
 func providerConfigure(d *schema.ResourceData) (interface{}, error) {
-	racks := d.Get("rack").(*schema.Set).List()
-	client := &Client{racks: make(map[string]*client.Client)}
-	for _, rack := range racks {
-		m := rack.(map[string]interface{})
-		client.Set(m["name"].(string), m["hostname"].(string), m["password"].(string))
+	host := getHost(d)
+	pass := getPassword(d, host)
+	c := client.New(host, pass, clientVersion)
+	if host == DefaultHost {
+		// c.Auth() only works for DefaultHost?
+		if err := c.Auth(); err != nil {
+			return nil, fmt.Errorf("Error authenticating with convox host (%s): %s, %s", host, err, pass)
+		}
 	}
-	return client, nil
+
+	return c, nil
 }
 
-type Client struct {
-	mu    sync.Mutex
-	racks map[string]*client.Client
+func configDefaultFunc() schema.SchemaDefaultFunc {
+	return func() (interface{}, error) {
+		var path string
+		var err error
+		if path = os.Getenv("CONVOX_CONFIG"); path != "" {
+			return path, nil
+		}
+
+		if path, err = homedir.Dir(); err != nil {
+			log.Println("[WARNING] Failed to retrieve home directory:", err)
+		}
+
+		path = filepath.Join(path, ".convox")
+		stat, err := os.Stat(path)
+		if err != nil && !os.IsNotExist(err) {
+			return "", err
+		}
+
+		if stat != nil && !stat.IsDir() {
+			return "", fmt.Errorf("Error expected config_path to be a directory")
+		}
+		return path, nil
+
+	}
 }
 
-func (c *Client) Set(name, host, password string) *client.Client {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.racks[name] = client.New(host, password, clientVersion)
-
-	return c.racks[name]
+func RackClient(d *schema.ResourceData, meta interface{}) *client.Client {
+	c := meta.(*client.Client)
+	c.Rack = d.Get("rack").(string)
+	return c
 }
 
-func (c *Client) Rack(name string) *client.Client {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.racks[name]
+func getHost(d *schema.ResourceData) string {
+	if v := d.Get("host").(string); v != "" {
+		return v
+	}
+
+	root := d.Get("config_path").(string)
+	host, _ := ioutil.ReadFile(filepath.Join(root, "host"))
+	if host != nil {
+		return string(host)
+	}
+	return DefaultHost
 }
 
-func rackClient(d *schema.ResourceData, meta interface{}) *client.Client {
-	return meta.(*Client).Rack(d.Get("rack").(string))
+func getPassword(d *schema.ResourceData, host string) string {
+	if v := d.Get("password").(string); v != "" {
+		return v
+	}
+
+	root := d.Get("config_path").(string)
+	b, _ := ioutil.ReadFile(filepath.Join(root, "auth"))
+	if b == nil {
+		return ""
+	}
+	var auth map[string]string
+	err := json.Unmarshal(b, &auth)
+	if err != nil {
+		return ""
+	}
+	return auth[host]
 }

@@ -1,9 +1,6 @@
 provider "convox" {
-  rack {
-    name     = "foo"
-    hostname = "foo.bar.com"
-    password = "xxx"
-  }
+  host     = "foo.bar.com"
+  password = "xxx"
 }
 
 resource "convox_app" "test-app" {

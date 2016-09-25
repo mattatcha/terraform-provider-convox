@@ -1,3 +1,4 @@
 vendor
 build
 *.tfstate
+.DS_Store
