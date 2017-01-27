@@ -37,10 +37,26 @@ func resourceConvoxApp() *schema.Resource {
 				Optional: true,
 				Computed: true,
 			},
-			"balancer_endpoint": &schema.Schema{
-				Type:     schema.TypeString,
-				Computed: true,
-			},
+			// "balancers": &schema.Schema{
+			// 	Type: schema.TypeSet,
+			// 	Elem: &schema.Resource{
+			// 		Schema: map[string]*schema.Schema{
+			// 			"process": {
+			// 				Type:     schema.TypeString,
+			// 				Required: true,
+			// 			},
+			// 			"endpoint": {
+			// 				Type:     schema.TypeString,
+			// 				Required: true,
+			// 			},
+			// 			"port": {
+			// 				Type:     schema.TypeString,
+			// 				Required: true,
+			// 			},
+			// 		},
+			// 	},
+			// 	Computed: true,
+			// },
 			"formation": &schema.Schema{
 				Type:     schema.TypeList,
 				Computed: true,
@@ -137,8 +153,6 @@ func resourceConvoxAppRead(d *schema.ResourceData, meta interface{}) error {
 	if err != nil {
 		return err
 	}
-
-	// log.Println("[DEBUG] formation:", formation[0].)
 	return readFormation(d, formation)
 }
 
@@ -166,26 +180,24 @@ func resourceConvoxAppDelete(d *schema.ResourceData, meta interface{}) error {
 }
 
 func readFormation(d *schema.ResourceData, v client.Formation) error {
-	if len(v) > 1 {
-		return fmt.Errorf("Error expected formation (%#v) to have a single item", v)
-	}
-
-	if len(v) == 1 {
-		m := map[string]interface{}{
-			"name":     v[0].Name,
-			"balancer": v[0].Balancer,
-			"cpu":      v[0].CPU,
-			"count":    v[0].Count,
-			"memory":   v[0].Memory,
-			"ports":    v[0].Ports,
+	formation := []map[string]interface{}{}
+	// endpoints := []map[string]interface{}{}
+	for _, f := range v {
+		entry := map[string]interface{}{
+			"name":     f.Name,
+			"balancer": f.Balancer,
+			"cpu":      f.CPU,
+			"count":    f.Count,
+			"memory":   f.Memory,
+			"ports":    f.Ports,
 		}
-		d.Set("balancer_endpoint", v[0].Balancer)
-		d.Set("formation", []map[string]interface{}{m})
-	} else {
-		d.Set("formation", []map[string]interface{}{})
+		formation = append(formation, entry)
+		// for _, port := range f.Ports {
+		// 	endpoints = append(endpoints, fmt.Sprintf("%s:%d (%s)", f.Balancer, port, f.Name))
+		// }
 	}
 
-	return nil
+	return d.Set("formation", formation)
 }
 
 func setParams(c *client.Client, d *schema.ResourceData) error {
