@@ -37,7 +37,7 @@ func resourceConvoxApp() *schema.Resource {
 				Optional: true,
 				Computed: true,
 			},
-			"formation": &schema.Schema{
+			"processes": &schema.Schema{
 				Type:     schema.TypeMap,
 				Computed: true,
 				Elem: &schema.Resource{
@@ -177,7 +177,7 @@ func readFormation(d *schema.ResourceData, v client.Formation) error {
 		// }
 	}
 
-	return d.Set("formation", formation)
+	return d.Set("processes", formation)
 }
 
 func setParams(c *client.Client, d *schema.ResourceData) error {
