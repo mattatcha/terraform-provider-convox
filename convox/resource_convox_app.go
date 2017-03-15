@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/convox/rack/client"
+	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
 )
@@ -177,7 +178,11 @@ func readFormation(d *schema.ResourceData, v client.Formation) error {
 		// }
 	}
 
-	return d.Set("formation", formation)
+	if err := d.Set("formation", formation); err != nil {
+		return errwrap.Wrapf("Unable to store formation: {{err}}", err)
+	}
+
+	return nil
 }
 
 func setParams(c *client.Client, d *schema.ResourceData) error {
