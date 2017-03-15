@@ -132,7 +132,7 @@ func resourceConvoxAppRead(d *schema.ResourceData, meta interface{}) error {
 
 	formation, err := c.ListFormation(app.Name)
 	if err != nil {
-		return err
+		return errwrap.Wrapf("Error while reading formation from Convox API: {{err}}", err)
 	}
 	return readFormation(d, formation)
 }
@@ -161,26 +161,26 @@ func resourceConvoxAppDelete(d *schema.ResourceData, meta interface{}) error {
 }
 
 func readFormation(d *schema.ResourceData, v client.Formation) error {
-	formation := map[string]map[string]interface{}{}
-	// endpoints := []map[string]interface{}{}
-	for _, f := range v {
-		entry := map[string]interface{}{
-			"name":     f.Name,
-			"balancer": f.Balancer,
-			"cpu":      f.CPU,
-			"count":    f.Count,
-			"memory":   f.Memory,
-			"ports":    f.Ports,
-		}
-		formation[f.Name] = entry
-		// for _, port := range f.Ports {
-		// 	endpoints = append(endpoints, fmt.Sprintf("%s:%d (%s)", f.Balancer, port, f.Name))
-		// }
-	}
+	//formation := map[string]map[string]interface{}{}
+	//// endpoints := []map[string]interface{}{}
+	//for _, f := range v {
+	//entry := map[string]interface{}{
+	//"name":     f.Name,
+	//"balancer": f.Balancer,
+	//"cpu":      f.CPU,
+	//"count":    f.Count,
+	//"memory":   f.Memory,
+	//"ports":    f.Ports,
+	//}
+	//formation[f.Name] = entry
+	//// for _, port := range f.Ports {
+	//// 	endpoints = append(endpoints, fmt.Sprintf("%s:%d (%s)", f.Balancer, port, f.Name))
+	//// }
+	//}
 
-	if err := d.Set("formation", formation); err != nil {
-		return errwrap.Wrapf("Unable to store formation: {{err}}", err)
-	}
+	//if err := d.Set("formation", formation); err != nil {
+	//return errwrap.Wrapf("Unable to store formation: {{err}}", err)
+	//}
 
 	return nil
 }
