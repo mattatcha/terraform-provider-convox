@@ -38,38 +38,9 @@ func resourceConvoxApp() *schema.Resource {
 				Optional: true,
 				Computed: true,
 			},
-			"formation": &schema.Schema{
+			"balancers": &schema.Schema{
 				Type:     schema.TypeMap,
 				Computed: true,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"name": &schema.Schema{
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-						"balancer": &schema.Schema{
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-						"cpu": &schema.Schema{
-							Type:     schema.TypeInt,
-							Computed: true,
-						},
-						"count": &schema.Schema{
-							Type:     schema.TypeInt,
-							Computed: true,
-						},
-						"memory": &schema.Schema{
-							Type:     schema.TypeInt,
-							Computed: true,
-						},
-						"ports": &schema.Schema{
-							Type:     schema.TypeList,
-							Computed: true,
-							Elem:     &schema.Schema{Type: schema.TypeInt},
-						},
-					},
-				},
 			},
 		},
 		Create: resourceConvoxAppCreate,
@@ -161,26 +132,15 @@ func resourceConvoxAppDelete(d *schema.ResourceData, meta interface{}) error {
 }
 
 func readFormation(d *schema.ResourceData, v client.Formation) error {
-	formation := map[string]map[string]interface{}{}
+	balancers := make(map[string]string, len(v))
+
 	// endpoints := []map[string]interface{}{}
 	for _, f := range v {
-		entry := map[string]interface{}{
-			"name":     f.Name,
-			"balancer": f.Balancer,
-			"cpu":      f.CPU,
-			"count":    f.Count,
-			"memory":   f.Memory,
-			"ports":    f.Ports,
-		}
-		formation[f.Name] = entry
-
-		// for _, port := range f.Ports {
-		// 	endpoints = append(endpoints, fmt.Sprintf("%s:%d (%s)", f.Balancer, port, f.Name))
-		// }
+		balancers[f.Name] = f.Balancer
 	}
 
-	if err := d.Set("formation", formation); err != nil {
-		return errwrap.Wrapf("Unable to store formation: {{err}}", err)
+	if err := d.Set("balancers", balancers); err != nil {
+		return errwrap.Wrapf("Unable to store balancers from formation: {{err}}", err)
 	}
 
 	return nil
