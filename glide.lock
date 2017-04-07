@@ -1,5 +1,5 @@
-hash: 412961fc21e83811a13f9290d8f0728705ad8bece51ed284f8ec642e9a3eadcd
-updated: 2017-01-27T11:57:44.539507653-06:00
+hash: 56a007f9bf2b91538fc56b8ff6ccd0ef4666c823483243c271f428546d559a9b
+updated: 2017-04-07T14:26:48.99142474-04:00
 imports:
 - name: github.com/apparentlymart/go-cidr
   version: a3ebdb999b831ecb6ab8a226e31b07b2b9061c47
@@ -136,7 +136,7 @@ imports:
 - name: github.com/hashicorp/logutils
   version: 0dc08b1671f34c4250ce212759ebd880f743d883
 - name: github.com/hashicorp/terraform
-  version: 0cd69d210148089c8c4606db4ea103a987fd947e
+  version: 6365269541c8e3150ebe638a5c555e1424071417
   subpackages:
   - config
   - config/module
