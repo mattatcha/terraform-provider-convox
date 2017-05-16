@@ -1,12 +1,12 @@
-hash: 56a007f9bf2b91538fc56b8ff6ccd0ef4666c823483243c271f428546d559a9b
-updated: 2017-04-07T14:26:48.99142474-04:00
+hash: 171bfdc774a26dc28d0bf7887350976970b90338232697718638b62accaa56b2
+updated: 2017-05-16T13:54:22.494047692-04:00
 imports:
 - name: github.com/apparentlymart/go-cidr
-  version: a3ebdb999b831ecb6ab8a226e31b07b2b9061c47
+  version: 7e4b007599d4e2076d9a81be723b3912852dda2c
   subpackages:
   - cidr
 - name: github.com/aws/aws-sdk-go
-  version: 6ad900d30b0f1a41b14ee02300f7268bdabea1eb
+  version: 4590e9b51cd6698144a025a75608fa7a90752d5d
   subpackages:
   - aws
   - aws/awserr
@@ -66,12 +66,12 @@ imports:
   subpackages:
   - netrc
 - name: github.com/convox/rack
-  version: f8877404fa89745c2aed60109c40756fb3ab77be
+  version: ce650a25e0d354ed14e76fd6f44d66a428070091
   subpackages:
   - api/structs
   - client
 - name: github.com/davecgh/go-spew
-  version: 04cdfd42973bb9c8589fd6a731800cf222fde1a9
+  version: 346938d642f2ec3594ed81d874461961cd0faa76
   subpackages:
   - spew
 - name: github.com/docker/docker
@@ -105,19 +105,19 @@ imports:
 - name: github.com/hashicorp/go-cleanhttp
   version: ad28ea4487f05916463e2423a55166280e8254b5
 - name: github.com/hashicorp/go-getter
-  version: cc80f38c726badeae53775d179755e1c4953d6cf
+  version: 90b6568eac830f62a08e8f1f46375daa63e57015
   subpackages:
   - helper/url
 - name: github.com/hashicorp/go-multierror
   version: ed905158d87462226a13fe39ddf685ea65f1c11f
 - name: github.com/hashicorp/go-plugin
-  version: 8cf118f7a2f0c7ef1c82f66d4f6ac77c7e27dc12
+  version: 1ffca25a1118915effa6d7585a0550fec8cb44fd
 - name: github.com/hashicorp/go-uuid
   version: 64130c7a86d732268a38cb04cfbaf0cc987fda98
 - name: github.com/hashicorp/go-version
-  version: e96d3840402619007766590ecea8dd7af1292276
+  version: 03c5bf6be031b6dd45afec16b1cf94fc8938bc77
 - name: github.com/hashicorp/hcl
-  version: ef8133da8cda503718a74741312bf50821e6de79
+  version: 392dba7d905ed5d04a5794ba89f558b27e2ba1ca
   subpackages:
   - hcl/ast
   - hcl/parser
@@ -128,7 +128,7 @@ imports:
   - json/scanner
   - json/token
 - name: github.com/hashicorp/hil
-  version: 5b8d13c8c5c2753e109fab25392a1dbfa2db93d2
+  version: fac2259da677551de1fb92b844c4d020a38d8468
   subpackages:
   - ast
   - parser
@@ -136,7 +136,7 @@ imports:
 - name: github.com/hashicorp/logutils
   version: 0dc08b1671f34c4250ce212759ebd880f743d883
 - name: github.com/hashicorp/terraform
-  version: 6365269541c8e3150ebe638a5c555e1424071417
+  version: a59ee0b30e1350d18e44a3a2a405124302751f93
   subpackages:
   - config
   - config/module
@@ -159,21 +159,28 @@ imports:
 - name: github.com/mitchellh/copystructure
   version: f81071c9d77b7931f78c90b416a074ecdc50e959
 - name: github.com/mitchellh/go-homedir
-  version: 756f7b183b7ab78acdbbee5c7f392838ed459dda
+  version: b8bc1bf767474819792c23f32d8286a45736f1c6
+- name: github.com/mitchellh/go-testing-interface
+  version: 477c2d05a845d8b55912a5a7993b9b24abcc5ef8
 - name: github.com/mitchellh/hashstructure
-  version: ab25296c0f51f1022f01cd99dfb45f1775de8799
+  version: 9204ce590301a868e3e86938bc12eadd416b211e
 - name: github.com/mitchellh/mapstructure
-  version: 482a9fd5fa83e8c4e7817413b80f3eb8feec03ef
+  version: cc8532a8e9a55ea36402aa21efdf403a60d34096
 - name: github.com/mitchellh/reflectwalk
-  version: 417edcfd99a4d472c262e58f22b4bfe97580f03e
+  version: 8d802ff4ae93611b807597f639c19f76074df5c6
+- name: github.com/onsi/ginkgo
+  version: 77a8c1e5c40d6bb6c5eb4dd4bdce9763564f6298
+- name: github.com/onsi/gomega
+  version: 00acfa9d92a386415bd235ab069c52063f925998
 - name: github.com/opencontainers/runc
   version: 629e35666d31f743090452416c8df207d9fdbd34
   subpackages:
   - libcontainer/user
 - name: github.com/satori/go.uuid
-  version: b061729afc07e77a8aa4fad0a2fd840958f1942a
+  version: 5bf94b69c6b68ee1b541973bb8e1144db23a194b
 - name: github.com/Sirupsen/logrus
-  version: 446d1c146faa8ed3f4218f056fcd165f6bcfda81
+  version: ba1b36c82c5e05c4f912a88eab0dcd91a171688f
+  repo: https://github.com/sirupsen/logrus
 - name: golang.org/x/crypto
   version: 5dc8cb4b8a8eb076cbb5a06bc3b8682c15bdbbd3
   subpackages:

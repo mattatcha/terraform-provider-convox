@@ -59,7 +59,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	c := client.New(host, pass, clientVersion)
 	if host == DefaultHost {
 		// c.Auth() only works for DefaultHost?
-		if err := c.Auth(); err != nil {
+		if _, err := c.Auth(); err != nil {
 			return nil, fmt.Errorf("Error authenticating with convox host (%s): %s, %s", host, err, pass)
 		}
 	}
