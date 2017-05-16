@@ -2,3 +2,4 @@ vendor
 build
 *.tfstate
 .DS_Store
+terraform-provider-convox

@@ -20,4 +20,4 @@ resource "convox_syslog" "papertrail" {
 * `private` - (Optional) Create in private subnets (defaults to false)
 * `hostname` - (Required) The hostname for which the convox resource syslog will be created with.
 * `port` - (Required) The port for which the convox resource syslog will be created with.
-* `scheme` - (Required) The scheme to be used with the convox resource syslog. This must either by "tcp" | "tcp+tls"
+* `scheme` - (Required) The scheme to be used with the convox resource syslog. This must either by `tcp` | `tcp+tls`
