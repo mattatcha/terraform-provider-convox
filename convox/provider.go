@@ -15,6 +15,7 @@ import (
 )
 
 const (
+	// DefaultHost is the default value for which Convox rack host to connect to
 	DefaultHost   = "console.convox.com"
 	clientVersion = "20160910125708"
 )
@@ -43,11 +44,9 @@ func Provider() terraform.ResourceProvider {
 				DefaultFunc: configDefaultFunc(),
 			},
 		},
-		DataSourcesMap: map[string]*schema.Resource{
-		// "convox_rack": dataSourceConvoxRack(),
-		},
+		DataSourcesMap: map[string]*schema.Resource{},
 		ResourcesMap: map[string]*schema.Resource{
-			"convox_app": resourceConvoxApp(),
+			"convox_app": ResourceConvoxApp(RackClient),
 		},
 		ConfigureFunc: providerConfigure,
 	}
@@ -93,10 +92,20 @@ func configDefaultFunc() schema.SchemaDefaultFunc {
 	}
 }
 
-func RackClient(d *schema.ResourceData, meta interface{}) *client.Client {
+// RackClient casts the meta as a convox Client and specifies the rack from schema
+func RackClient(d ValueGetter, meta interface{}) (Client, error) {
+	if meta == nil {
+		return nil, fmt.Errorf("meta is nil")
+	}
+
 	c := meta.(*client.Client)
+	if c == nil {
+		return nil, fmt.Errorf("Could not convert meta to rack Client: %#v", meta)
+	}
+
 	c.Rack = d.Get("rack").(string)
-	return c
+
+	return c, nil
 }
 
 func getHost(d *schema.ResourceData) string {
