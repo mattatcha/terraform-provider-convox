@@ -1,5 +1,5 @@
-hash: 171bfdc774a26dc28d0bf7887350976970b90338232697718638b62accaa56b2
-updated: 2017-05-16T13:54:22.494047692-04:00
+hash: 91ff6d5c69ec7147b70298bd12d2eb983fab7200f5139027952be6f3bea65e73
+updated: 2017-05-16T14:54:14.729675391-04:00
 imports:
 - name: github.com/apparentlymart/go-cidr
   version: 7e4b007599d4e2076d9a81be723b3912852dda2c
@@ -170,8 +170,38 @@ imports:
   version: 8d802ff4ae93611b807597f639c19f76074df5c6
 - name: github.com/onsi/ginkgo
   version: 77a8c1e5c40d6bb6c5eb4dd4bdce9763564f6298
+  subpackages:
+  - config
+  - internal/codelocation
+  - internal/containernode
+  - internal/failer
+  - internal/leafnodes
+  - internal/remote
+  - internal/spec
+  - internal/spec_iterator
+  - internal/specrunner
+  - internal/suite
+  - internal/testingtproxy
+  - internal/writer
+  - reporters
+  - reporters/stenographer
+  - reporters/stenographer/support/go-colorable
+  - reporters/stenographer/support/go-isatty
+  - types
 - name: github.com/onsi/gomega
   version: 00acfa9d92a386415bd235ab069c52063f925998
+  subpackages:
+  - format
+  - internal/assertion
+  - internal/asyncassertion
+  - internal/oraclematcher
+  - internal/testingtsupport
+  - matchers
+  - matchers/support/goraph/bipartitegraph
+  - matchers/support/goraph/edge
+  - matchers/support/goraph/node
+  - matchers/support/goraph/util
+  - types
 - name: github.com/opencontainers/runc
   version: 629e35666d31f743090452416c8df207d9fdbd34
   subpackages:
@@ -180,7 +210,7 @@ imports:
   version: 5bf94b69c6b68ee1b541973bb8e1144db23a194b
 - name: github.com/Sirupsen/logrus
   version: ba1b36c82c5e05c4f912a88eab0dcd91a171688f
-  repo: https://github.com/sirupsen/logrus
+  repo: git://github.com/sirupsen/logrus
 - name: golang.org/x/crypto
   version: 5dc8cb4b8a8eb076cbb5a06bc3b8682c15bdbbd3
   subpackages:
@@ -195,9 +225,32 @@ imports:
   subpackages:
   - context
   - context/ctxhttp
+  - html
+  - html/atom
+  - html/charset
   - websocket
 - name: golang.org/x/sys
   version: 7a56174f0086b32866ebd746a794417edbc678a1
   subpackages:
   - unix
-testImports: []
+testImports:
+- name: golang.org/x/text
+  version: 19e51611da83d6be54ddafce4a4af510cb3e9ea4
+  subpackages:
+  - encoding
+  - encoding/charmap
+  - encoding/htmlindex
+  - encoding/internal
+  - encoding/internal/identifier
+  - encoding/japanese
+  - encoding/korean
+  - encoding/simplifiedchinese
+  - encoding/traditionalchinese
+  - encoding/unicode
+  - internal/tag
+  - internal/utf8internal
+  - language
+  - runes
+  - transform
+- name: gopkg.in/yaml.v2
+  version: eca94c41d994ae2215d455ce578ae6e2dc6ee516
