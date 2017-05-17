@@ -46,7 +46,7 @@ func Provider() terraform.ResourceProvider {
 		},
 		DataSourcesMap: map[string]*schema.Resource{},
 		ResourcesMap: map[string]*schema.Resource{
-			"convox_app": ResourceConvoxApp(RackClient),
+			"convox_app": ResourceConvoxApp(UnpackRackClient),
 		},
 		ConfigureFunc: providerConfigure,
 	}
@@ -92,8 +92,8 @@ func configDefaultFunc() schema.SchemaDefaultFunc {
 	}
 }
 
-// RackClient casts the meta as a convox Client and specifies the rack from schema
-func RackClient(d ValueGetter, meta interface{}) (Client, error) {
+// UnpackRackClient casts the meta as a convox Client and specifies the rack from schema
+func UnpackRackClient(d ValueGetter, meta interface{}) (Client, error) {
 	if meta == nil {
 		return nil, fmt.Errorf("meta is nil")
 	}

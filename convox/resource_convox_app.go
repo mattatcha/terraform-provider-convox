@@ -44,14 +44,19 @@ func ResourceConvoxApp(clientUnpacker ClientUnpacker) *schema.Resource {
 				Computed: true,
 			},
 		},
-		Create: resourceConvoxAppCreateFactory(clientUnpacker),
-		Read:   resourceConvoxAppReadFactory(clientUnpacker),
-		Update: resourceConvoxAppUpdateFactory(clientUnpacker),
-		Delete: resourceConvoxAppDeleteFactory(clientUnpacker),
+		Create: ResourceConvoxAppCreateFactory(clientUnpacker),
+		Read:   ResourceConvoxAppReadFactory(clientUnpacker),
+		Update: ResourceConvoxAppUpdateFactory(clientUnpacker),
+		Delete: ResourceConvoxAppDeleteFactory(clientUnpacker),
 	}
 }
 
-func resourceConvoxAppCreateFactory(clientUnpacker ClientUnpacker) schema.CreateFunc {
+// ResourceConvoxAppCreateFactory builds the resource CreateFunc for a Convox App resource
+func ResourceConvoxAppCreateFactory(clientUnpacker ClientUnpacker) schema.CreateFunc {
+	if clientUnpacker == nil {
+		panic("clientUnpacker is required")
+	}
+
 	return func(d *schema.ResourceData, meta interface{}) error {
 		c, err := clientUnpacker(d, meta)
 		if err != nil {
@@ -80,11 +85,16 @@ func resourceConvoxAppCreateFactory(clientUnpacker ClientUnpacker) schema.Create
 		}
 
 		// and then run update to set it up
-		return resourceConvoxAppUpdateFactory(clientUnpacker)(d, meta)
+		return ResourceConvoxAppUpdateFactory(clientUnpacker)(d, meta)
 	}
 }
 
-func resourceConvoxAppReadFactory(clientUnpacker ClientUnpacker) schema.ReadFunc {
+// ResourceConvoxAppReadFactory create the ReadFunc for a Convox App resource
+func ResourceConvoxAppReadFactory(clientUnpacker ClientUnpacker) schema.ReadFunc {
+	if clientUnpacker == nil {
+		panic("clientUnpacker is required")
+	}
+
 	return func(d *schema.ResourceData, meta interface{}) error {
 		c, err := clientUnpacker(d, meta)
 		if err != nil {
@@ -119,7 +129,12 @@ func resourceConvoxAppReadFactory(clientUnpacker ClientUnpacker) schema.ReadFunc
 	}
 }
 
-func resourceConvoxAppUpdateFactory(clientUnpacker ClientUnpacker) schema.UpdateFunc {
+// ResourceConvoxAppUpdateFactory builds the UpdateFunc for a Convox App resource
+func ResourceConvoxAppUpdateFactory(clientUnpacker ClientUnpacker) schema.UpdateFunc {
+	if clientUnpacker == nil {
+		panic("clientUnpacker is required")
+	}
+
 	return func(d *schema.ResourceData, meta interface{}) error {
 		d.Partial(true)
 
@@ -140,11 +155,16 @@ func resourceConvoxAppUpdateFactory(clientUnpacker ClientUnpacker) schema.Update
 
 		d.Partial(false)
 
-		return resourceConvoxAppReadFactory(clientUnpacker)(d, meta)
+		return ResourceConvoxAppReadFactory(clientUnpacker)(d, meta)
 	}
 }
 
-func resourceConvoxAppDeleteFactory(clientUnpacker ClientUnpacker) schema.DeleteFunc {
+// ResourceConvoxAppDeleteFactory builds the DeleteFunc for a Convox App resource
+func ResourceConvoxAppDeleteFactory(clientUnpacker ClientUnpacker) schema.DeleteFunc {
+	if clientUnpacker == nil {
+		panic("clientUnpacker is required")
+	}
+
 	return func(d *schema.ResourceData, meta interface{}) error {
 		c, err := clientUnpacker(d, meta)
 		if err != nil {
