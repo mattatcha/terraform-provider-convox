@@ -27,4 +27,6 @@ type Client interface {
 
 	GetEnvironment(app string) (client.Environment, error)
 	SetEnvironment(app string, body io.Reader) (client.Environment, string, error)
+
+	GetResource(name string) (*client.Resource, error)
 }

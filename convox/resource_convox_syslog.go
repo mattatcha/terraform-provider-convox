@@ -25,6 +25,10 @@ func ResourceConvoxSyslog(clientUnpacker ClientUnpacker) *schema.Resource {
 				Type:     schema.TypeString,
 				Required: true,
 			},
+			"url": &schema.Schema{
+				Type:     schema.TypeString,
+				Computed: true,
+			},
 		},
 		Create: ResourceConvoxSyslogCreateFactory(clientUnpacker),
 		// Read:   resourceConvoxSyslogRead,
@@ -46,33 +50,37 @@ func ResourceConvoxSyslogCreateFactory(clientUnpacker ClientUnpacker) schema.Cre
 		}
 
 		return nil
-		// if c == nil {
-		// 	return fmt.Errorf("Error rack client is nil: %#v", meta)
-		// }
+	}
+}
 
-		// name := d.Get("name").(string)
+// ResourceConvoxSyslogReadFactory builds the ReadFunc for the Convox Syslog Resource
+func ResourceConvoxSyslogReadFactory(clientUnpacker ClientUnpacker) schema.ReadFunc {
+	if clientUnpacker == nil {
+		panic("clientUnpacker is required")
+	}
 
-		// c.CreateResource()
+	return func(d *schema.ResourceData, meta interface{}) error {
+		if d == nil {
+			panic("d is required")
+		}
 
-		// app, err := c.CreateApp(name)
-		// if err != nil {
-		// 	return fmt.Errorf(
-		// 		"Error creating app (%s): %s", name, err)
-		// }
+		if meta == nil {
+			panic("meta is required")
+		}
 
-		// d.SetId(app.Name)
-		// stateConf := &resource.StateChangeConf{
-		// 	Pending: []string{"creating"},
-		// 	Target:  []string{"running"},
-		// 	Refresh: appRefreshFunc(c, app.Name),
-		// 	Timeout: 10 * time.Minute,
-		// 	Delay:   25 * time.Second,
-		// }
+		c, err := clientUnpacker(d, meta)
+		if err != nil {
+			return err
+		}
 
-		// if _, err = stateConf.WaitForState(); err != nil {
-		// 	return fmt.Errorf(
-		// 		"Error waiting for app (%s) to be created: %s", app.Name, err)
-		// }
-		// return resourceConvoxAppUpdate(d, meta)
+		name := d.Get("name").(string)
+		convoxResource, err := c.GetResource(name)
+		if err != nil {
+			return err
+		}
+
+		d.Set("url", convoxResource.Exports["URL"])
+
+		return nil
 	}
 }
