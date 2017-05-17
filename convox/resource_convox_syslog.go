@@ -1,6 +1,8 @@
 package convox
 
 import (
+	"fmt"
+
 	"github.com/hashicorp/terraform/helper/schema"
 )
 
@@ -18,12 +20,17 @@ func ResourceConvoxSyslog(clientUnpacker ClientUnpacker) *schema.Resource {
 				Required: true,
 			},
 			"port": &schema.Schema{
-				Type:     schema.TypeString,
+				Type:     schema.TypeInt,
 				Required: true,
 			},
 			"scheme": &schema.Schema{
 				Type:     schema.TypeString,
 				Required: true,
+			},
+			"private": &schema.Schema{
+				Type:     schema.TypeBool,
+				Required: false,
+				Default:  false,
 			},
 			"url": &schema.Schema{
 				Type:     schema.TypeString,
@@ -31,8 +38,8 @@ func ResourceConvoxSyslog(clientUnpacker ClientUnpacker) *schema.Resource {
 			},
 		},
 		Create: ResourceConvoxSyslogCreateFactory(clientUnpacker),
-		// Read:   resourceConvoxSyslogRead,
-		// Update: resourceConvoxSyslogUpdate,
+		Read:   ResourceConvoxSyslogReadFactory(clientUnpacker),
+		//Update: ResourceConvoxSyslogUpdateFactory(clientUnpacker),
 		// Delete: resourceConvoxSyslogDelete,
 	}
 }
@@ -44,7 +51,19 @@ func ResourceConvoxSyslogCreateFactory(clientUnpacker ClientUnpacker) schema.Cre
 	}
 
 	return func(d *schema.ResourceData, meta interface{}) error {
-		_, err := clientUnpacker(d, meta)
+		c, err := clientUnpacker(d, meta)
+		if err != nil {
+			return err
+		}
+
+		options := map[string]string{
+			"url":     fmt.Sprintf("%s://%s:%d", d.Get("scheme"), d.Get("hostname"), d.Get("port")),
+			"private": fmt.Sprintf("%v", d.Get("private")),
+		}
+
+		d.Set("url", options["url"])
+
+		_, err = c.CreateResource("syslog", options)
 		if err != nil {
 			return err
 		}

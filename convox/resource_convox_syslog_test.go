@@ -15,8 +15,19 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 		return convoxClient, nil
 	}
 
+	var resourceData *schema.ResourceData
+
 	BeforeEach(func() {
 		convoxClient.ResetNoop()
+		resourceData = convox.ResourceConvoxSyslog(unpacker).Data(&terraform.InstanceState{
+			Attributes: map[string]string{
+				"name":     "test",
+				"hostname": "logs.foo.com",
+				"port":     "12345",
+				"scheme":   "tcp+tls",
+				"private":  "true",
+			},
+		})
 	})
 
 	Describe("CreateFunc", func() {
@@ -32,7 +43,42 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 		})
 
 		Describe("creating the resource", func() {
+			var createdKind string
+			var createdOptions map[string]string
 
+			BeforeEach(func() {
+				createdKind = ""
+				createdOptions = make(map[string]string)
+				convoxClient.CreateResourceFunc = func(kind string, options map[string]string) (*client.Resource, error) {
+					createdKind = kind
+					createdOptions = options
+					return &client.Resource{
+						Name:   "test",
+						Status: "running",
+						Exports: map[string]string{
+							"URL": "tcp://1.1.1.1:1111",
+						},
+					}, nil
+				}
+
+				Expect(cut(resourceData, resourceData)).To(BeNil())
+			})
+
+			It("should set the URL", func() {
+				Expect(resourceData.Get("url")).To(Equal("tcp+tls://logs.foo.com:12345"))
+			})
+
+			It("should call the convox API with the right kind", func() {
+				Expect(createdKind).To(Equal("syslog"))
+			})
+
+			It("should call the convox API with the right URL", func() {
+				Expect(createdOptions["url"]).To(Equal("tcp+tls://logs.foo.com:12345"))
+			})
+
+			It("should call the convox API with the right Private value", func() {
+				Expect(createdOptions["private"]).To(Equal("true"))
+			})
 		})
 	})
 
@@ -49,7 +95,6 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 		})
 
 		Describe("Reading state", func() {
-			var resourceData *schema.ResourceData
 			var requestedName string
 
 			BeforeEach(func() {
@@ -63,12 +108,6 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 						},
 					}, nil
 				}
-
-				resourceData = convox.ResourceConvoxSyslog(unpacker).Data(&terraform.InstanceState{
-					Attributes: map[string]string{
-						"name": "test",
-					},
-				})
 
 				Expect(cut(resourceData, resourceData)).To(BeNil())
 			})

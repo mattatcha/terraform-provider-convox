@@ -8,8 +8,9 @@ import (
 
 // MockClient is a test mock for the Client interface
 type MockClient struct {
-	CreateAppFunc   func(name string) (*client.App, error)
-	GetResourceFunc func(name string) (*client.Resource, error)
+	CreateAppFunc      func(name string) (*client.App, error)
+	GetResourceFunc    func(name string) (*client.Resource, error)
+	CreateResourceFunc func(kind string, options map[string]string) (*client.Resource, error)
 }
 
 func (m *MockClient) ResetNoop() {
@@ -18,6 +19,10 @@ func (m *MockClient) ResetNoop() {
 	}
 
 	m.GetResourceFunc = func(name string) (*client.Resource, error) {
+		return nil, nil
+	}
+
+	m.CreateResourceFunc = func(kind string, options map[string]string) (*client.Resource, error) {
 		return nil, nil
 	}
 }
@@ -56,4 +61,8 @@ func (m *MockClient) SetEnvironment(app string, body io.Reader) (client.Environm
 
 func (m *MockClient) GetResource(name string) (*client.Resource, error) {
 	return m.GetResourceFunc(name)
+}
+
+func (m *MockClient) CreateResource(kind string, options map[string]string) (*client.Resource, error) {
+	return m.CreateResourceFunc(kind, options)
 }
