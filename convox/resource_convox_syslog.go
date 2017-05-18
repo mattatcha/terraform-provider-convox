@@ -128,7 +128,7 @@ func ResourceConvoxSyslogUpdateFactory(clientUnpacker ClientUnpacker) schema.Upd
 
 		c, err := clientUnpacker(d, meta)
 		if err != nil {
-			return err
+			return fmt.Errorf("Error getting client in UpdateFunc: %s", err.Error())
 		}
 
 		options := map[string]string{
@@ -164,7 +164,7 @@ func ResourceConvoxSyslogDeleteFactory(clientUnpacker ClientUnpacker) schema.Del
 
 		c, err := clientUnpacker(d, meta)
 		if err != nil {
-			return err
+			return fmt.Errorf("Error getting client in DeleteFunc: %s", err.Error())
 		}
 
 		_, err = c.DeleteResource(d.Get("name").(string))
