@@ -61,6 +61,7 @@ func ResourceConvoxSyslogCreateFactory(clientUnpacker ClientUnpacker) schema.Cre
 		}
 
 		options := map[string]string{
+			"name":    d.Get("name").(string),
 			"url":     formURLString(d),
 			"private": fmt.Sprintf("%v", d.Get("private")),
 		}
@@ -137,7 +138,7 @@ func ResourceConvoxSyslogUpdateFactory(clientUnpacker ClientUnpacker) schema.Upd
 
 		_, err = c.UpdateResource(d.Get("name").(string), options)
 		if err != nil {
-			return nil
+			return err
 		}
 
 		d.Set("url", options["url"])

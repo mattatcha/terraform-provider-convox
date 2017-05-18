@@ -72,6 +72,10 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 				Expect(createdKind).To(Equal("syslog"))
 			})
 
+			It("should call the convox API with the right name", func() {
+				Expect(createdOptions["name"]).To(Equal("test"))
+			})
+
 			It("should call the convox API with the right URL", func() {
 				Expect(createdOptions["url"]).To(Equal("tcp+tls://logs.foo.com:12345"))
 			})
