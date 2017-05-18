@@ -96,13 +96,13 @@ func ResourceConvoxSyslogReadFactory(clientUnpacker ClientUnpacker) schema.ReadF
 
 		c, err := clientUnpacker(d, meta)
 		if err != nil {
-			return err
+			return fmt.Errorf("Error getting client in ReadFunc: %s", err.Error())
 		}
 
 		name := d.Get("name").(string)
 		convoxResource, err := c.GetResource(name)
 		if err != nil {
-			return err
+			return fmt.Errorf("Error calling GetResource: %s", err.Error())
 		}
 
 		d.Set("url", convoxResource.Exports["URL"])
@@ -138,7 +138,7 @@ func ResourceConvoxSyslogUpdateFactory(clientUnpacker ClientUnpacker) schema.Upd
 
 		_, err = c.UpdateResource(d.Get("name").(string), options)
 		if err != nil {
-			return err
+			return fmt.Errorf("Error calling UpdateResource: %s -- %v", err.Error(), options)
 		}
 
 		d.Set("url", options["Url"])
@@ -169,7 +169,7 @@ func ResourceConvoxSyslogDeleteFactory(clientUnpacker ClientUnpacker) schema.Del
 
 		_, err = c.DeleteResource(d.Get("name").(string))
 		if err != nil {
-			return err
+			return fmt.Errorf("Error calling DeleteResource: %s", err.Error())
 		}
 
 		return nil
