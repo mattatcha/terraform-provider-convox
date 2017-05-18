@@ -40,7 +40,7 @@ func ResourceConvoxSyslog(clientUnpacker ClientUnpacker) *schema.Resource {
 		Create: ResourceConvoxSyslogCreateFactory(clientUnpacker),
 		Read:   ResourceConvoxSyslogReadFactory(clientUnpacker),
 		Update: ResourceConvoxSyslogUpdateFactory(clientUnpacker),
-		// Delete: resourceConvoxSyslogDelete,
+		Delete: ResourceConvoxSyslogDeleteFactory(clientUnpacker),
 	}
 }
 
@@ -144,5 +144,33 @@ func ResourceConvoxSyslogUpdateFactory(clientUnpacker ClientUnpacker) schema.Upd
 
 		return nil
 	}
+}
 
+// ResourceConvoxSyslogDeleteFactory builds the DeleteFunc for thw Convox Syslog Resource
+func ResourceConvoxSyslogDeleteFactory(clientUnpacker ClientUnpacker) schema.DeleteFunc {
+	if clientUnpacker == nil {
+		panic("clientUnpacker is required")
+	}
+
+	return func(d *schema.ResourceData, meta interface{}) error {
+		if d == nil {
+			panic("d is required")
+		}
+
+		if meta == nil {
+			panic("meta is required")
+		}
+
+		c, err := clientUnpacker(d, meta)
+		if err != nil {
+			return err
+		}
+
+		_, err = c.DeleteResource(d.Get("name").(string))
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}
 }

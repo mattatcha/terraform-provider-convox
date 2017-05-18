@@ -168,4 +168,40 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 			})
 		})
 	})
+
+	Describe("ResourceConvoxSyslogDeleteFactory", func() {
+		var cut schema.DeleteFunc
+
+		BeforeEach(func() {
+			cut = convox.ResourceConvoxSyslogDeleteFactory(unpacker)
+		})
+
+		It("should make one", func() {
+			Expect(cut).ToNot(BeNil())
+		})
+
+		Describe("Deleting", func() {
+			var requestedName string
+
+			BeforeEach(func() {
+				requestedName = ""
+				convoxClient.DeleteResourceFunc = func(name string) (*client.Resource, error) {
+					requestedName = name
+					return &client.Resource{
+						Name:   "test",
+						Status: "deleting",
+						Exports: map[string]string{
+							"URL": "tcp://192.168.1.23:4567",
+						},
+					}, nil
+				}
+
+				Expect(cut(resourceData, resourceData)).To(BeNil())
+			})
+
+			It("should delete the right resource", func() {
+				Expect(requestedName).To(Equal("test"))
+			})
+		})
+	})
 })
