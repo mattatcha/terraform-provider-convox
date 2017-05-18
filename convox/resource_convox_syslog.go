@@ -57,7 +57,7 @@ func ResourceConvoxSyslogCreateFactory(clientUnpacker ClientUnpacker) schema.Cre
 	return func(d *schema.ResourceData, meta interface{}) error {
 		c, err := clientUnpacker(d, meta)
 		if err != nil {
-			return err
+			return fmt.Errorf("Error unpacking client in CreateFunc: %s", err.Error())
 		}
 
 		options := map[string]string{
@@ -68,7 +68,7 @@ func ResourceConvoxSyslogCreateFactory(clientUnpacker ClientUnpacker) schema.Cre
 
 		_, err = c.CreateResource("syslog", options)
 		if err != nil {
-			return err
+			return fmt.Errorf("Error calling CreateResource: %s -- %v", err.Error(), options)
 		}
 
 		// TODO: probably need to wait here for the status to stabilize. (and in update)
