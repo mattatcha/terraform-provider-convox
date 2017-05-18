@@ -2,6 +2,7 @@ package convox
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/hashicorp/terraform/helper/schema"
 )
@@ -66,6 +67,7 @@ func ResourceConvoxSyslogCreateFactory(clientUnpacker ClientUnpacker) schema.Cre
 			"Private": fmt.Sprintf("%v", d.Get("private")),
 		}
 
+		log.Printf("[INFO] Calling Convox CreateResource...")
 		_, err = c.CreateResource("syslog", options)
 		if err != nil {
 			return fmt.Errorf("Error calling CreateResource: %s -- %v", err.Error(), options)
@@ -100,6 +102,7 @@ func ResourceConvoxSyslogReadFactory(clientUnpacker ClientUnpacker) schema.ReadF
 		}
 
 		name := d.Get("name").(string)
+		log.Printf("[INFO] Calling Convox GetResource(%s)...", name)
 		convoxResource, err := c.GetResource(name)
 		if err != nil {
 			return fmt.Errorf("Error calling GetResource: %s", err.Error())
@@ -136,7 +139,9 @@ func ResourceConvoxSyslogUpdateFactory(clientUnpacker ClientUnpacker) schema.Upd
 			"Private": fmt.Sprintf("%v", d.Get("private")),
 		}
 
-		_, err = c.UpdateResource(d.Get("name").(string), options)
+		name := d.Get("name").(string)
+		log.Printf("[INFO] Calling Convox UpdateResource(%s, <options>)...", name)
+		_, err = c.UpdateResource(name, options)
 		if err != nil {
 			return fmt.Errorf("Error calling UpdateResource: %s -- %v", err.Error(), options)
 		}
@@ -167,7 +172,9 @@ func ResourceConvoxSyslogDeleteFactory(clientUnpacker ClientUnpacker) schema.Del
 			return fmt.Errorf("Error getting client in DeleteFunc: %s", err.Error())
 		}
 
-		_, err = c.DeleteResource(d.Get("name").(string))
+		name := d.Get("name").(string)
+		log.Printf("[INFO] Calling Convox DeleteResource(%s)...", name)
+		_, err = c.DeleteResource(name)
 		if err != nil {
 			return fmt.Errorf("Error calling DeleteResource: %s", err.Error())
 		}
