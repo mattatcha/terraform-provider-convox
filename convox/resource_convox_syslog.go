@@ -51,20 +51,27 @@ func formURLString(d *schema.ResourceData) string {
 
 // ResourceConvoxSyslogCreateFactory builds the Convox Syslog CreateFunc
 func ResourceConvoxSyslogCreateFactory(clientUnpacker ClientUnpacker) schema.CreateFunc {
+	log.Printf("ResourceConvoxSyslogCreateFactory")
+
 	if clientUnpacker == nil {
 		panic("clientUnpacker is required")
 	}
 
 	return func(d *schema.ResourceData, meta interface{}) error {
+		log.Printf("CreateFunc")
+
 		c, err := clientUnpacker(d, meta)
 		if err != nil {
 			return fmt.Errorf("Error unpacking client in CreateFunc: %s", err.Error())
 		}
 
 		options := map[string]string{
-			"name":    d.Get("name").(string),
-			"Url":     formURLString(d),
-			"Private": fmt.Sprintf("%v", d.Get("private")),
+			"name": d.Get("name").(string),
+			"Url":  formURLString(d),
+		}
+
+		if v, ok := d.GetOk("private"); ok {
+			options["Private"] = fmt.Sprintf("%v", v)
 		}
 
 		log.Printf("[INFO] Calling Convox CreateResource...")
@@ -119,8 +126,11 @@ func ResourceConvoxSyslogUpdateFactory(clientUnpacker ClientUnpacker) schema.Upd
 		}
 
 		options := map[string]string{
-			"Url":     formURLString(d),
-			"Private": fmt.Sprintf("%v", d.Get("private")),
+			"Url": formURLString(d),
+		}
+
+		if v, ok := d.GetOk("private"); ok {
+			options["Private"] = fmt.Sprintf("%v", v)
 		}
 
 		name := d.Get("name").(string)
