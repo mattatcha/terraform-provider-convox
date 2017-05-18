@@ -39,9 +39,13 @@ func ResourceConvoxSyslog(clientUnpacker ClientUnpacker) *schema.Resource {
 		},
 		Create: ResourceConvoxSyslogCreateFactory(clientUnpacker),
 		Read:   ResourceConvoxSyslogReadFactory(clientUnpacker),
-		//Update: ResourceConvoxSyslogUpdateFactory(clientUnpacker),
+		Update: ResourceConvoxSyslogUpdateFactory(clientUnpacker),
 		// Delete: resourceConvoxSyslogDelete,
 	}
+}
+
+func formURLString(d *schema.ResourceData) string {
+	return fmt.Sprintf("%s://%s:%d", d.Get("scheme"), d.Get("hostname"), d.Get("port"))
 }
 
 // ResourceConvoxSyslogCreateFactory builds the Convox Syslog CreateFunc
@@ -57,16 +61,18 @@ func ResourceConvoxSyslogCreateFactory(clientUnpacker ClientUnpacker) schema.Cre
 		}
 
 		options := map[string]string{
-			"url":     fmt.Sprintf("%s://%s:%d", d.Get("scheme"), d.Get("hostname"), d.Get("port")),
+			"url":     formURLString(d),
 			"private": fmt.Sprintf("%v", d.Get("private")),
 		}
-
-		d.Set("url", options["url"])
 
 		_, err = c.CreateResource("syslog", options)
 		if err != nil {
 			return err
 		}
+
+		// TODO: probably need to wait here for the status to stabilize. (and in update)
+
+		d.Set("url", options["url"])
 
 		return nil
 	}
@@ -102,4 +108,41 @@ func ResourceConvoxSyslogReadFactory(clientUnpacker ClientUnpacker) schema.ReadF
 
 		return nil
 	}
+}
+
+// ResourceConvoxSyslogUpdateFactory creates the UpdateFunc for the Convox Syslog Resource
+func ResourceConvoxSyslogUpdateFactory(clientUnpacker ClientUnpacker) schema.UpdateFunc {
+	if clientUnpacker == nil {
+		panic("clientUnpacker is required")
+	}
+
+	return func(d *schema.ResourceData, meta interface{}) error {
+		if d == nil {
+			panic("d is required")
+		}
+
+		if meta == nil {
+			panic("meta is required")
+		}
+
+		c, err := clientUnpacker(d, meta)
+		if err != nil {
+			return err
+		}
+
+		options := map[string]string{
+			"url":     formURLString(d),
+			"private": fmt.Sprintf("%v", d.Get("private")),
+		}
+
+		_, err = c.UpdateResource(d.Get("name").(string), options)
+		if err != nil {
+			return nil
+		}
+
+		d.Set("url", options["url"])
+
+		return nil
+	}
+
 }

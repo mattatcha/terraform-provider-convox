@@ -121,4 +121,51 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 			})
 		})
 	})
+
+	Describe("ResourceConvoxSyslogUpdateFactory", func() {
+		var cut schema.UpdateFunc
+
+		BeforeEach(func() {
+			cut = convox.ResourceConvoxSyslogUpdateFactory(unpacker)
+		})
+
+		It("should make one", func() {
+			Expect(cut).ToNot(BeNil())
+		})
+
+		Describe("Updating", func() {
+			var requestedName string
+			var requestedOptions map[string]string
+
+			BeforeEach(func() {
+				requestedName = ""
+				requestedOptions = nil
+				convoxClient.UpdateResourceFunc = func(name string, options map[string]string) (*client.Resource, error) {
+					requestedName = name
+					requestedOptions = options
+					return &client.Resource{
+						Name:   "test",
+						Status: "running",
+						Exports: map[string]string{
+							"URL": "tcp://192.168.1.23:4567",
+						},
+					}, nil
+				}
+
+				Expect(cut(resourceData, resourceData)).To(BeNil())
+			})
+
+			It("should ask to update the right resource", func() {
+				Expect(requestedName).To(Equal("test"))
+			})
+
+			It("should call the convox API with the right URL", func() {
+				Expect(requestedOptions["url"]).To(Equal("tcp+tls://logs.foo.com:12345"))
+			})
+
+			It("should call the convox API with the right Private value", func() {
+				Expect(requestedOptions["private"]).To(Equal("true"))
+			})
+		})
+	})
 })
