@@ -29,7 +29,7 @@ func ResourceConvoxSyslog(clientUnpacker ClientUnpacker) *schema.Resource {
 			},
 			"private": &schema.Schema{
 				Type:     schema.TypeBool,
-				Required: false,
+				Optional: true,
 				Default:  false,
 			},
 			"url": &schema.Schema{

@@ -46,7 +46,8 @@ func Provider() terraform.ResourceProvider {
 		},
 		DataSourcesMap: map[string]*schema.Resource{},
 		ResourcesMap: map[string]*schema.Resource{
-			"convox_app": ResourceConvoxApp(UnpackRackClient),
+			"convox_app":    ResourceConvoxApp(UnpackRackClient),
+			"convox_syslog": ResourceConvoxSyslog(UnpackRackClient),
 		},
 		ConfigureFunc: providerConfigure,
 	}
