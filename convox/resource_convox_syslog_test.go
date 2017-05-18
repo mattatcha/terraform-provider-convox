@@ -77,11 +77,11 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 			})
 
 			It("should call the convox API with the right URL", func() {
-				Expect(createdOptions["url"]).To(Equal("tcp+tls://logs.foo.com:12345"))
+				Expect(createdOptions["Url"]).To(Equal("tcp+tls://logs.foo.com:12345"))
 			})
 
 			It("should call the convox API with the right Private value", func() {
-				Expect(createdOptions["private"]).To(Equal("true"))
+				Expect(createdOptions["Private"]).To(Equal("true"))
 			})
 		})
 	})
@@ -164,11 +164,11 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 			})
 
 			It("should call the convox API with the right URL", func() {
-				Expect(requestedOptions["url"]).To(Equal("tcp+tls://logs.foo.com:12345"))
+				Expect(requestedOptions["Url"]).To(Equal("tcp+tls://logs.foo.com:12345"))
 			})
 
 			It("should call the convox API with the right Private value", func() {
-				Expect(requestedOptions["private"]).To(Equal("true"))
+				Expect(requestedOptions["Private"]).To(Equal("true"))
 			})
 		})
 	})

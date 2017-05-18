@@ -62,8 +62,8 @@ func ResourceConvoxSyslogCreateFactory(clientUnpacker ClientUnpacker) schema.Cre
 
 		options := map[string]string{
 			"name":    d.Get("name").(string),
-			"url":     formURLString(d),
-			"private": fmt.Sprintf("%v", d.Get("private")),
+			"Url":     formURLString(d),
+			"Private": fmt.Sprintf("%v", d.Get("private")),
 		}
 
 		_, err = c.CreateResource("syslog", options)
@@ -73,7 +73,7 @@ func ResourceConvoxSyslogCreateFactory(clientUnpacker ClientUnpacker) schema.Cre
 
 		// TODO: probably need to wait here for the status to stabilize. (and in update)
 
-		d.Set("url", options["url"])
+		d.Set("url", options["Url"])
 
 		return nil
 	}
@@ -132,8 +132,8 @@ func ResourceConvoxSyslogUpdateFactory(clientUnpacker ClientUnpacker) schema.Upd
 		}
 
 		options := map[string]string{
-			"url":     formURLString(d),
-			"private": fmt.Sprintf("%v", d.Get("private")),
+			"Url":     formURLString(d),
+			"Private": fmt.Sprintf("%v", d.Get("private")),
 		}
 
 		_, err = c.UpdateResource(d.Get("name").(string), options)
@@ -141,7 +141,7 @@ func ResourceConvoxSyslogUpdateFactory(clientUnpacker ClientUnpacker) schema.Upd
 			return err
 		}
 
-		d.Set("url", options["url"])
+		d.Set("url", options["Url"])
 
 		return nil
 	}
