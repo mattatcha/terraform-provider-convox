@@ -88,14 +88,6 @@ func ResourceConvoxSyslogReadFactory(clientUnpacker ClientUnpacker) schema.ReadF
 	}
 
 	return func(d *schema.ResourceData, meta interface{}) error {
-		if d == nil {
-			panic("d is required")
-		}
-
-		if meta == nil {
-			panic("meta is required")
-		}
-
 		c, err := clientUnpacker(d, meta)
 		if err != nil {
 			return fmt.Errorf("Error getting client in ReadFunc: %s", err.Error())
@@ -121,14 +113,6 @@ func ResourceConvoxSyslogUpdateFactory(clientUnpacker ClientUnpacker) schema.Upd
 	}
 
 	return func(d *schema.ResourceData, meta interface{}) error {
-		if d == nil {
-			panic("d is required")
-		}
-
-		if meta == nil {
-			panic("meta is required")
-		}
-
 		c, err := clientUnpacker(d, meta)
 		if err != nil {
 			return fmt.Errorf("Error getting client in UpdateFunc: %s", err.Error())
@@ -159,14 +143,6 @@ func ResourceConvoxSyslogDeleteFactory(clientUnpacker ClientUnpacker) schema.Del
 	}
 
 	return func(d *schema.ResourceData, meta interface{}) error {
-		if d == nil {
-			panic("d is required")
-		}
-
-		if meta == nil {
-			panic("meta is required")
-		}
-
 		c, err := clientUnpacker(d, meta)
 		if err != nil {
 			return fmt.Errorf("Error getting client in DeleteFunc: %s", err.Error())
