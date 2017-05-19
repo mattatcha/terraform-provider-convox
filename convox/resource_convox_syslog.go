@@ -1,6 +1,7 @@
 package convox
 
 import (
+	"errors"
 	"fmt"
 	"log"
 
@@ -9,6 +10,7 @@ import (
 
 // ResourceConvoxSyslog describes the schema for a Convox Syslog Resource resource
 func ResourceConvoxSyslog(clientUnpacker ClientUnpacker) *schema.Resource {
+	log.Printf("ResourceConvoxSyslog - schema.Resource")
 	return &schema.Resource{
 		Schema: map[string]*schema.Schema{
 			"name": &schema.Schema{
@@ -53,12 +55,12 @@ func formURLString(d *schema.ResourceData) string {
 func ResourceConvoxSyslogCreateFactory(clientUnpacker ClientUnpacker) schema.CreateFunc {
 	log.Printf("ResourceConvoxSyslogCreateFactory")
 
-	if clientUnpacker == nil {
-		panic("clientUnpacker is required")
-	}
-
 	return func(d *schema.ResourceData, meta interface{}) error {
 		log.Printf("CreateFunc")
+
+		if clientUnpacker == nil {
+			return errors.New("clientUnpacker is required")
+		}
 
 		c, err := clientUnpacker(d, meta)
 		if err != nil {
@@ -90,11 +92,13 @@ func ResourceConvoxSyslogCreateFactory(clientUnpacker ClientUnpacker) schema.Cre
 
 // ResourceConvoxSyslogReadFactory builds the ReadFunc for the Convox Syslog Resource
 func ResourceConvoxSyslogReadFactory(clientUnpacker ClientUnpacker) schema.ReadFunc {
-	if clientUnpacker == nil {
-		panic("clientUnpacker is required")
-	}
-
 	return func(d *schema.ResourceData, meta interface{}) error {
+		log.Printf("ReadFunc")
+
+		if clientUnpacker == nil {
+			return errors.New("clientUnpacker is required")
+		}
+
 		c, err := clientUnpacker(d, meta)
 		if err != nil {
 			return fmt.Errorf("Error getting client in ReadFunc: %s", err.Error())
@@ -115,11 +119,13 @@ func ResourceConvoxSyslogReadFactory(clientUnpacker ClientUnpacker) schema.ReadF
 
 // ResourceConvoxSyslogUpdateFactory creates the UpdateFunc for the Convox Syslog Resource
 func ResourceConvoxSyslogUpdateFactory(clientUnpacker ClientUnpacker) schema.UpdateFunc {
-	if clientUnpacker == nil {
-		panic("clientUnpacker is required")
-	}
-
 	return func(d *schema.ResourceData, meta interface{}) error {
+		log.Printf("UpdateFunc")
+
+		if clientUnpacker == nil {
+			return errors.New("clientUnpacker is required")
+		}
+
 		c, err := clientUnpacker(d, meta)
 		if err != nil {
 			return fmt.Errorf("Error getting client in UpdateFunc: %s", err.Error())
@@ -148,11 +154,13 @@ func ResourceConvoxSyslogUpdateFactory(clientUnpacker ClientUnpacker) schema.Upd
 
 // ResourceConvoxSyslogDeleteFactory builds the DeleteFunc for thw Convox Syslog Resource
 func ResourceConvoxSyslogDeleteFactory(clientUnpacker ClientUnpacker) schema.DeleteFunc {
-	if clientUnpacker == nil {
-		panic("clientUnpacker is required")
-	}
-
 	return func(d *schema.ResourceData, meta interface{}) error {
+		log.Printf("DeleteFunc")
+
+		if clientUnpacker == nil {
+			return errors.New("clientUnpacker is required")
+		}
+
 		c, err := clientUnpacker(d, meta)
 		if err != nil {
 			return fmt.Errorf("Error getting client in DeleteFunc: %s", err.Error())
