@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"time"
 
+	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
 )
 
@@ -56,6 +58,16 @@ func formURLString(d *schema.ResourceData) string {
 	return fmt.Sprintf("%s://%s:%d", d.Get("scheme"), d.Get("hostname"), d.Get("port"))
 }
 
+func readResourceStateFunc(c Client, resourceName string) resource.StateRefreshFunc {
+	return func() (interface{}, string, error) {
+		resource, err := c.GetResource(resourceName)
+		if err != nil {
+			return resource, "", err
+		}
+		return resource, resource.Status, err
+	}
+}
+
 // ResourceConvoxSyslogCreateFactory builds the Convox Syslog CreateFunc
 func ResourceConvoxSyslogCreateFactory(clientUnpacker ClientUnpacker) schema.CreateFunc {
 	log.Printf("ResourceConvoxSyslogCreateFactory")
@@ -88,9 +100,20 @@ func ResourceConvoxSyslogCreateFactory(clientUnpacker ClientUnpacker) schema.Cre
 			return fmt.Errorf("Error calling CreateResource: %s -- %v", err.Error(), options)
 		}
 
-		d.SetId(name)
+		stateConf := &resource.StateChangeConf{
+			Pending: []string{"creating"},
+			Target:  []string{"running"},
+			Refresh: readResourceStateFunc(c, name),
+			Timeout: 10 * time.Minute,
+			Delay:   5 * time.Second,
+		}
 
-		// TODO: probably need to wait here for the status to stabilize. (and in update)
+		if _, err = stateConf.WaitForState(); err != nil {
+			return fmt.Errorf(
+				"Error waiting for resource (%s) to be created: %s", name, err)
+		}
+
+		d.SetId(name)
 
 		d.Set("url", options["Url"])
 
@@ -153,6 +176,19 @@ func ResourceConvoxSyslogUpdateFactory(clientUnpacker ClientUnpacker) schema.Upd
 		_, err = c.UpdateResource(name, options)
 		if err != nil {
 			return fmt.Errorf("Error calling UpdateResource: %s -- %v", err.Error(), options)
+		}
+
+		stateConf := &resource.StateChangeConf{
+			Pending: []string{"updating"},
+			Target:  []string{"running"},
+			Refresh: readResourceStateFunc(c, name),
+			Timeout: 10 * time.Minute,
+			Delay:   5 * time.Second,
+		}
+
+		if _, err = stateConf.WaitForState(); err != nil {
+			return fmt.Errorf(
+				"Error waiting for resource (%s) to be updated: %s", name, err)
 		}
 
 		d.Set("url", options["Url"])
