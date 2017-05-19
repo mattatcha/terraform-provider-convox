@@ -18,6 +18,11 @@ func ResourceConvoxSyslog(clientUnpacker ClientUnpacker) *schema.Resource {
 				Required: true,
 				ForceNew: true,
 			},
+			"rack": &schema.Schema{
+				Type:     schema.TypeString,
+				Required: true,
+				ForceNew: true,
+			},
 			"hostname": &schema.Schema{
 				Type:     schema.TypeString,
 				Required: true,
