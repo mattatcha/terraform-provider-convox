@@ -105,7 +105,7 @@ func ResourceConvoxSyslogCreateFactory(clientUnpacker ClientUnpacker) schema.Cre
 			Target:  []string{"running"},
 			Refresh: readResourceStateFunc(c, name),
 			Timeout: 10 * time.Minute,
-			Delay:   5 * time.Second,
+			Delay:   1 * time.Second,
 		}
 
 		if _, err = stateConf.WaitForState(); err != nil {
@@ -183,7 +183,7 @@ func ResourceConvoxSyslogUpdateFactory(clientUnpacker ClientUnpacker) schema.Upd
 			Target:  []string{"running"},
 			Refresh: readResourceStateFunc(c, name),
 			Timeout: 10 * time.Minute,
-			Delay:   5 * time.Second,
+			Delay:   1 * time.Second,
 		}
 
 		if _, err = stateConf.WaitForState(); err != nil {

@@ -19,6 +19,12 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 
 	BeforeEach(func() {
 		convoxClient.ResetNoop()
+		convoxClient.GetResourceFunc = func(name string) (*client.Resource, error) {
+			// for the wait for status
+			return &client.Resource{
+				Status: "running",
+			}, nil
+		}
 		resourceData = convox.ResourceConvoxSyslog(unpacker).Data(&terraform.InstanceState{
 			Attributes: map[string]string{
 				"name":     "test",
