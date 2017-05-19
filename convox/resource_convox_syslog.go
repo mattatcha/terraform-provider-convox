@@ -72,8 +72,9 @@ func ResourceConvoxSyslogCreateFactory(clientUnpacker ClientUnpacker) schema.Cre
 			return fmt.Errorf("Error unpacking client in CreateFunc: %s", err.Error())
 		}
 
+		name := d.Get("name").(string)
 		options := map[string]string{
-			"name": d.Get("name").(string),
+			"name": name,
 			"Url":  formURLString(d),
 		}
 
@@ -86,6 +87,8 @@ func ResourceConvoxSyslogCreateFactory(clientUnpacker ClientUnpacker) schema.Cre
 		if err != nil {
 			return fmt.Errorf("Error calling CreateResource: %s -- %v", err.Error(), options)
 		}
+
+		d.SetId(name)
 
 		// TODO: probably need to wait here for the status to stabilize. (and in update)
 
@@ -116,6 +119,7 @@ func ResourceConvoxSyslogReadFactory(clientUnpacker ClientUnpacker) schema.ReadF
 			return fmt.Errorf("Error calling GetResource: %s", err.Error())
 		}
 
+		d.SetId(name)
 		d.Set("url", convoxResource.Exports["URL"])
 
 		return nil
