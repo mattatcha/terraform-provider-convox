@@ -9,6 +9,7 @@ import (
 // ValueGetter gets values (from terraform schema)
 type ValueGetter interface {
 	Get(key string) interface{}
+	GetOk(key string) (interface{}, bool)
 }
 
 // ClientUnpacker unpacks the client provided in the meta-data object

@@ -17,7 +17,7 @@ import (
 const (
 	// DefaultHost is the default value for which Convox rack host to connect to
 	DefaultHost   = "console.convox.com"
-	clientVersion = "20160910125708"
+	clientVersion = "20170509022518"
 )
 
 // Provider returns a terraform.ResourceProvider.
@@ -104,7 +104,9 @@ func UnpackRackClient(d ValueGetter, meta interface{}) (Client, error) {
 		return nil, fmt.Errorf("Could not convert meta to rack Client: %#v", meta)
 	}
 
-	c.Rack = d.Get("rack").(string)
+	if v, ok := d.GetOk("rack"); ok {
+		c.Rack = v.(string)
+	}
 
 	return c, nil
 }
