@@ -13,6 +13,9 @@ type MockClient struct {
 	CreateResourceFunc func(kind string, options map[string]string) (*client.Resource, error)
 	UpdateResourceFunc func(name string, options map[string]string) (*client.Resource, error)
 	DeleteResourceFunc func(name string) (*client.Resource, error)
+
+	CreateLinkFunc func(app string, name string) (*client.Resource, error)
+	DeleteLinkFunc func(app string, name string) (*client.Resource, error)
 }
 
 func (m *MockClient) ResetNoop() {
@@ -33,6 +36,14 @@ func (m *MockClient) ResetNoop() {
 	}
 
 	m.DeleteResourceFunc = func(name string) (*client.Resource, error) {
+		return nil, nil
+	}
+
+	m.CreateLinkFunc = func(name string, app string) (*client.Resource, error) {
+		return nil, nil
+	}
+
+	m.DeleteLinkFunc = func(name string, app string) (*client.Resource, error) {
 		return nil, nil
 	}
 }
@@ -83,4 +94,12 @@ func (m *MockClient) UpdateResource(name string, options map[string]string) (*cl
 
 func (m *MockClient) DeleteResource(name string) (*client.Resource, error) {
 	return m.DeleteResourceFunc(name)
+}
+
+func (m *MockClient) CreateLink(app string, name string) (*client.Resource, error) {
+	return m.CreateLinkFunc(app, name)
+}
+
+func (m *MockClient) DeleteLink(app string, name string) (*client.Resource, error) {
+	return m.DeleteLinkFunc(app, name)
 }
