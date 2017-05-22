@@ -59,7 +59,7 @@ func ResourceConvoxResourceLinkCreateFactory(clientUnpacker ClientUnpacker) sche
 			Target:  []string{"running"},
 			Refresh: readResourceStateFunc(c, resourceName),
 			Timeout: 10 * time.Minute,
-			Delay:   1 * time.Second,
+			Delay:   5 * time.Second,
 		}
 
 		if _, err = stateConf.WaitForState(); err != nil {
@@ -97,7 +97,7 @@ func ResourceConvoxResourceLinkDeleteFactory(clientUnpacker ClientUnpacker) sche
 			Target:  []string{"running"},
 			Refresh: readResourceStateFunc(c, resourceName),
 			Timeout: 10 * time.Minute,
-			Delay:   1 * time.Second,
+			Delay:   5 * time.Second,
 		}
 
 		if _, err = stateConf.WaitForState(); err != nil {
