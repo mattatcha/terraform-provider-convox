@@ -55,7 +55,7 @@ var _ = Describe("ResourceConvoxResourceLink", func() {
 			BeforeEach(func() {
 				calledResourceName = ""
 				calledAppName = ""
-				convoxClient.CreateLinkFunc = func(resource string, app string) (*client.Resource, error) {
+				convoxClient.CreateLinkFunc = func(app string, resource string) (*client.Resource, error) {
 					calledResourceName = resource
 					calledAppName = app
 
@@ -93,7 +93,7 @@ var _ = Describe("ResourceConvoxResourceLink", func() {
 			BeforeEach(func() {
 				calledResourceName = ""
 				calledAppName = ""
-				convoxClient.DeleteLinkFunc = func(resource string, app string) (*client.Resource, error) {
+				convoxClient.DeleteLinkFunc = func(app string, resource string) (*client.Resource, error) {
 					calledResourceName = resource
 					calledAppName = app
 

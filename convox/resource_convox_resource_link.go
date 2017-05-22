@@ -49,9 +49,9 @@ func ResourceConvoxResourceLinkCreateFactory(clientUnpacker ClientUnpacker) sche
 		resourceName := d.Get("resource_name").(string)
 		app := d.Get("app_name").(string)
 
-		_, err = c.CreateLink(resourceName, app)
+		_, err = c.CreateLink(app, resourceName)
 		if err != nil {
-			return fmt.Errorf("Error calling CreateLink(%s, %s): %s", resourceName, app, err.Error())
+			return fmt.Errorf("Error calling CreateLink(%s, %s): %s", app, resourceName, err.Error())
 		}
 
 		stateConf := &resource.StateChangeConf{
@@ -87,9 +87,9 @@ func ResourceConvoxResourceLinkDeleteFactory(clientUnpacker ClientUnpacker) sche
 		resourceName := d.Get("resource_name").(string)
 		app := d.Get("app_name").(string)
 
-		_, err = c.DeleteLink(resourceName, app)
+		_, err = c.DeleteLink(app, resourceName)
 		if err != nil {
-			return fmt.Errorf("Error calling DeleteLink(%s, %s): %s", resourceName, app, err.Error())
+			return fmt.Errorf("Error calling DeleteLink(%s, %s): %s", app, resourceName, err.Error())
 		}
 
 		stateConf := &resource.StateChangeConf{

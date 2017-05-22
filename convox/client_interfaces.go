@@ -34,6 +34,6 @@ type Client interface {
 	UpdateResource(name string, options map[string]string) (*client.Resource, error)
 	DeleteResource(name string) (*client.Resource, error)
 
-	CreateLink(app string, name string) (*client.Resource, error)
-	DeleteLink(app string, name string) (*client.Resource, error)
+	CreateLink(app, resourceName string) (*client.Resource, error)
+	DeleteLink(app, resourceName string) (*client.Resource, error)
 }
