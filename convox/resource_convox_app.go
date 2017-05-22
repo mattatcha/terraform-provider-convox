@@ -121,11 +121,14 @@ func ResourceConvoxAppReadFactory(clientUnpacker ClientUnpacker) schema.ReadFunc
 		if err != nil {
 			return fmt.Errorf("Error calling ListParameters(%s): %s", app.Name, err.Error())
 		}
-		d.Set("params", params)
+		err = d.Set("params", params)
+		if err != nil {
+			return errwrap.Wrapf("Error while setting params: {{err}}", err)
+		}
 
 		env, err := c.GetEnvironment(app.Name)
 		if err != nil {
-			return err
+			return fmt.Errorf("Error calling GetEnvironment(%s): %s", app.Name, err.Error())
 		}
 		d.Set("environment", env)
 

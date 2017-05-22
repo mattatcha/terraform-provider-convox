@@ -51,6 +51,8 @@ func ResourceConvoxResourceLinkCreateFactory(clientUnpacker ClientUnpacker) sche
 			return fmt.Errorf("Error calling CreateLink(%s, %s): %s", resource, app, err.Error())
 		}
 
+		d.SetId(fmt.Sprintf("%s-%s", resource, app))
+
 		return nil
 	}
 }
@@ -61,9 +63,17 @@ func ResourceConvoxResourceLinkDeleteFactory(clientUnpacker ClientUnpacker) sche
 			return errors.New("clientUnpacker is required")
 		}
 
-		_, err := clientUnpacker(d, meta)
+		c, err := clientUnpacker(d, meta)
 		if err != nil {
-			return fmt.Errorf("Error unpacking client in CreateFunc: %s", err.Error())
+			return fmt.Errorf("Error unpacking client in DeleteFunc: %s", err.Error())
+		}
+
+		resource := d.Get("resource_name").(string)
+		app := d.Get("app_name").(string)
+
+		_, err = c.DeleteLink(resource, app)
+		if err != nil {
+			return fmt.Errorf("Error calling DeleteLink(%s, %s): %s", resource, app, err.Error())
 		}
 
 		return nil

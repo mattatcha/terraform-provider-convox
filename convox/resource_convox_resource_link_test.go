@@ -20,7 +20,7 @@ var _ = Describe("ResourceConvoxResourceLink", func() {
 
 	BeforeEach(func() {
 		convoxClient.ResetNoop()
-		resourceData = convox.ResourceConvoxSyslog(unpacker).Data(&terraform.InstanceState{
+		resourceData = convox.ResourceConvoxResourceLink(unpacker).Data(&terraform.InstanceState{
 			Attributes: map[string]string{
 				"rack":          "test",
 				"app_name":      "test_app",
@@ -67,7 +67,43 @@ var _ = Describe("ResourceConvoxResourceLink", func() {
 				Expect(calledAppName).To(Equal("test_app"))
 			})
 		})
-
 	})
 
+	Describe("DeleteFunc", func() {
+		var cut schema.DeleteFunc
+
+		BeforeEach(func() {
+			cut = convox.ResourceConvoxResourceLinkDeleteFactory(unpacker)
+		})
+
+		It("should create the func", func() {
+			Expect(cut).ToNot(BeNil())
+		})
+
+		Describe("deleting the resource", func() {
+			var calledResourceName string
+			var calledAppName string
+
+			BeforeEach(func() {
+				calledResourceName = ""
+				calledAppName = ""
+				convoxClient.DeleteLinkFunc = func(resource string, app string) (*client.Resource, error) {
+					calledResourceName = resource
+					calledAppName = app
+
+					return nil, nil
+				}
+
+				Expect(cut(resourceData, "")).To(BeNil())
+			})
+
+			It("should call delete with the specified resource name", func() {
+				Expect(calledResourceName).To(Equal("test_resource"))
+			})
+
+			It("should call delete with the specified app name", func() {
+				Expect(calledAppName).To(Equal("test_app"))
+			})
+		})
+	})
 })
