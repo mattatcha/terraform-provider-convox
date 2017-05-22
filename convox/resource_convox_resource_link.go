@@ -3,6 +3,7 @@ package convox
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/terraform/helper/resource"
@@ -35,8 +36,8 @@ func ResourceConvoxResourceLink(clientUnpacker ClientUnpacker) *schema.Resource 
 }
 
 func ResourceConvoxResourceLinkCreateFactory(clientUnpacker ClientUnpacker) schema.CreateFunc {
-
-	return func(d *schema.ResourceData, meta interface{}) error {
+	var createFunc schema.CreateFunc
+	createFunc = func(d *schema.ResourceData, meta interface{}) error {
 		if clientUnpacker == nil {
 			return errors.New("clientUnpacker is required")
 		}
@@ -51,18 +52,17 @@ func ResourceConvoxResourceLinkCreateFactory(clientUnpacker ClientUnpacker) sche
 
 		_, err = c.CreateLink(app, resourceName)
 		if err != nil {
+			if strings.Contains(err.Error(), "UPDATE_IN_PROGRESS") {
+				if err := waitForRunning(c, resourceName); err != nil {
+					return fmt.Errorf(
+						"Error waiting for resource link API to become available: %s", err)
+				}
+				return createFunc(d, meta)
+			}
 			return fmt.Errorf("Error calling CreateLink(%s, %s): %s", app, resourceName, err.Error())
 		}
 
-		stateConf := &resource.StateChangeConf{
-			Pending: []string{"updating"},
-			Target:  []string{"running"},
-			Refresh: readResourceStateFunc(c, resourceName),
-			Timeout: 10 * time.Minute,
-			Delay:   5 * time.Second,
-		}
-
-		if _, err = stateConf.WaitForState(); err != nil {
+		if err := waitForRunning(c, resourceName); err != nil {
 			return fmt.Errorf(
 				"Error waiting for resource link to be created: %s", err)
 		}
@@ -71,6 +71,8 @@ func ResourceConvoxResourceLinkCreateFactory(clientUnpacker ClientUnpacker) sche
 
 		return nil
 	}
+
+	return createFunc
 }
 
 func ResourceConvoxResourceLinkDeleteFactory(clientUnpacker ClientUnpacker) schema.DeleteFunc {
@@ -92,21 +94,29 @@ func ResourceConvoxResourceLinkDeleteFactory(clientUnpacker ClientUnpacker) sche
 			return fmt.Errorf("Error calling DeleteLink(%s, %s): %s", app, resourceName, err.Error())
 		}
 
-		stateConf := &resource.StateChangeConf{
-			Pending: []string{"updating"},
-			Target:  []string{"running"},
-			Refresh: readResourceStateFunc(c, resourceName),
-			Timeout: 10 * time.Minute,
-			Delay:   5 * time.Second,
-		}
-
-		if _, err = stateConf.WaitForState(); err != nil {
+		if err := waitForRunning(c, resourceName); err != nil {
 			return fmt.Errorf(
 				"Error waiting for resource link to be deleted: %s", err)
 		}
 
 		return nil
 	}
+}
+
+func waitForRunning(c Client, resourceName string) error {
+	stateConf := &resource.StateChangeConf{
+		Pending: []string{"updating"},
+		Target:  []string{"running"},
+		Refresh: readResourceStateFunc(c, resourceName),
+		Timeout: 10 * time.Minute,
+		Delay:   5 * time.Second,
+	}
+
+	if _, err := stateConf.WaitForState(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func ResourceConvoxResourceLinkReadFactory(clientUnpacker ClientUnpacker) schema.ReadFunc {
