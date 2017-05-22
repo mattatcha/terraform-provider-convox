@@ -107,11 +107,6 @@ func ResourceConvoxAppReadFactory(clientUnpacker ClientUnpacker) schema.ReadFunc
 		}
 		d.SetId(app.Name)
 
-		err = d.Set("release", app.Release)
-		if err != nil {
-			return fmt.Errorf("Error setting the release key: %s", err.Error())
-		}
-
 		err = d.Set("status", app.Status)
 		if err != nil {
 			return fmt.Errorf("Error setting the status key: %s", err.Error())
