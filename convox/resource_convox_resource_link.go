@@ -26,6 +26,7 @@ func ResourceConvoxResourceLink(clientUnpacker ClientUnpacker) *schema.Resource 
 				ForceNew: true,
 			},
 		},
+		Read:   ResourceConvoxResourceLinkReadFactory(clientUnpacker),
 		Create: ResourceConvoxResourceLinkCreateFactory(clientUnpacker),
 		Delete: ResourceConvoxResourceLinkDeleteFactory(clientUnpacker),
 	}
@@ -75,6 +76,17 @@ func ResourceConvoxResourceLinkDeleteFactory(clientUnpacker ClientUnpacker) sche
 		if err != nil {
 			return fmt.Errorf("Error calling DeleteLink(%s, %s): %s", resource, app, err.Error())
 		}
+
+		return nil
+	}
+}
+
+func ResourceConvoxResourceLinkReadFactory(clientUnpacker ClientUnpacker) schema.ReadFunc {
+	return func(d *schema.ResourceData, meta interface{}) error {
+		resource := d.Get("resource_name").(string)
+		app := d.Get("app_name").(string)
+
+		d.SetId(fmt.Sprintf("%s-%s", resource, app))
 
 		return nil
 	}
