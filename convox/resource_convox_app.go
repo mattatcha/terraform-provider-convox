@@ -60,14 +60,14 @@ func ResourceConvoxAppCreateFactory(clientUnpacker ClientUnpacker) schema.Create
 	return func(d *schema.ResourceData, meta interface{}) error {
 		c, err := clientUnpacker(d, meta)
 		if err != nil {
-			return err
+			return errwrap.Wrapf("Error unpacking Convox client in App CreateFunc: {{err}}", err)
 		}
 
 		name := d.Get("name").(string)
 		app, err := c.CreateApp(name)
 		if err != nil {
-			return fmt.Errorf(
-				"Error creating app (%s): %s", name, err)
+			return errwrap.Wrapf(fmt.Sprintf(
+				"Error creating app (%s): {{err}}", name), err)
 		}
 
 		d.SetId(app.Name)
@@ -80,8 +80,7 @@ func ResourceConvoxAppCreateFactory(clientUnpacker ClientUnpacker) schema.Create
 		}
 
 		if _, err = stateConf.WaitForState(); err != nil {
-			return fmt.Errorf(
-				"Error waiting for app (%s) to be created: %s", app.Name, err)
+			return errwrap.Wrapf(fmt.Sprintf("Error waiting for app (%s) to be created: {{err}}", app.Name), err)
 		}
 
 		// and then run update to set it up
@@ -98,7 +97,7 @@ func ResourceConvoxAppReadFactory(clientUnpacker ClientUnpacker) schema.ReadFunc
 	return func(d *schema.ResourceData, meta interface{}) error {
 		c, err := clientUnpacker(d, meta)
 		if err != nil {
-			return err
+			return errwrap.Wrapf("Error unpacking Convox client in App ReadFunc: {{err}}", err)
 		}
 
 		app, err := c.GetApp(d.Get("name").(string))
@@ -146,7 +145,7 @@ func ResourceConvoxAppUpdateFactory(clientUnpacker ClientUnpacker) schema.Update
 
 		c, err := clientUnpacker(d, meta)
 		if err != nil {
-			return err
+			return errwrap.Wrapf("Error unpacking Convox client in App UpdateFunc: {{err}}", err)
 		}
 
 		if err := setParams(c, d); err != nil {
@@ -174,7 +173,7 @@ func ResourceConvoxAppDeleteFactory(clientUnpacker ClientUnpacker) schema.Delete
 	return func(d *schema.ResourceData, meta interface{}) error {
 		c, err := clientUnpacker(d, meta)
 		if err != nil {
-			return err
+			return errwrap.Wrapf("Error unpacking Convox client in App DeleteFunc: {{err}}", err)
 		}
 		_, err = c.DeleteApp(d.Id())
 		return err
@@ -207,7 +206,7 @@ func setParams(c Client, d *schema.ResourceData) error {
 	}
 
 	if err := c.SetParameters(d.Id(), params); err != nil {
-		return fmt.Errorf("Error setting params (%#v) for %s: %s", params, d.Id(), err)
+		return errwrap.Wrapf(fmt.Sprintf("Error setting params (%#v) for %s: {{err}}", params, d.Id()), err)
 	}
 
 	return nil
