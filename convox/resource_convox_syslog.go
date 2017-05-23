@@ -34,8 +34,9 @@ func ResourceConvoxSyslog(clientUnpacker ClientUnpacker) *schema.Resource {
 				Required: true,
 			},
 			"scheme": &schema.Schema{
-				Type:     schema.TypeString,
-				Required: true,
+				Type:         schema.TypeString,
+				Required:     true,
+				ValidateFunc: validateScheme,
 			},
 			"private": &schema.Schema{
 				Type:     schema.TypeBool,
@@ -52,6 +53,15 @@ func ResourceConvoxSyslog(clientUnpacker ClientUnpacker) *schema.Resource {
 		Update: ResourceConvoxSyslogUpdateFactory(clientUnpacker),
 		Delete: ResourceConvoxSyslogDeleteFactory(clientUnpacker),
 	}
+}
+
+func validateScheme(value interface{}, key string) (warnings []string, errors []error) {
+	v := value.(string)
+	if v != "tcp" && v != "tcp+tls" {
+		errors = []error{fmt.Errorf("`scheme` must be either 'tcp' or 'tcp+tls'")}
+	}
+
+	return
 }
 
 func formURLString(d *schema.ResourceData) string {
