@@ -15,8 +15,9 @@ import (
 )
 
 const (
+	// DefaultHost is the default value for which Convox rack host to connect to
 	DefaultHost   = "console.convox.com"
-	clientVersion = "20160910125708"
+	clientVersion = "20170509022518"
 )
 
 // Provider returns a terraform.ResourceProvider.
@@ -43,11 +44,11 @@ func Provider() terraform.ResourceProvider {
 				DefaultFunc: configDefaultFunc(),
 			},
 		},
-		DataSourcesMap: map[string]*schema.Resource{
-		// "convox_rack": dataSourceConvoxRack(),
-		},
+		DataSourcesMap: map[string]*schema.Resource{},
 		ResourcesMap: map[string]*schema.Resource{
-			"convox_app": resourceConvoxApp(),
+			"convox_app":           ResourceConvoxApp(UnpackRackClient),
+			"convox_syslog":        ResourceConvoxSyslog(UnpackRackClient),
+			"convox_resource_link": ResourceConvoxResourceLink(UnpackRackClient),
 		},
 		ConfigureFunc: providerConfigure,
 	}
@@ -59,7 +60,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	c := client.New(host, pass, clientVersion)
 	if host == DefaultHost {
 		// c.Auth() only works for DefaultHost?
-		if err := c.Auth(); err != nil {
+		if _, err := c.Auth(); err != nil {
 			return nil, fmt.Errorf("Error authenticating with convox host (%s): %s, %s", host, err, pass)
 		}
 	}
@@ -93,10 +94,22 @@ func configDefaultFunc() schema.SchemaDefaultFunc {
 	}
 }
 
-func RackClient(d *schema.ResourceData, meta interface{}) *client.Client {
+// UnpackRackClient casts the meta as a convox Client and specifies the rack from schema
+func UnpackRackClient(d ValueGetter, meta interface{}) (Client, error) {
+	if meta == nil {
+		return nil, fmt.Errorf("meta is nil")
+	}
+
 	c := meta.(*client.Client)
-	c.Rack = d.Get("rack").(string)
-	return c
+	if c == nil {
+		return nil, fmt.Errorf("Could not convert meta to rack Client: %#v", meta)
+	}
+
+	if v, ok := d.GetOk("rack"); ok {
+		c.Rack = v.(string)
+	}
+
+	return c, nil
 }
 
 func getHost(d *schema.ResourceData) string {

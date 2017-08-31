@@ -7,7 +7,7 @@ The Convox provider is used to interact with Convox-managed apps.
 ```
 provider "convox" {
     host     = "console.convox.com"
-        password = "${var.convox_password}"
+    password = "${var.convox_password}"
 }
 ```
 

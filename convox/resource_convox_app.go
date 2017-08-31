@@ -12,7 +12,8 @@ import (
 	"github.com/hashicorp/terraform/helper/schema"
 )
 
-func resourceConvoxApp() *schema.Resource {
+// ResourceConvoxApp returns the Resource schema describing a Convox App
+func ResourceConvoxApp(clientUnpacker ClientUnpacker) *schema.Resource {
 	return &schema.Resource{
 		Schema: map[string]*schema.Schema{
 			"rack": &schema.Schema{
@@ -43,98 +44,145 @@ func resourceConvoxApp() *schema.Resource {
 				Computed: true,
 			},
 		},
-		Create: resourceConvoxAppCreate,
-		Read:   resourceConvoxAppRead,
-		Update: resourceConvoxAppUpdate,
-		Delete: resourceConvoxAppDelete,
+		Create: ResourceConvoxAppCreateFactory(clientUnpacker),
+		Read:   ResourceConvoxAppReadFactory(clientUnpacker),
+		Update: ResourceConvoxAppUpdateFactory(clientUnpacker),
+		Delete: ResourceConvoxAppDeleteFactory(clientUnpacker),
 	}
 }
 
-func resourceConvoxAppCreate(d *schema.ResourceData, meta interface{}) error {
-	c := RackClient(d, meta)
-	if c == nil {
-		return fmt.Errorf("Error rack client is nil: %#v", meta)
+// ResourceConvoxAppCreateFactory builds the resource CreateFunc for a Convox App resource
+func ResourceConvoxAppCreateFactory(clientUnpacker ClientUnpacker) schema.CreateFunc {
+	if clientUnpacker == nil {
+		panic("clientUnpacker is required")
 	}
 
-	name := d.Get("name").(string)
-	app, err := c.CreateApp(name)
-	if err != nil {
-		return fmt.Errorf(
-			"Error creating app (%s): %s", name, err)
-	}
+	return func(d *schema.ResourceData, meta interface{}) error {
+		c, err := clientUnpacker(d, meta)
+		if err != nil {
+			return errwrap.Wrapf("Error unpacking Convox client in App CreateFunc: {{err}}", err)
+		}
 
-	d.SetId(app.Name)
-	stateConf := &resource.StateChangeConf{
-		Pending: []string{"creating"},
-		Target:  []string{"running"},
-		Refresh: appRefreshFunc(c, app.Name),
-		Timeout: 10 * time.Minute,
-		Delay:   25 * time.Second,
-	}
+		name := d.Get("name").(string)
+		app, err := c.CreateApp(name)
+		if err != nil {
+			return errwrap.Wrapf(fmt.Sprintf(
+				"Error creating app (%s): {{err}}", name), err)
+		}
 
-	if _, err = stateConf.WaitForState(); err != nil {
-		return fmt.Errorf(
-			"Error waiting for app (%s) to be created: %s", app.Name, err)
+		d.SetId(app.Name)
+		stateConf := &resource.StateChangeConf{
+			Pending: []string{"creating"},
+			Target:  []string{"running"},
+			Refresh: appRefreshFunc(c, app.Name),
+			Timeout: 10 * time.Minute,
+			Delay:   25 * time.Second,
+		}
+
+		if _, err = stateConf.WaitForState(); err != nil {
+			return errwrap.Wrapf(fmt.Sprintf("Error waiting for app (%s) to be created: {{err}}", app.Name), err)
+		}
+
+		// and then run update to set it up
+		return ResourceConvoxAppUpdateFactory(clientUnpacker)(d, meta)
 	}
-	return resourceConvoxAppUpdate(d, meta)
 }
 
-func resourceConvoxAppRead(d *schema.ResourceData, meta interface{}) error {
-	c := RackClient(d, meta)
-	app, err := c.GetApp(d.Get("name").(string))
-	if err != nil {
-		return err
+// ResourceConvoxAppReadFactory create the ReadFunc for a Convox App resource
+func ResourceConvoxAppReadFactory(clientUnpacker ClientUnpacker) schema.ReadFunc {
+	if clientUnpacker == nil {
+		panic("clientUnpacker is required")
 	}
-	d.SetId(app.Name)
-	d.Set("release", app.Release)
-	d.Set("status", app.Status)
 
-	params, err := c.ListParameters(app.Name)
-	if err != nil {
-		return err
-	}
-	d.Set("params", params)
+	return func(d *schema.ResourceData, meta interface{}) error {
+		c, err := clientUnpacker(d, meta)
+		if err != nil {
+			return errwrap.Wrapf("Error unpacking Convox client in App ReadFunc: {{err}}", err)
+		}
 
-	env, err := c.GetEnvironment(app.Name)
-	if err != nil {
-		return err
-	}
-	d.Set("environment", env)
+		app, err := c.GetApp(d.Get("name").(string))
+		if err != nil {
+			return err
+		}
+		d.SetId(app.Name)
 
-	formation, err := c.ListFormation(app.Name)
-	if err != nil {
-		return errwrap.Wrapf("Error while reading formation from Convox API: {{err}}", err)
+		err = d.Set("status", app.Status)
+		if err != nil {
+			return fmt.Errorf("Error setting the status key: %s", err.Error())
+		}
+
+		params, err := c.ListParameters(app.Name)
+		if err != nil {
+			return fmt.Errorf("Error calling ListParameters(%s): %s", app.Name, err.Error())
+		}
+		err = d.Set("params", params)
+		if err != nil {
+			return errwrap.Wrapf("Error while setting params: {{err}}", err)
+		}
+
+		env, err := c.GetEnvironment(app.Name)
+		if err != nil {
+			return fmt.Errorf("Error calling GetEnvironment(%s): %s", app.Name, err.Error())
+		}
+		d.Set("environment", env)
+
+		formation, err := c.ListFormation(app.Name)
+		if err != nil {
+			return errwrap.Wrapf("Error while reading formation from Convox API: {{err}}", err)
+		}
+		return readFormation(d, formation)
 	}
-	return readFormation(d, formation)
 }
 
-func resourceConvoxAppUpdate(d *schema.ResourceData, meta interface{}) error {
-	d.Partial(true)
-	c := RackClient(d, meta)
-	if err := setParams(c, d); err != nil {
-		return err
+// ResourceConvoxAppUpdateFactory builds the UpdateFunc for a Convox App resource
+func ResourceConvoxAppUpdateFactory(clientUnpacker ClientUnpacker) schema.UpdateFunc {
+	if clientUnpacker == nil {
+		panic("clientUnpacker is required")
 	}
-	d.SetPartial("params")
 
-	if err := setEnv(c, d); err != nil {
-		return err
+	return func(d *schema.ResourceData, meta interface{}) error {
+		d.Partial(true)
+
+		c, err := clientUnpacker(d, meta)
+		if err != nil {
+			return errwrap.Wrapf("Error unpacking Convox client in App UpdateFunc: {{err}}", err)
+		}
+
+		if err := setParams(c, d); err != nil {
+			return err
+		}
+		d.SetPartial("params")
+
+		if err := setEnv(c, d); err != nil {
+			return err
+		}
+		d.SetPartial("environment")
+
+		d.Partial(false)
+
+		return ResourceConvoxAppReadFactory(clientUnpacker)(d, meta)
 	}
-	d.SetPartial("environment")
-
-	d.Partial(false)
-	return resourceConvoxAppRead(d, meta)
 }
 
-func resourceConvoxAppDelete(d *schema.ResourceData, meta interface{}) error {
-	c := RackClient(d, meta)
-	_, err := c.DeleteApp(d.Id())
-	return err
+// ResourceConvoxAppDeleteFactory builds the DeleteFunc for a Convox App resource
+func ResourceConvoxAppDeleteFactory(clientUnpacker ClientUnpacker) schema.DeleteFunc {
+	if clientUnpacker == nil {
+		panic("clientUnpacker is required")
+	}
+
+	return func(d *schema.ResourceData, meta interface{}) error {
+		c, err := clientUnpacker(d, meta)
+		if err != nil {
+			return errwrap.Wrapf("Error unpacking Convox client in App DeleteFunc: {{err}}", err)
+		}
+		_, err = c.DeleteApp(d.Id())
+		return err
+	}
 }
 
 func readFormation(d *schema.ResourceData, v client.Formation) error {
 	balancers := make(map[string]string, len(v))
 
-	// endpoints := []map[string]interface{}{}
 	for _, f := range v {
 		balancers[f.Name] = f.Balancer
 	}
@@ -146,7 +194,7 @@ func readFormation(d *schema.ResourceData, v client.Formation) error {
 	return nil
 }
 
-func setParams(c *client.Client, d *schema.ResourceData) error {
+func setParams(c Client, d *schema.ResourceData) error {
 	if !d.HasChange("params") {
 		return nil
 	}
@@ -157,21 +205,19 @@ func setParams(c *client.Client, d *schema.ResourceData) error {
 		params[key] = raw[key].(string)
 	}
 
-	log.Printf("[DEBUG] Setting params: (%#v) for %s", params, d.Id())
 	if err := c.SetParameters(d.Id(), params); err != nil {
-		return fmt.Errorf("Error setting params (%#v) for %s: %s", params, d.Id(), err)
+		return errwrap.Wrapf(fmt.Sprintf("Error setting params (%#v) for %s: {{err}}", params, d.Id()), err)
 	}
 
 	return nil
 }
 
-func setEnv(c *client.Client, d *schema.ResourceData) error {
+func setEnv(c Client, d *schema.ResourceData) error {
 	if !d.HasChange("environment") {
 		return nil
 	}
 
 	env := d.Get("environment").(map[string]interface{})
-	log.Printf("[DEBUG] Setting environment to (%#v) for %s", env, d.Id())
 	data := ""
 	for key, value := range env {
 		data += fmt.Sprintf("%s=%s\n", key, value)
@@ -185,9 +231,9 @@ func setEnv(c *client.Client, d *schema.ResourceData) error {
 	return nil
 }
 
-func appRefreshFunc(c *client.Client, app string) resource.StateRefreshFunc {
+func appRefreshFunc(client Client, name string) resource.StateRefreshFunc {
 	return func() (interface{}, string, error) {
-		app, err := c.GetApp(app)
+		app, err := client.GetApp(name)
 		if err != nil {
 			return app, "", err
 		}

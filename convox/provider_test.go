@@ -1,13 +1,27 @@
-package convox
+package convox_test
 
 import (
-	"testing"
-
 	"github.com/hashicorp/terraform/helper/schema"
+	"github.com/hashicorp/terraform/terraform"
+	"github.com/mattaitchison/terraform-provider-convox/convox"
+
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
 )
 
-func TestProvider(t *testing.T) {
-	if err := Provider().(*schema.Provider).InternalValidate(); err != nil {
-		t.Fatalf("err: %s", err)
-	}
-}
+var _ = Describe("Provider", func() {
+	var provider terraform.ResourceProvider
+
+	BeforeEach(func() {
+		provider = convox.Provider()
+	})
+
+	It("should make one", func() {
+		Expect(provider).ToNot(BeNil())
+	})
+
+	It("should be valid", func() {
+		err := provider.(*schema.Provider).InternalValidate()
+		Expect(err).To(BeNil())
+	})
+})

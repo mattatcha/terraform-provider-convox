@@ -7,11 +7,11 @@ The `convox_app` resource defines a Convox App and provides access to its endpoi
 ```
 resource "convox_app" "test-app" {
     name = "test-app"
-        rack = "foo"
+    rack = "foo"
 
-        params {
-            Internal = false
-        }
+    params {
+        Internal = false
+    }
 
     environment {
         Foo    = "bar"
