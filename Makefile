@@ -20,7 +20,6 @@ install: $(BUILD_DIR)/$(GOOS)_$(GOARCH)/$(NAME)
 	install -m 755 $< $(DESTDIR)$(bindir)/$(NAME)
 
 deps:
-	go get -u github.com/Masterminds/glide
 	go get -u github.com/mitchellh/gox
 	go get -u github.com/github/hub
 	glide install
