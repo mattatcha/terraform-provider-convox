@@ -1,5 +1,5 @@
 hash: 126952bcb373e86b8a94fc596fd3e46006cba01cad38ae4968098c18380c9ed5
-updated: 2017-08-31T18:39:17.934895907-04:00
+updated: 2017-08-31T21:18:05.465200158-04:00
 imports:
 - name: github.com/apparentlymart/go-cidr
   version: 7e4b007599d4e2076d9a81be723b3912852dda2c
@@ -263,10 +263,6 @@ imports:
   subpackages:
   - unix
 testImports:
-- name: github.com/mattaitchison/terraform-provider-convox
-  version: dc4ea829c4f823ae8bc74c72b17d375376416819
-  subpackages:
-  - convox
 - name: golang.org/x/text
   version: 19e51611da83d6be54ddafce4a4af510cb3e9ea4
   subpackages:
