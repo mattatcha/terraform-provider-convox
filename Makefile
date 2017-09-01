@@ -22,7 +22,6 @@ install: $(BUILD_DIR)/$(GOOS)_$(GOARCH)/$(NAME)
 deps:
 	go get -u github.com/mitchellh/gox
 	go get -u github.com/github/hub
-	glide install
 
 #$(addsuffix /$(NAME), $(addprefix $(BUILD_DIR)/, $(subst /,_,$(XC_OSARCH)))): $(BUILD_DIR)/%/$(NAME):
 	#$*
