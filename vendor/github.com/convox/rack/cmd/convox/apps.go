@@ -33,6 +33,10 @@ func init() {
 				Action:      cmdAppCreate,
 				Flags: []cli.Flag{
 					rackFlag,
+					cli.StringFlag{
+						Name:  "generation, g",
+						Usage: "generation of app to create",
+					},
 					cli.BoolFlag{
 						Name:   "wait",
 						EnvVar: "CONVOX_WAIT",
@@ -86,14 +90,14 @@ func cmdApps(c *cli.Context) error {
 	}
 
 	if len(apps) == 0 {
-		stdcli.Writef("no apps found, try creating one via `convox apps create`")
+		stdcli.Writef("no apps found, try creating one via `convox apps create`\n")
 		return nil
 	}
 
-	t := stdcli.NewTable("APP", "STATUS")
+	t := stdcli.NewTable("APP", "GEN", "STATUS")
 
 	for _, app := range apps {
-		t.AddRow(app.Name, app.Status)
+		t.AddRow(app.Name, app.Generation, app.Status)
 	}
 
 	t.Print()
@@ -142,9 +146,11 @@ func cmdAppCreate(c *cli.Context) error {
 		return stdcli.Error(fmt.Errorf("must specify an app name"))
 	}
 
+	generation := c.String("generation")
+
 	stdcli.Startf("Creating app <app>%s</app>", app)
 
-	_, err = rackClient(c).CreateApp(app)
+	_, err = rackClient(c).CreateApp(app, generation)
 	if err != nil {
 		return stdcli.Error(err)
 	}
@@ -224,8 +230,9 @@ func cmdAppInfo(c *cli.Context) error {
 	info.Add("Name", a.Name)
 	info.Add("Status", a.Status)
 	info.Add("Release", stdcli.Default(a.Release, "(none)"))
+	info.Add("Generation", a.Generation)
 	info.Add("Processes", stdcli.Default(strings.Join(ps, " "), "(none)"))
-	info.Add("Endpoints", strings.Join(endpoints, "\n           "))
+	info.Add("Endpoints", strings.Join(endpoints, "\n            "))
 
 	info.Print()
 

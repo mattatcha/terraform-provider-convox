@@ -128,7 +128,6 @@ func cmdLogin(c *cli.Context) error {
 		return stdcli.Error(err)
 	}
 
-	stdcli.QOSEventSend("Client Created", distinctID, stdcli.QOSEventProperties{})
 	fmt.Println("Logged in successfully.")
 	return nil
 }
@@ -314,6 +313,9 @@ func currentPassword() (string, error) {
 	var auth ConfigAuth
 
 	err = json.Unmarshal(data, &auth)
+	if err != nil {
+		return "", err
+	}
 
 	return auth[host], nil
 }

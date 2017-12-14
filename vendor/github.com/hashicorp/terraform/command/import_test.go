@@ -403,6 +403,47 @@ func TestImport_customProvider(t *testing.T) {
 	testStateOutput(t, statePath, testImportCustomProviderStr)
 }
 
+func TestImport_allowMissingResourceConfig(t *testing.T) {
+	defer testChdir(t, testFixturePath("import-missing-resource-config"))()
+
+	statePath := testTempFile(t)
+
+	p := testProvider()
+	ui := new(cli.MockUi)
+	c := &ImportCommand{
+		Meta: Meta{
+			testingOverrides: metaOverridesForProvider(p),
+			Ui:               ui,
+		},
+	}
+
+	p.ImportStateFn = nil
+	p.ImportStateReturn = []*terraform.InstanceState{
+		{
+			ID: "yay",
+			Ephemeral: terraform.EphemeralState{
+				Type: "test_instance",
+			},
+		},
+	}
+
+	args := []string{
+		"-state", statePath,
+		"-allow-missing-config",
+		"test_instance.foo",
+		"bar",
+	}
+	if code := c.Run(args); code != 0 {
+		t.Fatalf("bad: %d\n\n%s", code, ui.ErrorWriter.String())
+	}
+
+	if !p.ImportStateCalled {
+		t.Fatal("ImportState should be called")
+	}
+
+	testStateOutput(t, statePath, testImportStr)
+}
+
 func TestImport_missingResourceConfig(t *testing.T) {
 	defer testChdir(t, testFixturePath("import-missing-resource-config"))()
 
@@ -622,11 +663,11 @@ func TestImport_pluginDir(t *testing.T) {
 const testImportStr = `
 test_instance.foo:
   ID = yay
-  provider = test
+  provider = provider.test
 `
 
 const testImportCustomProviderStr = `
 test_instance.foo:
   ID = yay
-  provider = test.alias
+  provider = provider.test.alias
 `

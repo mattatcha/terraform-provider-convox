@@ -4,8 +4,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/convox/rack/api/awsutil"
-	"github.com/convox/rack/api/structs"
+	"github.com/convox/rack/test/awsutil"
+	"github.com/convox/rack/structs"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -35,9 +35,10 @@ func TestAppGet(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.EqualValues(t, &structs.App{
-		Name:    "httpd",
-		Release: "RVFETUHHKKD",
-		Status:  "running",
+		Generation: "1",
+		Name:       "httpd",
+		Release:    "RVFETUHHKKD",
+		Status:     "running",
 		Outputs: map[string]string{
 			"BalancerWebHost":       "httpd-web-7E5UPCM-1241527783.us-east-1.elb.amazonaws.com",
 			"Kinesis":               "convox-httpd-Kinesis-1MAP0GJ6RITJF",

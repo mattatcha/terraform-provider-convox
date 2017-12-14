@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/acm"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
@@ -21,8 +20,10 @@ import (
 	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sns"
+	"github.com/aws/aws-sdk-go/service/sqs"
+	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/convox/logger"
-	"github.com/convox/rack/api/structs"
+	"github.com/convox/rack/structs"
 )
 
 var (
@@ -37,23 +38,24 @@ var Logger = logger.New("ns=provider.aws")
 type AWSProvider struct {
 	Region   string
 	Endpoint string
-	Access   string
-	Secret   string
-	Token    string
 
 	BuildCluster        string
 	CloudformationTopic string
 	Cluster             string
+	CustomTopic         string
 	Development         bool
 	DockerImageAPI      string
 	DynamoBuilds        string
 	DynamoReleases      string
 	EncryptionKey       string
+	Internal            bool
+	LogBucket           string
 	NotificationHost    string
 	NotificationTopic   string
 	Password            string
 	Rack                string
 	RegistryHost        string
+	Release             string
 	SecurityGroup       string
 	SettingsBucket      string
 	Subnets             string
@@ -66,25 +68,26 @@ type AWSProvider struct {
 
 // NewProviderFromEnv returns a new AWS provider from env vars
 func FromEnv() *AWSProvider {
-	return &AWSProvider{
+	p := &AWSProvider{
 		Region:              os.Getenv("AWS_REGION"),
 		Endpoint:            os.Getenv("AWS_ENDPOINT"),
-		Access:              os.Getenv("AWS_ACCESS"),
-		Secret:              os.Getenv("AWS_SECRET"),
-		Token:               os.Getenv("AWS_TOKEN"),
 		BuildCluster:        os.Getenv("BUILD_CLUSTER"),
 		CloudformationTopic: os.Getenv("CLOUDFORMATION_TOPIC"),
 		Cluster:             os.Getenv("CLUSTER"),
+		CustomTopic:         os.Getenv("CUSTOM_TOPIC"),
 		Development:         os.Getenv("DEVELOPMENT") == "true",
 		DockerImageAPI:      os.Getenv("DOCKER_IMAGE_API"),
 		DynamoBuilds:        os.Getenv("DYNAMO_BUILDS"),
 		DynamoReleases:      os.Getenv("DYNAMO_RELEASES"),
 		EncryptionKey:       os.Getenv("ENCRYPTION_KEY"),
+		Internal:            os.Getenv("INTERNAL") == "Yes",
+		LogBucket:           os.Getenv("LOG_BUCKET"),
 		NotificationHost:    os.Getenv("NOTIFICATION_HOST"),
 		NotificationTopic:   os.Getenv("NOTIFICATION_TOPIC"),
 		Password:            os.Getenv("PASSWORD"),
 		Rack:                os.Getenv("RACK"),
 		RegistryHost:        os.Getenv("REGISTRY_HOST"),
+		Release:             os.Getenv("RELEASE"),
 		SecurityGroup:       os.Getenv("SECURITY_GROUP"),
 		SettingsBucket:      os.Getenv("SETTINGS_BUCKET"),
 		Subnets:             os.Getenv("SUBNETS"),
@@ -92,6 +95,8 @@ func FromEnv() *AWSProvider {
 		Vpc:                 os.Getenv("VPC"),
 		VpcCidr:             os.Getenv("VPCCIDR"),
 	}
+
+	return p
 }
 
 func init() {
@@ -110,11 +115,7 @@ func (p *AWSProvider) Initialize(opts structs.ProviderOptions) error {
 
 func (p *AWSProvider) config() *aws.Config {
 	config := &aws.Config{
-		Credentials: credentials.NewStaticCredentials(p.Access, p.Secret, p.Token),
-	}
-
-	if p.Region != "" {
-		config.Region = aws.String(p.Region)
+		Region: aws.String(p.Region),
 	}
 
 	if p.Endpoint != "" {
@@ -178,6 +179,14 @@ func (p *AWSProvider) s3() *s3.S3 {
 
 func (p *AWSProvider) sns() *sns.SNS {
 	return sns.New(session.New(), p.config())
+}
+
+func (p *AWSProvider) sqs() *sqs.SQS {
+	return sqs.New(session.New(), p.config())
+}
+
+func (p *AWSProvider) sts() *sts.STS {
+	return sts.New(session.New(), p.config())
 }
 
 // IsTest returns true when we're in test mode

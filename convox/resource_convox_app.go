@@ -26,6 +26,12 @@ func ResourceConvoxApp(clientUnpacker ClientUnpacker) *schema.Resource {
 				Required: true,
 				ForceNew: true,
 			},
+			"generation": &schema.Schema{
+				Type:     schema.TypeString,
+				Optional: true,
+				Default:  "1",
+				ForceNew: true,
+			},
 			"status": &schema.Schema{
 				Type:     schema.TypeString,
 				Computed: true,
@@ -64,7 +70,9 @@ func ResourceConvoxAppCreateFactory(clientUnpacker ClientUnpacker) schema.Create
 		}
 
 		name := d.Get("name").(string)
-		app, err := c.CreateApp(name)
+		generation := d.Get("generation").(string)
+
+		app, err := c.CreateApp(name, generation)
 		if err != nil {
 			return errwrap.Wrapf(fmt.Sprintf(
 				"Error creating app (%s): {{err}}", name), err)

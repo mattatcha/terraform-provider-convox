@@ -106,13 +106,13 @@ func TestCpuStats(t *testing.T) {
 	defer helper.cleanup()
 
 	const (
-		nrPeriods     = 2000
-		nrThrottled   = 200
-		throttledTime = uint64(18446744073709551615)
+		kNrPeriods     = 2000
+		kNrThrottled   = 200
+		kThrottledTime = uint64(18446744073709551615)
 	)
 
 	cpuStatContent := fmt.Sprintf("nr_periods %d\n nr_throttled %d\n throttled_time %d\n",
-		nrPeriods, nrThrottled, throttledTime)
+		kNrPeriods, kNrThrottled, kThrottledTime)
 	helper.writeFileContents(map[string]string{
 		"cpu.stat": cpuStatContent,
 	})
@@ -125,9 +125,9 @@ func TestCpuStats(t *testing.T) {
 	}
 
 	expectedStats := cgroups.ThrottlingData{
-		Periods:          nrPeriods,
-		ThrottledPeriods: nrThrottled,
-		ThrottledTime:    throttledTime}
+		Periods:          kNrPeriods,
+		ThrottledPeriods: kNrThrottled,
+		ThrottledTime:    kThrottledTime}
 
 	expectThrottlingDataEquals(t, expectedStats, actualStats.CpuStats.ThrottlingData)
 }

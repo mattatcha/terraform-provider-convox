@@ -9,14 +9,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/docker/engine-api/types/container"
-	networktypes "github.com/docker/engine-api/types/network"
-	"github.com/docker/engine-api/types/strslice"
+	"github.com/docker/docker/api/types/container"
+	networktypes "github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/strslice"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type f struct {
 	file       string
-	entrypoint *strslice.StrSlice
+	entrypoint strslice.StrSlice
 }
 
 func TestDecodeContainerConfig(t *testing.T) {
@@ -29,14 +31,14 @@ func TestDecodeContainerConfig(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		image = "ubuntu"
 		fixtures = []f{
-			{"fixtures/unix/container_config_1_14.json", strslice.New()},
-			{"fixtures/unix/container_config_1_17.json", strslice.New("bash")},
-			{"fixtures/unix/container_config_1_19.json", strslice.New("bash")},
+			{"fixtures/unix/container_config_1_14.json", strslice.StrSlice{}},
+			{"fixtures/unix/container_config_1_17.json", strslice.StrSlice{"bash"}},
+			{"fixtures/unix/container_config_1_19.json", strslice.StrSlice{"bash"}},
 		}
 	} else {
 		image = "windows"
 		fixtures = []f{
-			{"fixtures/windows/container_config_1_19.json", strslice.New("cmd")},
+			{"fixtures/windows/container_config_1_19.json", strslice.StrSlice{"cmd"}},
 		}
 	}
 
@@ -46,7 +48,7 @@ func TestDecodeContainerConfig(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		c, h, _, err := DecodeContainerConfig(bytes.NewReader(b))
+		c, h, _, err := decodeContainerConfig(bytes.NewReader(b))
 		if err != nil {
 			t.Fatal(fmt.Errorf("Error parsing %s: %v", f, err))
 		}
@@ -55,7 +57,7 @@ func TestDecodeContainerConfig(t *testing.T) {
 			t.Fatalf("Expected %s image, found %s\n", image, c.Image)
 		}
 
-		if c.Entrypoint.Len() != f.entrypoint.Len() {
+		if len(c.Entrypoint) != len(f.entrypoint) {
 			t.Fatalf("Expected %v, found %v\n", f.entrypoint, c.Entrypoint)
 		}
 
@@ -70,9 +72,9 @@ func TestDecodeContainerConfig(t *testing.T) {
 // as to what level of container isolation is supported.
 func TestDecodeContainerConfigIsolation(t *testing.T) {
 
-	// An invalid isolation level
+	// An Invalid isolation level
 	if _, _, _, err := callDecodeContainerConfigIsolation("invalid"); err != nil {
-		if !strings.Contains(err.Error(), `invalid --isolation: "invalid"`) {
+		if !strings.Contains(err.Error(), `Invalid isolation: "invalid"`) {
 			t.Fatal(err)
 		}
 	}
@@ -94,7 +96,7 @@ func TestDecodeContainerConfigIsolation(t *testing.T) {
 		}
 	} else {
 		if _, _, _, err := callDecodeContainerConfigIsolation("process"); err != nil {
-			if !strings.Contains(err.Error(), `invalid --isolation: "process"`) {
+			if !strings.Contains(err.Error(), `Invalid isolation: "process"`) {
 				t.Fatal(err)
 			}
 		}
@@ -107,7 +109,7 @@ func TestDecodeContainerConfigIsolation(t *testing.T) {
 		}
 	} else {
 		if _, _, _, err := callDecodeContainerConfigIsolation("hyperv"); err != nil {
-			if !strings.Contains(err.Error(), `invalid --isolation: "hyperv"`) {
+			if !strings.Contains(err.Error(), `Invalid isolation: "hyperv"`) {
 				t.Fatal(err)
 			}
 		}
@@ -130,5 +132,59 @@ func callDecodeContainerConfigIsolation(isolation string) (*container.Config, *c
 	if b, err = json.Marshal(w); err != nil {
 		return nil, nil, nil, fmt.Errorf("Error on marshal %s", err.Error())
 	}
-	return DecodeContainerConfig(bytes.NewReader(b))
+	return decodeContainerConfig(bytes.NewReader(b))
+}
+
+type decodeConfigTestcase struct {
+	doc                string
+	wrapper            ContainerConfigWrapper
+	expectedErr        string
+	expectedConfig     *container.Config
+	expectedHostConfig *container.HostConfig
+	goos               string
+}
+
+func runDecodeContainerConfigTestCase(testcase decodeConfigTestcase) func(t *testing.T) {
+	return func(t *testing.T) {
+		raw := marshal(t, testcase.wrapper, testcase.doc)
+		config, hostConfig, _, err := decodeContainerConfig(bytes.NewReader(raw))
+		if testcase.expectedErr != "" {
+			if !assert.Error(t, err) {
+				return
+			}
+			assert.Contains(t, err.Error(), testcase.expectedErr)
+			return
+		}
+		assert.NoError(t, err)
+		assert.Equal(t, testcase.expectedConfig, config)
+		assert.Equal(t, testcase.expectedHostConfig, hostConfig)
+	}
+}
+
+func marshal(t *testing.T, w ContainerConfigWrapper, doc string) []byte {
+	b, err := json.Marshal(w)
+	require.NoError(t, err, "%s: failed to encode config wrapper", doc)
+	return b
+}
+
+func containerWrapperWithVolume(volume string) ContainerConfigWrapper {
+	return ContainerConfigWrapper{
+		Config: &container.Config{
+			Volumes: map[string]struct{}{
+				volume: {},
+			},
+		},
+		HostConfig: &container.HostConfig{},
+	}
+}
+
+func containerWrapperWithBind(bind string) ContainerConfigWrapper {
+	return ContainerConfigWrapper{
+		Config: &container.Config{
+			Volumes: map[string]struct{}{},
+		},
+		HostConfig: &container.HostConfig{
+			Binds: []string{bind},
+		},
+	}
 }

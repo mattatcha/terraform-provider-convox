@@ -2,10 +2,11 @@ package aws
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ecs"
-	"github.com/convox/rack/api/structs"
+	"github.com/convox/rack/structs"
 )
 
 // CapacityGet returns individual server and total rack resources
@@ -14,7 +15,7 @@ func (p *AWSProvider) CapacityGet() (*structs.Capacity, error) {
 
 	capacity := &structs.Capacity{}
 
-	ires, err := p.describeContainerInstances()
+	ires, err := p.listAndDescribeContainerInstances()
 	if err != nil {
 		log.Error(err)
 		return nil, err
@@ -46,9 +47,13 @@ func (p *AWSProvider) CapacityGet() (*structs.Capacity, error) {
 	portWidth := map[int64]int64{}
 
 	for _, service := range services {
+		servicePortWidth := map[int64]int64{}
+
 		if len(service.LoadBalancers) > 0 {
 			for _, deployment := range service.Deployments {
-				td, err := p.describeTaskDefinition(*deployment.TaskDefinition)
+				res, err := p.describeTaskDefinition(&ecs.DescribeTaskDefinitionInput{
+					TaskDefinition: deployment.TaskDefinition,
+				})
 				if err != nil {
 					log.Error(err)
 					return nil, err
@@ -56,21 +61,40 @@ func (p *AWSProvider) CapacityGet() (*structs.Capacity, error) {
 
 				tdPorts := map[string]int64{}
 
-				for _, cd := range td.ContainerDefinitions {
-					for _, pm := range cd.PortMappings {
-						tdPorts[fmt.Sprintf("%s.%d", *cd.Name, *pm.ContainerPort)] = *pm.HostPort
+				for _, cd := range res.TaskDefinition.ContainerDefinitions {
+					if g := cd.DockerLabels["convox.generation"]; g == nil || *g != "2" {
+						for _, pm := range cd.PortMappings {
+							tdPorts[fmt.Sprintf("%s.%d", *cd.Name, *pm.ContainerPort)] = *pm.HostPort
+						}
 					}
 				}
 
 				for _, lb := range service.LoadBalancers {
 					if port, ok := tdPorts[fmt.Sprintf("%s.%d", *lb.ContainerName, *lb.ContainerPort)]; ok {
-						portWidth[port] += *deployment.DesiredCount
+						servicePortWidth[port] += *deployment.DesiredCount
 					}
 				}
 			}
 		}
 
-		res, err := p.ecs().DescribeTaskDefinition(&ecs.DescribeTaskDefinitionInput{
+		// take deploymentconfiguration into account during deploys
+		if len(service.Deployments) > 1 {
+			if dc := service.DeploymentConfiguration; dc != nil {
+				if mp := dc.MinimumHealthyPercent; mp != nil {
+					mult := float64(*mp) / float64(100)
+
+					for port, width := range servicePortWidth {
+						servicePortWidth[port] = int64(math.Ceil(float64(width) * mult))
+					}
+				}
+			}
+		}
+
+		for port, width := range servicePortWidth {
+			portWidth[port] += width
+		}
+
+		res, err := p.describeTaskDefinition(&ecs.DescribeTaskDefinitionInput{
 			TaskDefinition: service.TaskDefinition,
 		})
 		if err != nil {
@@ -78,19 +102,21 @@ func (p *AWSProvider) CapacityGet() (*structs.Capacity, error) {
 			return nil, err
 		}
 
-		for _, cd := range res.TaskDefinition.ContainerDefinitions {
-			if service.DesiredCount == nil {
-				return nil, fmt.Errorf("invalid DesiredCount")
-			}
+		if service.DesiredCount == nil {
+			return nil, fmt.Errorf("invalid DesiredCount")
+		}
 
-			capacity.ProcessCount += *service.DesiredCount
+		minCount := *service.DesiredCount
+
+		for _, cd := range res.TaskDefinition.ContainerDefinitions {
+			capacity.ProcessCount += minCount
 
 			if cd.Memory != nil {
-				capacity.ProcessMemory += (*service.DesiredCount * *cd.Memory)
+				capacity.ProcessMemory += (minCount * *cd.Memory)
 			}
 
 			if cd.Cpu != nil {
-				capacity.ProcessCPU += (*service.DesiredCount * *cd.Cpu)
+				capacity.ProcessCPU += (minCount * *cd.Cpu)
 			}
 		}
 	}
@@ -126,7 +152,7 @@ func (p *AWSProvider) clusterServices() (ECSServices, error) {
 			return nil, err
 		}
 
-		dres, err := p.ecs().DescribeServices(&ecs.DescribeServicesInput{
+		dres, err := p.describeServices(&ecs.DescribeServicesInput{
 			Cluster:  aws.String(p.Cluster),
 			Services: lres.ServiceArns,
 		})

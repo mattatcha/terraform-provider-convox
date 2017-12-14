@@ -8,7 +8,7 @@ import (
 
 // MockClient is a test mock for the Client interface
 type MockClient struct {
-	CreateAppFunc      func(name string) (*client.App, error)
+	CreateAppFunc      func(name string, generation string) (*client.App, error)
 	GetResourceFunc    func(name string) (*client.Resource, error)
 	CreateResourceFunc func(kind string, options map[string]string) (*client.Resource, error)
 	UpdateResourceFunc func(name string, options map[string]string) (*client.Resource, error)
@@ -19,7 +19,7 @@ type MockClient struct {
 }
 
 func (m *MockClient) ResetNoop() {
-	m.CreateAppFunc = func(name string) (*client.App, error) {
+	m.CreateAppFunc = func(name string, generation string) (*client.App, error) {
 		return nil, nil
 	}
 
@@ -48,8 +48,8 @@ func (m *MockClient) ResetNoop() {
 	}
 }
 
-func (m *MockClient) CreateApp(name string) (*client.App, error) {
-	return m.CreateAppFunc(name)
+func (m *MockClient) CreateApp(name string, generation string) (*client.App, error) {
+	return m.CreateAppFunc(name, generation)
 }
 
 func (m *MockClient) GetApp(name string) (*client.App, error) {

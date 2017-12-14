@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	hclog "github.com/hashicorp/go-hclog"
 )
 
 func TestClient(t *testing.T) {
@@ -170,6 +172,69 @@ func TestClient_testInterface(t *testing.T) {
 	}
 }
 
+func TestClient_grpc(t *testing.T) {
+	process := helperProcess("test-grpc")
+	c := NewClient(&ClientConfig{
+		Cmd:              process,
+		HandshakeConfig:  testHandshake,
+		Plugins:          testPluginMap,
+		AllowedProtocols: []Protocol{ProtocolGRPC},
+	})
+	defer c.Kill()
+
+	if _, err := c.Start(); err != nil {
+		t.Fatalf("err: %s", err)
+	}
+
+	if v := c.Protocol(); v != ProtocolGRPC {
+		t.Fatalf("bad: %s", v)
+	}
+
+	// Grab the RPC client
+	client, err := c.Client()
+	if err != nil {
+		t.Fatalf("err should be nil, got %s", err)
+	}
+
+	// Grab the impl
+	raw, err := client.Dispense("test")
+	if err != nil {
+		t.Fatalf("err should be nil, got %s", err)
+	}
+
+	impl, ok := raw.(testInterface)
+	if !ok {
+		t.Fatalf("bad: %#v", raw)
+	}
+
+	result := impl.Double(21)
+	if result != 42 {
+		t.Fatalf("bad: %#v", result)
+	}
+
+	// Kill it
+	c.Kill()
+
+	// Test that it knows it is exited
+	if !c.Exited() {
+		t.Fatal("should say client has exited")
+	}
+}
+
+func TestClient_grpcNotAllowed(t *testing.T) {
+	process := helperProcess("test-grpc")
+	c := NewClient(&ClientConfig{
+		Cmd:             process,
+		HandshakeConfig: testHandshake,
+		Plugins:         testPluginMap,
+	})
+	defer c.Kill()
+
+	if _, err := c.Start(); err == nil {
+		t.Fatal("should error")
+	}
+}
+
 func TestClient_cmdAndReattach(t *testing.T) {
 	config := &ClientConfig{
 		Cmd:      helperProcess("start-timeout"),
@@ -182,6 +247,177 @@ func TestClient_cmdAndReattach(t *testing.T) {
 	_, err := c.Start()
 	if err == nil {
 		t.Fatal("err should not be nil")
+	}
+}
+
+func TestClient_reattach(t *testing.T) {
+	process := helperProcess("test-interface")
+	c := NewClient(&ClientConfig{
+		Cmd:             process,
+		HandshakeConfig: testHandshake,
+		Plugins:         testPluginMap,
+	})
+	defer c.Kill()
+
+	// Grab the RPC client
+	_, err := c.Client()
+	if err != nil {
+		t.Fatalf("err should be nil, got %s", err)
+	}
+
+	// Get the reattach configuration
+	reattach := c.ReattachConfig()
+
+	// Create a new client
+	c = NewClient(&ClientConfig{
+		Reattach:        reattach,
+		HandshakeConfig: testHandshake,
+		Plugins:         testPluginMap,
+	})
+
+	// Grab the RPC client
+	client, err := c.Client()
+	if err != nil {
+		t.Fatalf("err should be nil, got %s", err)
+	}
+
+	// Grab the impl
+	raw, err := client.Dispense("test")
+	if err != nil {
+		t.Fatalf("err should be nil, got %s", err)
+	}
+
+	impl, ok := raw.(testInterface)
+	if !ok {
+		t.Fatalf("bad: %#v", raw)
+	}
+
+	result := impl.Double(21)
+	if result != 42 {
+		t.Fatalf("bad: %#v", result)
+	}
+
+	// Kill it
+	c.Kill()
+
+	// Test that it knows it is exited
+	if !c.Exited() {
+		t.Fatal("should say client has exited")
+	}
+}
+
+func TestClient_reattachNoProtocol(t *testing.T) {
+	process := helperProcess("test-interface")
+	c := NewClient(&ClientConfig{
+		Cmd:             process,
+		HandshakeConfig: testHandshake,
+		Plugins:         testPluginMap,
+	})
+	defer c.Kill()
+
+	// Grab the RPC client
+	_, err := c.Client()
+	if err != nil {
+		t.Fatalf("err should be nil, got %s", err)
+	}
+
+	// Get the reattach configuration
+	reattach := c.ReattachConfig()
+	reattach.Protocol = ""
+
+	// Create a new client
+	c = NewClient(&ClientConfig{
+		Reattach:        reattach,
+		HandshakeConfig: testHandshake,
+		Plugins:         testPluginMap,
+	})
+
+	// Grab the RPC client
+	client, err := c.Client()
+	if err != nil {
+		t.Fatalf("err should be nil, got %s", err)
+	}
+
+	// Grab the impl
+	raw, err := client.Dispense("test")
+	if err != nil {
+		t.Fatalf("err should be nil, got %s", err)
+	}
+
+	impl, ok := raw.(testInterface)
+	if !ok {
+		t.Fatalf("bad: %#v", raw)
+	}
+
+	result := impl.Double(21)
+	if result != 42 {
+		t.Fatalf("bad: %#v", result)
+	}
+
+	// Kill it
+	c.Kill()
+
+	// Test that it knows it is exited
+	if !c.Exited() {
+		t.Fatal("should say client has exited")
+	}
+}
+
+func TestClient_reattachGRPC(t *testing.T) {
+	process := helperProcess("test-grpc")
+	c := NewClient(&ClientConfig{
+		Cmd:              process,
+		HandshakeConfig:  testHandshake,
+		Plugins:          testPluginMap,
+		AllowedProtocols: []Protocol{ProtocolGRPC},
+	})
+	defer c.Kill()
+
+	// Grab the RPC client
+	_, err := c.Client()
+	if err != nil {
+		t.Fatalf("err should be nil, got %s", err)
+	}
+
+	// Get the reattach configuration
+	reattach := c.ReattachConfig()
+
+	// Create a new client
+	c = NewClient(&ClientConfig{
+		Reattach:         reattach,
+		HandshakeConfig:  testHandshake,
+		Plugins:          testPluginMap,
+		AllowedProtocols: []Protocol{ProtocolGRPC},
+	})
+
+	// Grab the RPC client
+	client, err := c.Client()
+	if err != nil {
+		t.Fatalf("err should be nil, got %s", err)
+	}
+
+	// Grab the impl
+	raw, err := client.Dispense("test")
+	if err != nil {
+		t.Fatalf("err should be nil, got %s", err)
+	}
+
+	impl, ok := raw.(testInterface)
+	if !ok {
+		t.Fatalf("bad: %#v", raw)
+	}
+
+	result := impl.Double(21)
+	if result != 42 {
+		t.Fatalf("bad: %#v", result)
+	}
+
+	// Kill it
+	c.Kill()
+
+	// Test that it knows it is exited
+	if !c.Exited() {
+		t.Fatal("should say client has exited")
 	}
 }
 
@@ -280,6 +516,33 @@ func TestClient_Stderr(t *testing.T) {
 	}
 }
 
+func TestClient_StderrJSON(t *testing.T) {
+	stderr := new(bytes.Buffer)
+	process := helperProcess("stderr-json")
+	c := NewClient(&ClientConfig{
+		Cmd:             process,
+		Stderr:          stderr,
+		HandshakeConfig: testHandshake,
+	})
+	defer c.Kill()
+
+	if _, err := c.Start(); err != nil {
+		t.Fatalf("err: %s", err)
+	}
+
+	for !c.Exited() {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if !strings.Contains(stderr.String(), "[\"HELLO\"]\n") {
+		t.Fatalf("bad log data: '%s'", stderr.String())
+	}
+
+	if !strings.Contains(stderr.String(), "12345\n") {
+		t.Fatalf("bad log data: '%s'", stderr.String())
+	}
+}
+
 func TestClient_Stdin(t *testing.T) {
 	// Overwrite stdin for this test with a temporary file
 	tf, err := ioutil.TempFile("", "terraform")
@@ -345,7 +608,7 @@ func TestClient_SecureConfig(t *testing.T) {
 	_, err := c.Client()
 	c.Kill()
 	if err != ErrChecksumsDoNotMatch {
-		t.Fatal("err should be %s, got %s", ErrChecksumsDoNotMatch, err)
+		t.Fatalf("err should be %s, got %s", ErrChecksumsDoNotMatch, err)
 	}
 
 	// Get the checksum of the executable
@@ -454,6 +717,54 @@ func TestClient_TLS(t *testing.T) {
 	}
 }
 
+func TestClient_TLS_grpc(t *testing.T) {
+	// Add TLS config to client
+	tlsConfig, err := helperTLSProvider()
+	if err != nil {
+		t.Fatalf("err should be nil, got %s", err)
+	}
+
+	process := helperProcess("test-grpc-tls")
+	c := NewClient(&ClientConfig{
+		Cmd:              process,
+		HandshakeConfig:  testHandshake,
+		Plugins:          testPluginMap,
+		TLSConfig:        tlsConfig,
+		AllowedProtocols: []Protocol{ProtocolGRPC},
+	})
+	defer c.Kill()
+
+	// Grab the RPC client
+	client, err := c.Client()
+	if err != nil {
+		t.Fatalf("err should be nil, got %s", err)
+	}
+
+	// Grab the impl
+	raw, err := client.Dispense("test")
+	if err != nil {
+		t.Fatalf("err should be nil, got %s", err)
+	}
+
+	impl, ok := raw.(testInterface)
+	if !ok {
+		t.Fatalf("bad: %#v", raw)
+	}
+
+	result := impl.Double(21)
+	if result != 42 {
+		t.Fatalf("bad: %#v", result)
+	}
+
+	// Kill it
+	c.Kill()
+
+	// Test that it knows it is exited
+	if !c.Exited() {
+		t.Fatal("should say client has exited")
+	}
+}
+
 func TestClient_secureConfigAndReattach(t *testing.T) {
 	config := &ClientConfig{
 		SecureConfig: &SecureConfig{},
@@ -465,6 +776,112 @@ func TestClient_secureConfigAndReattach(t *testing.T) {
 
 	_, err := c.Start()
 	if err != ErrSecureConfigAndReattach {
-		t.Fatal("err should not be %s, got %s", ErrSecureConfigAndReattach, err)
+		t.Fatalf("err should not be %s, got %s", ErrSecureConfigAndReattach, err)
+	}
+}
+
+func TestClient_ping(t *testing.T) {
+	process := helperProcess("test-interface")
+	c := NewClient(&ClientConfig{
+		Cmd:             process,
+		HandshakeConfig: testHandshake,
+		Plugins:         testPluginMap,
+	})
+	defer c.Kill()
+
+	// Get the client
+	client, err := c.Client()
+	if err != nil {
+		t.Fatalf("err: %s", err)
+	}
+
+	// Ping, should work
+	if err := client.Ping(); err != nil {
+		t.Fatalf("err: %s", err)
+	}
+
+	// Kill it
+	c.Kill()
+	if err := client.Ping(); err == nil {
+		t.Fatal("should error")
+	}
+}
+
+func TestClient_logger(t *testing.T) {
+	t.Run("net/rpc", func(t *testing.T) { testClient_logger(t, "netrpc") })
+	t.Run("grpc", func(t *testing.T) { testClient_logger(t, "grpc") })
+}
+
+func testClient_logger(t *testing.T, proto string) {
+	var buffer bytes.Buffer
+	stderr := io.MultiWriter(os.Stderr, &buffer)
+	// Custom hclog.Logger
+	clientLogger := hclog.New(&hclog.LoggerOptions{
+		Name:   "test-logger",
+		Level:  hclog.Trace,
+		Output: stderr,
+	})
+
+	process := helperProcess("test-interface-logger-" + proto)
+	c := NewClient(&ClientConfig{
+		Cmd:              process,
+		HandshakeConfig:  testHandshake,
+		Plugins:          testPluginMap,
+		Logger:           clientLogger,
+		AllowedProtocols: []Protocol{ProtocolNetRPC, ProtocolGRPC},
+	})
+	defer c.Kill()
+
+	// Grab the RPC client
+	client, err := c.Client()
+	if err != nil {
+		t.Fatalf("err should be nil, got %s", err)
+	}
+
+	// Grab the impl
+	raw, err := client.Dispense("test")
+	if err != nil {
+		t.Fatalf("err should be nil, got %s", err)
+	}
+
+	impl, ok := raw.(testInterface)
+	if !ok {
+		t.Fatalf("bad: %#v", raw)
+	}
+
+	{
+		// Discard everything else, and capture the output we care about
+		buffer.Reset()
+		impl.PrintKV("foo", "bar")
+		time.Sleep(100 * time.Millisecond)
+		line, err := buffer.ReadString('\n')
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(line, "foo=bar") {
+			t.Fatalf("bad: %q", line)
+		}
+	}
+
+	{
+		// Try an integer type
+		buffer.Reset()
+		impl.PrintKV("foo", 12)
+		time.Sleep(100 * time.Millisecond)
+		line, err := buffer.ReadString('\n')
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(line, "foo=12") {
+			t.Fatalf("bad: %q", line)
+		}
+	}
+
+	// Kill it
+	c.Kill()
+
+	// Test that it knows it is exited
+	if !c.Exited() {
+		t.Fatal("should say client has exited")
 	}
 }
