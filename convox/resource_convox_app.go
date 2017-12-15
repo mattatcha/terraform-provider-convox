@@ -228,6 +228,9 @@ func setParams(c Client, d *schema.ResourceData) error {
 
 func environmentDiffSuppress(k, old, new string, d *schema.ResourceData) bool {
 	// Return true if the diff should be suppressed, false to retain it.
+	if old == new {
+		return true
+	}
 	return strings.TrimSpace(old) == strings.TrimSpace(new)
 }
 
