@@ -222,12 +222,6 @@
   revision = "8eab2debe79d12b7bd3d10653910df25fa9552ba"
 
 [[projects]]
-  name = "github.com/mattatcha/terraform-provider-convox"
-  packages = ["convox"]
-  revision = "a931c533ecd150bf82b53c8af00a752dd0dfed72"
-  version = "v0.1.4"
-
-[[projects]]
   name = "github.com/mattn/go-isatty"
   packages = ["."]
   revision = "0360b2af4f38e8d38c7fce2a9f4e702702d73a39"
@@ -392,6 +386,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "e7f308312496ae3d4964bb56dd90e2b3cb476031c21d6007fe10ff739d9d9695"
+  inputs-digest = "4cd895a8eb276118cd8adaf8bf0e492e7e7754270f7f02e7aea159aad1c5b5b6"
   solver-name = "gps-cdcl"
   solver-version = 1
