@@ -2,7 +2,6 @@ package convox
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -254,11 +253,10 @@ func setEnv(c Client, d *schema.ResourceData) error {
 	for key, value := range env {
 		data += fmt.Sprintf("%s=%s\n", key, value)
 	}
-	_, rel, err := c.SetEnvironment(d.Id(), strings.NewReader(data))
+	_, _, err := c.SetEnvironment(d.Id(), strings.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("Error setting vars (%#v) for %s: %s", env, d.Id(), err)
 	}
-	log.Printf("[INFO] Release (%s) created on: %s", rel, d.Id())
 
 	return nil
 }
