@@ -33,10 +33,6 @@
   version = "0.11.1"
 
 [[constraint]]
-  name = "github.com/mattaitchison/terraform-provider-convox"
-  version = "0.1.4"
-
-[[constraint]]
   branch = "master"
   name = "github.com/mitchellh/go-homedir"
 
