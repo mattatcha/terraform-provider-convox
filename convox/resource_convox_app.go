@@ -37,8 +37,9 @@ func ResourceConvoxApp(clientUnpacker ClientUnpacker) *schema.Resource {
 				Computed: true,
 			},
 			"environment": &schema.Schema{
-				Type:     schema.TypeMap,
-				Optional: true,
+				Type:      schema.TypeMap,
+				Optional:  true,
+				Sensitive: true,
 			},
 			"params": &schema.Schema{
 				Type:     schema.TypeMap,
