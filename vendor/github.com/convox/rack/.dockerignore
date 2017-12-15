@@ -1,0 +1,9 @@
+.env
+.git
+/monitor
+docker-compose.yml
+api/models/fixtures/fixture
+cmd/changes/changes
+cmd/convox/convox
+provider/aws/lambda/formation/main
+provider/aws/lambda/formation/lambda.zip

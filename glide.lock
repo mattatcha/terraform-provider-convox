@@ -1,10 +1,12 @@
-hash: 0c6e5f4ca5bd228a70e84d87c790650d37bc46b4752173876f145b36dba1acdd
-updated: 2017-05-17T14:08:49.010920347-04:00
+hash: 126952bcb373e86b8a94fc596fd3e46006cba01cad38ae4968098c18380c9ed5
+updated: 2017-08-31T21:18:05.465200158-04:00
 imports:
 - name: github.com/apparentlymart/go-cidr
   version: 7e4b007599d4e2076d9a81be723b3912852dda2c
   subpackages:
   - cidr
+- name: github.com/armon/go-radix
+  version: 1fca145dffbcaa8fe914309b1ec0cfc67500fe61
 - name: github.com/aws/aws-sdk-go
   version: 4590e9b51cd6698144a025a75608fa7a90752d5d
   subpackages:
@@ -65,6 +67,10 @@ imports:
   version: 9fd32a8b3d3d3f9d43c341bfe098430e07609480
   subpackages:
   - netrc
+- name: github.com/bgentry/speakeasy
+  version: 4aabc24848ce5fd31929f7d1e4ea74d3709c14cd
+- name: github.com/blang/semver
+  version: 2ee87856327ba09384cabd113bc6b5d174e9ec0f
 - name: github.com/convox/rack
   version: ce650a25e0d354ed14e76fd6f44d66a428070091
   subpackages:
@@ -108,6 +114,8 @@ imports:
   version: 90b6568eac830f62a08e8f1f46375daa63e57015
   subpackages:
   - helper/url
+- name: github.com/hashicorp/go-hclog
+  version: b39b96628f4f5079b214abead0e93e91ac29f9cf
 - name: github.com/hashicorp/go-multierror
   version: ed905158d87462226a13fe39ddf685ea65f1c11f
 - name: github.com/hashicorp/go-plugin
@@ -136,26 +144,32 @@ imports:
 - name: github.com/hashicorp/logutils
   version: 0dc08b1671f34c4250ce212759ebd880f743d883
 - name: github.com/hashicorp/terraform
-  version: a59ee0b30e1350d18e44a3a2a405124302751f93
+  version: 1511d447e78d8106787875265f96d3a3a03005d5
   subpackages:
   - config
   - config/module
   - dag
   - flatmap
   - helper/config
-  - helper/experiment
   - helper/hashcode
   - helper/hilmapstructure
   - helper/logging
   - helper/resource
   - helper/schema
-  - helper/shadow
+  - moduledeps
   - plugin
+  - plugin/discovery
   - terraform
 - name: github.com/hashicorp/yamux
   version: d1caa6c97c9fc1cc9e83bbe34d0603f9ff0ce8bd
 - name: github.com/jmespath/go-jmespath
   version: c01cf91b011868172fdcd9f41838e80c9d716264
+- name: github.com/jpillora/backoff
+  version: 06c7a16c845dc8e0bf575fafeeca0f5462f5eb4d
+- name: github.com/mattn/go-isatty
+  version: 7fcbc72f853b92b5720db4a6b8482be612daef24
+- name: github.com/mitchellh/cli
+  version: 0ce7cd515f64496ee660ab19f6bbf373945d3af0
 - name: github.com/mitchellh/copystructure
   version: f81071c9d77b7931f78c90b416a074ecdc50e959
 - name: github.com/mitchellh/go-homedir
@@ -169,7 +183,7 @@ imports:
 - name: github.com/mitchellh/reflectwalk
   version: 8d802ff4ae93611b807597f639c19f76074df5c6
 - name: github.com/onsi/ginkgo
-  version: 77a8c1e5c40d6bb6c5eb4dd4bdce9763564f6298
+  version: 9eda700730cba42af70d53180f9dcce9266bc2bc
   subpackages:
   - config
   - internal/codelocation
@@ -189,7 +203,7 @@ imports:
   - reporters/stenographer/support/go-isatty
   - types
 - name: github.com/onsi/gomega
-  version: 00acfa9d92a386415bd235ab069c52063f925998
+  version: dcabb60a477c2b6f456df65037cb6708210fbb02
   subpackages:
   - format
   - internal/assertion
@@ -206,6 +220,12 @@ imports:
   version: 629e35666d31f743090452416c8df207d9fdbd34
   subpackages:
   - libcontainer/user
+- name: github.com/posener/complete
+  version: 9f41f7636a724791a3b8b1d35e84caa1124f0d3c
+  subpackages:
+  - cmd
+  - cmd/install
+  - match
 - name: github.com/satori/go.uuid
   version: 5bf94b69c6b68ee1b541973bb8e1144db23a194b
 - name: github.com/Sirupsen/logrus
@@ -214,8 +234,17 @@ imports:
 - name: golang.org/x/crypto
   version: 5dc8cb4b8a8eb076cbb5a06bc3b8682c15bdbbd3
   subpackages:
+  - bcrypt
+  - blowfish
+  - cast5
   - curve25519
   - nacl/secretbox
+  - openpgp
+  - openpgp/armor
+  - openpgp/elgamal
+  - openpgp/errors
+  - openpgp/packet
+  - openpgp/s2k
   - poly1305
   - salsa20/salsa
   - ssh

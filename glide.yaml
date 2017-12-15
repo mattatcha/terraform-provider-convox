@@ -1,10 +1,10 @@
-package: github.com/mattaitchison/terraform-provider-convox
+package: github.com/mattatcha/terraform-provider-convox
 import:
 - package: github.com/convox/rack
   subpackages:
   - client
 - package: github.com/hashicorp/terraform
-  version: ~0.9.2
+  version: ~0.10.3
   subpackages:
   - helper/resource
   - helper/schema
@@ -21,3 +21,4 @@ import:
   version: ^1.1.0
   subpackages:
   - spew
+- package: github.com/jpillora/backoff

@@ -4,7 +4,7 @@ import (
 	"github.com/convox/rack/client"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
-	"github.com/mattaitchison/terraform-provider-convox/convox"
+	"github.com/mattatcha/terraform-provider-convox/convox"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )

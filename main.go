@@ -4,10 +4,10 @@ import (
 	"log"
 
 	"github.com/hashicorp/terraform/plugin"
-	convox "github.com/mattaitchison/terraform-provider-convox/convox"
+	convox "github.com/mattatcha/terraform-provider-convox/convox"
 )
 
-var version = "0.1.6-dev"
+var version = "0.1.7-dev"
 
 func main() {
 	log.Println("[INFO] convox provider version:", version)

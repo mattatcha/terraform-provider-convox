@@ -109,7 +109,7 @@ func UnpackRackClient(d ValueGetter, meta interface{}) (Client, error) {
 		c.Rack = v.(string)
 	}
 
-	return c, nil
+	return NewRateLimitRespectingClient(c), nil
 }
 
 func getHost(d *schema.ResourceData) string {
