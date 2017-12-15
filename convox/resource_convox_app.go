@@ -74,7 +74,7 @@ func ResourceConvoxAppCreateFactory(clientUnpacker ClientUnpacker) schema.Create
 		name := d.Get("name").(string)
 		generation := d.Get("generation").(string)
 		if generation == "" {
-			generation == "1"
+			generation = "1"
 		}
 
 		app, err := c.CreateApp(name, generation)
