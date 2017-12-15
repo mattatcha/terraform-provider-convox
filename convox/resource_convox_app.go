@@ -37,9 +37,10 @@ func ResourceConvoxApp(clientUnpacker ClientUnpacker) *schema.Resource {
 				Computed: true,
 			},
 			"environment": &schema.Schema{
-				Type:      schema.TypeMap,
-				Optional:  true,
-				Sensitive: true,
+				Type:             schema.TypeMap,
+				Optional:         true,
+				Sensitive:        true,
+				DiffSuppressFunc: environmentDiffSuppress,
 			},
 			"params": &schema.Schema{
 				Type:     schema.TypeMap,
@@ -133,6 +134,7 @@ func ResourceConvoxAppReadFactory(clientUnpacker ClientUnpacker) schema.ReadFunc
 		if err != nil {
 			return fmt.Errorf("Error calling GetEnvironment(%s): %s", app.Name, err.Error())
 		}
+
 		d.Set("environment", env)
 
 		formation, err := c.ListFormation(app.Name)
@@ -219,6 +221,11 @@ func setParams(c Client, d *schema.ResourceData) error {
 	}
 
 	return nil
+}
+
+func environmentDiffSuppress(k, old, new string, d *schema.ResourceData) bool {
+	// Return true if the diff should be suppressed, false to retain it.
+	return strings.TrimSpace(old) == strings.TrimSpace(new)
 }
 
 func setEnv(c Client, d *schema.ResourceData) error {
