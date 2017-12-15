@@ -27,10 +27,11 @@ func ResourceConvoxApp(clientUnpacker ClientUnpacker) *schema.Resource {
 				ForceNew: true,
 			},
 			"generation": &schema.Schema{
-				Type:     schema.TypeString,
-				Optional: true,
-				Default:  "",
-				ForceNew: true,
+				Type:             schema.TypeString,
+				Optional:         true,
+				Default:          "1",
+				ForceNew:         true,
+				DiffSuppressFunc: generationDiffSuppress,
 			},
 			"status": &schema.Schema{
 				Type:     schema.TypeString,
@@ -232,6 +233,15 @@ func environmentDiffSuppress(k, old, new string, d *schema.ResourceData) bool {
 		return true
 	}
 	return strings.TrimSpace(old) == strings.TrimSpace(new)
+}
+
+func generationDiffSuppress(k, old, new string, d *schema.ResourceData) bool {
+	// Return true if the diff should be suppressed, false to retain it.
+	if old == "" && new == "1" {
+		return true
+	}
+
+	return old == new
 }
 
 func setEnv(c Client, d *schema.ResourceData) error {
