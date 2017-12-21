@@ -8,38 +8,38 @@ import (
 	"time"
 
 	"github.com/convox/rack/api/controllers"
-	"github.com/convox/rack/api/models"
-	"github.com/convox/rack/api/structs"
+	"github.com/convox/rack/structs"
+	"github.com/convox/rack/provider"
 	"github.com/convox/rack/test"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestSystemShow(t *testing.T) {
-	models.Test(t, func() {
+	Mock(func(p *provider.MockProvider) {
 		system := &structs.System{
-			Count:             3,
-			Name:              "test",
-			Region:            "us-test-1",
-			Status:            "running",
-			Type:              "t2.small",
-			Version:           "dev",
-			BuildInstanceType: "t3.large",
+			Count:   3,
+			Domain:  "foo",
+			Name:    "test",
+			Region:  "us-test-1",
+			Status:  "running",
+			Type:    "t2.small",
+			Version: "dev",
 		}
 
-		models.TestProvider.On("SystemGet").Return(system, nil)
+		p.On("SystemGet").Return(system, nil)
 
 		hf := test.NewHandlerFunc(controllers.HandlerFunc)
 
 		if assert.Nil(t, hf.Request("GET", "/system", nil)) {
 			hf.AssertCode(t, 200)
-			hf.AssertJSON(t, `{"buildinstance": "t3.large", "count":3,"name":"test","region":"us-test-1","status":"running","type":"t2.small","version":"dev"}`)
+			hf.AssertJSON(t, `{"count":3,"domain":"foo","name":"test","region":"us-test-1","status":"running","type":"t2.small","version":"dev"}`)
 		}
 	})
 }
 
 func TestSystemShowRackFetchError(t *testing.T) {
-	models.Test(t, func() {
-		models.TestProvider.On("SystemGet").Return(nil, fmt.Errorf("some error"))
+	Mock(func(p *provider.MockProvider) {
+		p.On("SystemGet").Return(nil, fmt.Errorf("some error"))
 
 		hf := test.NewHandlerFunc(controllers.HandlerFunc)
 
@@ -51,28 +51,26 @@ func TestSystemShowRackFetchError(t *testing.T) {
 }
 
 func TestSystemUpdate(t *testing.T) {
-	models.Test(t, func() {
+	Mock(func(p *provider.MockProvider) {
 		before := &structs.System{
-			Count:             3,
-			Name:              "test",
-			Region:            "us-test-1",
-			Status:            "running",
-			Type:              "t2.small",
-			Version:           "dev",
-			BuildInstanceType: "t3.large",
+			Count:   3,
+			Name:    "test",
+			Region:  "us-test-1",
+			Status:  "running",
+			Type:    "t2.small",
+			Version: "dev",
 		}
 		change := structs.System{
-			Count:             5,
-			Name:              "test",
-			Region:            "us-test-1",
-			Status:            "running",
-			Type:              "t2.test",
-			Version:           "latest",
-			BuildInstanceType: "t3.large",
+			Count:   5,
+			Name:    "test",
+			Region:  "us-test-1",
+			Status:  "running",
+			Type:    "t2.test",
+			Version: "latest",
 		}
 
-		models.TestProvider.On("SystemGet").Return(before, nil)
-		models.TestProvider.On("SystemSave", change).Return(nil)
+		p.On("SystemGet").Return(before, nil)
+		p.On("SystemSave", change).Return(nil)
 
 		hf := test.NewHandlerFunc(controllers.HandlerFunc)
 
@@ -83,14 +81,14 @@ func TestSystemUpdate(t *testing.T) {
 
 		if assert.Nil(t, hf.Request("PUT", "/system", v)) {
 			hf.AssertCode(t, 200)
-			hf.AssertJSON(t, `{"buildinstance":"t3.large","count":5,"name":"test","region":"us-test-1","status":"running","type":"t2.test","version":"latest"}`)
+			hf.AssertJSON(t, `{"count":5,"domain":"","name":"test","region":"us-test-1","status":"running","type":"t2.test","version":"latest"}`)
 		}
 	})
 }
 
 func TestSystemUpdateRackFetchError(t *testing.T) {
-	models.Test(t, func() {
-		models.TestProvider.On("SystemGet").Return(nil, fmt.Errorf("some error"))
+	Mock(func(p *provider.MockProvider) {
+		p.On("SystemGet").Return(nil, fmt.Errorf("some error"))
 
 		hf := test.NewHandlerFunc(controllers.HandlerFunc)
 
@@ -102,28 +100,26 @@ func TestSystemUpdateRackFetchError(t *testing.T) {
 }
 
 func TestSystemUpdateCountNoChange(t *testing.T) {
-	models.Test(t, func() {
+	Mock(func(p *provider.MockProvider) {
 		before := &structs.System{
-			Count:             3,
-			Name:              "test",
-			Region:            "us-test-1",
-			Status:            "running",
-			Type:              "t2.small",
-			Version:           "dev",
-			BuildInstanceType: "t3.large",
+			Count:   3,
+			Name:    "test",
+			Region:  "us-test-1",
+			Status:  "running",
+			Type:    "t2.small",
+			Version: "dev",
 		}
 		change := structs.System{
-			Count:             3,
-			Name:              "test",
-			Region:            "us-test-1",
-			Status:            "running",
-			Type:              "t2.small",
-			Version:           "latest",
-			BuildInstanceType: "t3.large",
+			Count:   3,
+			Name:    "test",
+			Region:  "us-test-1",
+			Status:  "running",
+			Type:    "t2.small",
+			Version: "latest",
 		}
 
-		models.TestProvider.On("SystemGet").Return(before, nil)
-		models.TestProvider.On("SystemSave", change).Return(nil)
+		p.On("SystemGet").Return(before, nil)
+		p.On("SystemSave", change).Return(nil)
 
 		hf := test.NewHandlerFunc(controllers.HandlerFunc)
 
@@ -133,28 +129,27 @@ func TestSystemUpdateCountNoChange(t *testing.T) {
 
 		if assert.Nil(t, hf.Request("PUT", "/system", v)) {
 			hf.AssertCode(t, 200)
-			hf.AssertJSON(t, `{"buildinstance":"t3.large","count":3,"name":"test","region":"us-test-1","status":"running","type":"t2.small","version":"latest"}`)
+			hf.AssertJSON(t, `{"count":3,"domain":"","name":"test","region":"us-test-1","status":"running","type":"t2.small","version":"latest"}`)
 		}
 	})
 }
 
 func TestSystemUpdateAutoscaleCount(t *testing.T) {
-	models.Test(t, func() {
+	Mock(func(p *provider.MockProvider) {
 		as := os.Getenv("AUTOSCALE")
 		os.Setenv("AUTOSCALE", "true")
 		defer os.Setenv("AUTOSCALE", as)
 
 		before := &structs.System{
-			Count:             3,
-			Name:              "test",
-			Region:            "us-test-1",
-			Status:            "running",
-			Type:              "t2.small",
-			Version:           "dev",
-			BuildInstanceType: "t3.large",
+			Count:   3,
+			Name:    "test",
+			Region:  "us-test-1",
+			Status:  "running",
+			Type:    "t2.small",
+			Version: "dev",
 		}
 
-		models.TestProvider.On("SystemGet").Return(before, nil)
+		p.On("SystemGet").Return(before, nil)
 
 		hf := test.NewHandlerFunc(controllers.HandlerFunc)
 
@@ -168,18 +163,17 @@ func TestSystemUpdateAutoscaleCount(t *testing.T) {
 	})
 }
 func TestSystemUpdateBadCount(t *testing.T) {
-	models.Test(t, func() {
+	Mock(func(p *provider.MockProvider) {
 		before := &structs.System{
-			Count:             3,
-			Name:              "test",
-			Region:            "us-test-1",
-			Status:            "running",
-			Type:              "t2.small",
-			Version:           "dev",
-			BuildInstanceType: "t3.large",
+			Count:   3,
+			Name:    "test",
+			Region:  "us-test-1",
+			Status:  "running",
+			Type:    "t2.small",
+			Version: "dev",
 		}
 
-		models.TestProvider.On("SystemGet").Return(before, nil)
+		p.On("SystemGet").Return(before, nil)
 
 		hf := test.NewHandlerFunc(controllers.HandlerFunc)
 
@@ -192,18 +186,17 @@ func TestSystemUpdateBadCount(t *testing.T) {
 		}
 	})
 
-	models.Test(t, func() {
+	Mock(func(p *provider.MockProvider) {
 		before := &structs.System{
-			Count:             3,
-			Name:              "test",
-			Region:            "us-test-1",
-			Status:            "running",
-			Type:              "t2.small",
-			Version:           "dev",
-			BuildInstanceType: "t3.large",
+			Count:   3,
+			Name:    "test",
+			Region:  "us-test-1",
+			Status:  "running",
+			Type:    "t2.small",
+			Version: "dev",
 		}
 
-		models.TestProvider.On("SystemGet").Return(before, nil)
+		p.On("SystemGet").Return(before, nil)
 
 		hf := test.NewHandlerFunc(controllers.HandlerFunc)
 
@@ -216,18 +209,17 @@ func TestSystemUpdateBadCount(t *testing.T) {
 		}
 	})
 
-	models.Test(t, func() {
+	Mock(func(p *provider.MockProvider) {
 		before := &structs.System{
-			Count:             3,
-			Name:              "test",
-			Region:            "us-test-1",
-			Status:            "running",
-			Type:              "t2.small",
-			Version:           "dev",
-			BuildInstanceType: "t3.large",
+			Count:   3,
+			Name:    "test",
+			Region:  "us-test-1",
+			Status:  "running",
+			Type:    "t2.small",
+			Version: "dev",
 		}
 
-		models.TestProvider.On("SystemGet").Return(before, nil)
+		p.On("SystemGet").Return(before, nil)
 
 		hf := test.NewHandlerFunc(controllers.HandlerFunc)
 
@@ -242,28 +234,26 @@ func TestSystemUpdateBadCount(t *testing.T) {
 }
 
 func TestSystemUpdateSaveError(t *testing.T) {
-	models.Test(t, func() {
+	Mock(func(p *provider.MockProvider) {
 		before := &structs.System{
-			Count:             3,
-			Name:              "test",
-			Region:            "us-test-1",
-			Status:            "running",
-			Type:              "t2.small",
-			Version:           "dev",
-			BuildInstanceType: "t3.large",
+			Count:   3,
+			Name:    "test",
+			Region:  "us-test-1",
+			Status:  "running",
+			Type:    "t2.small",
+			Version: "dev",
 		}
 		change := structs.System{
-			Count:             4,
-			Name:              "test",
-			Region:            "us-test-1",
-			Status:            "running",
-			Type:              "t2.small",
-			Version:           "dev",
-			BuildInstanceType: "t3.large",
+			Count:   4,
+			Name:    "test",
+			Region:  "us-test-1",
+			Status:  "running",
+			Type:    "t2.small",
+			Version: "dev",
 		}
 
-		models.TestProvider.On("SystemGet").Return(before, nil)
-		models.TestProvider.On("SystemSave", change).Return(fmt.Errorf("bad save"))
+		p.On("SystemGet").Return(before, nil)
+		p.On("SystemSave", change).Return(fmt.Errorf("bad save"))
 
 		hf := test.NewHandlerFunc(controllers.HandlerFunc)
 
@@ -278,7 +268,7 @@ func TestSystemUpdateSaveError(t *testing.T) {
 }
 
 func TestSystemCapacity(t *testing.T) {
-	models.Test(t, func() {
+	Mock(func(p *provider.MockProvider) {
 		capacity := &structs.Capacity{
 			ClusterCPU:     200,
 			ClusterMemory:  2048,
@@ -290,7 +280,7 @@ func TestSystemCapacity(t *testing.T) {
 			ProcessWidth:   3,
 		}
 
-		models.TestProvider.On("CapacityGet").Return(capacity, nil)
+		p.On("CapacityGet").Return(capacity, nil)
 
 		hf := test.NewHandlerFunc(controllers.HandlerFunc)
 
@@ -302,8 +292,8 @@ func TestSystemCapacity(t *testing.T) {
 }
 
 func TestSystemCapacityError(t *testing.T) {
-	models.Test(t, func() {
-		models.TestProvider.On("CapacityGet").Return(nil, fmt.Errorf("some error"))
+	Mock(func(p *provider.MockProvider) {
+		p.On("CapacityGet").Return(nil, fmt.Errorf("some error"))
 
 		hf := test.NewHandlerFunc(controllers.HandlerFunc)
 
@@ -315,13 +305,13 @@ func TestSystemCapacityError(t *testing.T) {
 }
 
 func TestSystemReleases(t *testing.T) {
-	models.Test(t, func() {
+	Mock(func(p *provider.MockProvider) {
 		releases := structs.Releases{
 			structs.Release{Id: "R0000001", App: "test", Build: "B0000001", Created: time.Date(2016, 3, 4, 5, 6, 7, 12, time.UTC)},
 			structs.Release{Id: "R0000002", App: "test", Build: "B0000002", Created: time.Date(2016, 3, 4, 9, 6, 7, 14, time.UTC)},
 		}
 
-		models.TestProvider.On("SystemReleases").Return(releases, nil)
+		p.On("SystemReleases").Return(releases, nil)
 
 		hf := test.NewHandlerFunc(controllers.HandlerFunc)
 
@@ -336,8 +326,8 @@ func TestSystemReleases(t *testing.T) {
 }
 
 func TestSystemReleasesError(t *testing.T) {
-	models.Test(t, func() {
-		models.TestProvider.On("SystemReleases").Return(nil, fmt.Errorf("some error"))
+	Mock(func(p *provider.MockProvider) {
+		p.On("SystemReleases").Return(nil, fmt.Errorf("some error"))
 
 		hf := test.NewHandlerFunc(controllers.HandlerFunc)
 

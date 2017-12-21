@@ -1,16 +1,14 @@
 version: "2"
 services:
   web:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: api/bin/web
+    build: .
+    command: bin/web
     environment:
       - AUTOSCALE=false
       - DEVELOPMENT=true
+      - AWS_ACCESS_KEY_ID
       - AWS_REGION
-      - AWS_ACCESS
-      - AWS_SECRET
+      - AWS_SECRET_ACCESS_KEY
       - BUILD_CLUSTER
       - CLIENT_ID=dev@convox.com
       - CLOUDFORMATION_TOPIC
@@ -22,6 +20,7 @@ services:
       - DYNAMO_RELEASES
       - ENCRYPTION_KEY
       - INTERNAL
+      - LOG_BUCKET
       - NOTIFICATION_HOST
       - NOTIFICATION_TOPIC
       - PASSWORD
@@ -46,16 +45,14 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
   monitor:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: api/bin/monitor
+    build: .
+    command: bin/monitor
     environment:
       - DEVELOPMENT=true
       - AUTOSCALE=false
+      - AWS_ACCESS_KEY_ID
       - AWS_REGION
-      - AWS_ACCESS
-      - AWS_SECRET
+      - AWS_SECRET_ACCESS_KEY
       - BUILD_CLUSTER
       - CLIENT_ID=dev@convox.com
       - CLOUDFORMATION_TOPIC
@@ -68,6 +65,7 @@ services:
       - ENCRYPTION_KEY
       - NOTIFICATION_HOST
       - NOTIFICATION_TOPIC
+      - ON_DEMAND_MIN_COUNT
       - PASSWORD
       - PRIVATE
       - PROVIDER
@@ -76,6 +74,7 @@ services:
       - ROLLBAR_TOKEN=f67f25b8a9024d5690f997bd86bf14b0
       - SECURITY_GROUP
       - SEGMENT_WRITE_KEY=KLvwCXo6qcTmQHLpF69DEwGf9zh7lt9i
+      - SPOT_INSTANCES
       - STACK_ID
       - SUBNETS
       - SUBNETS_PRIVATE

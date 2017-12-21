@@ -45,11 +45,11 @@ func (r *rateLimitRespectingClient) retry(err error, attempts int) bool {
 	return false
 }
 
-func (r *rateLimitRespectingClient) CreateApp(name string) (*client.App, error) {
+func (r *rateLimitRespectingClient) CreateApp(name, generation string) (*client.App, error) {
 	count := 0
 	for {
 		count++
-		rez, err := r.wrapped.CreateApp(name)
+		rez, err := r.wrapped.CreateApp(name, generation)
 
 		if r.retry(err, count) {
 			continue

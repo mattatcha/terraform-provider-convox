@@ -5,6 +5,7 @@
 package docker
 
 import (
+	"net"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -18,6 +19,7 @@ type DockerVersion struct {
 }
 
 func TestVersion(t *testing.T) {
+	t.Parallel()
 	body := `{
      "Version":"0.2.2",
      "GitCommit":"5a2a5cc+CHANGES",
@@ -55,6 +57,7 @@ func TestVersion(t *testing.T) {
 }
 
 func TestVersionError(t *testing.T) {
+	t.Parallel()
 	fakeRT := &FakeRoundTripper{message: "internal error", status: http.StatusInternalServerError}
 	client := newTestClient(fakeRT)
 	version, err := client.Version()
@@ -67,6 +70,7 @@ func TestVersionError(t *testing.T) {
 }
 
 func TestInfo(t *testing.T) {
+	t.Parallel()
 	body := `{
      "Containers":11,
      "Images":16,
@@ -74,7 +78,24 @@ func TestInfo(t *testing.T) {
      "NFd":11,
      "NGoroutines":21,
      "MemoryLimit":true,
-     "SwapLimit":false
+     "SwapLimit":false,
+     "RegistryConfig":{
+       "InsecureRegistryCIDRs":["127.0.0.0/8"],
+       "IndexConfigs":{
+         "docker.io":{
+           "Name":"docker.io",
+           "Mirrors":null,
+           "Secure":true,
+           "Official":true
+         }
+       },
+       "Mirrors":null
+     },
+     "SecurityOptions": [
+     	"name=apparmor",
+     	"name=seccomp",
+     	"profile=default"
+     ]
 }`
 	fakeRT := FakeRoundTripper{message: body, status: http.StatusOK}
 	client := newTestClient(&fakeRT)
@@ -86,6 +107,26 @@ func TestInfo(t *testing.T) {
 		NGoroutines: 21,
 		MemoryLimit: true,
 		SwapLimit:   false,
+		RegistryConfig: &ServiceConfig{
+			InsecureRegistryCIDRs: []*NetIPNet{
+				{
+					Mask: net.CIDRMask(8, 32),
+					IP:   net.ParseIP("127.0.0.0").To4(),
+				},
+			},
+			IndexConfigs: map[string]*IndexInfo{
+				"docker.io": {
+					Name:     "docker.io",
+					Secure:   true,
+					Official: true,
+				},
+			},
+		},
+		SecurityOptions: []string{
+			"name=apparmor",
+			"name=seccomp",
+			"profile=default",
+		},
 	}
 	info, err := client.Info()
 	if err != nil {
@@ -105,6 +146,7 @@ func TestInfo(t *testing.T) {
 }
 
 func TestInfoError(t *testing.T) {
+	t.Parallel()
 	fakeRT := &FakeRoundTripper{message: "internal error", status: http.StatusInternalServerError}
 	client := newTestClient(fakeRT)
 	version, err := client.Info()
@@ -117,6 +159,7 @@ func TestInfoError(t *testing.T) {
 }
 
 func TestParseRepositoryTag(t *testing.T) {
+	t.Parallel()
 	var tests = []struct {
 		input        string
 		expectedRepo string

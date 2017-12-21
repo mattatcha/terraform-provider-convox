@@ -17,7 +17,7 @@ type ClientUnpacker func(valueGetter ValueGetter, meta interface{}) (Client, err
 
 // Client interface is the subset of the convox client we use
 type Client interface {
-	CreateApp(name string) (*client.App, error)
+	CreateApp(name string, generation string) (*client.App, error)
 	GetApp(name string) (*client.App, error)
 	DeleteApp(name string) (*client.App, error)
 

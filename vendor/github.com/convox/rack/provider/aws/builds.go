@@ -26,8 +26,9 @@ import (
 	"github.com/aws/aws-sdk-go/service/ecs"
 	docker "github.com/fsouza/go-dockerclient"
 
-	"github.com/convox/rack/api/structs"
+	"github.com/convox/rack/structs"
 	"github.com/convox/rack/manifest"
+	"github.com/convox/rack/manifest1"
 )
 
 // ECR host is formatted like 123456789012.dkr.ecr.us-east-1.amazonaws.com
@@ -139,13 +140,50 @@ func (p *AWSProvider) BuildExport(app, id string, w io.Writer) error {
 		return err
 	}
 
-	m, err := manifest.Load([]byte(build.Manifest))
+	a, err := p.AppGet(app)
 	if err != nil {
-		log.Error(err)
-		return fmt.Errorf("manifest error: %s", err)
+		return err
 	}
 
-	if len(m.Services) < 1 {
+	services := []string{}
+
+	switch a.Tags["Generation"] {
+	case "2":
+		r, err := p.ReleaseGet(app, build.Release)
+		if err != nil {
+			log.Error(err)
+			return err
+		}
+
+		env := structs.Environment{}
+
+		if err := env.Load([]byte(r.Env)); err != nil {
+			log.Error(err)
+			return err
+		}
+
+		m, err := manifest.Load([]byte(build.Manifest), manifest.Environment(env))
+		if err != nil {
+			log.Error(err)
+			return err
+		}
+
+		for _, s := range m.Services {
+			services = append(services, s.Name)
+		}
+	default:
+		m, err := manifest1.Load([]byte(build.Manifest))
+		if err != nil {
+			log.Error(err)
+			return fmt.Errorf("manifest error: %s", err)
+		}
+
+		for name := range m.Services {
+			services = append(services, name)
+		}
+	}
+
+	if len(services) < 1 {
 		log.Errorf("no services found to export")
 		return fmt.Errorf("no services found to export")
 	}
@@ -194,56 +232,78 @@ func (p *AWSProvider) BuildExport(app, id string, w io.Writer) error {
 
 	defer os.Remove(tmp)
 
-	for service := range m.Services {
-		image := fmt.Sprintf("%s:%s.%s", repo.URI, service, build.Id)
-		file := filepath.Join(tmp, fmt.Sprintf("%s.%s.tar", service, build.Id))
+	images := []string{}
 
-		log.Step("pull").Logf("image=%q", image)
-		out, err := exec.Command("docker", "pull", image).CombinedOutput()
-		if err != nil {
-			return log.Error(fmt.Errorf("%s: %s\n", lastline(out), err.Error()))
-		}
+	for _, service := range services {
+		images = append(images, fmt.Sprintf("%s:%s.%s", repo.URI, service, build.Id))
+	}
 
-		log.Step("save").Logf("image=%q file=%q", image, file)
-		out, err = exec.Command("docker", "save", "-o", file, image).CombinedOutput()
-		if err != nil {
-			return log.Error(fmt.Errorf("%s: %s\n", lastline(out), err.Error()))
-		}
+	errch := make(chan error, len(images))
 
-		stat, err := os.Stat(file)
-		if err != nil {
-			log.Error(err)
+	for _, image := range images {
+		go func(img string) {
+			log.Step("pull").Logf("image=%q", img)
+			out, err := exec.Command("docker", "pull", img).CombinedOutput()
+			if err != nil {
+				errch <- fmt.Errorf("%s: %s\n", lastline(out), err.Error())
+				return
+			}
+
+			errch <- nil
+		}(image)
+	}
+
+	for i := 0; i < len(images); i++ {
+		if err := <-errch; err != nil {
 			return err
 		}
+	}
 
-		header := &tar.Header{
-			Typeflag: tar.TypeReg,
-			Name:     fmt.Sprintf("%s.%s.tar", service, build.Id),
-			Mode:     0600,
-			Size:     stat.Size(),
-		}
+	name := fmt.Sprintf("%s.%s.tar", app, build.Id)
+	file := filepath.Join(tmp, name)
+	args := []string{"save", "-o", file}
+	args = append(args, images...)
 
-		if err := tw.WriteHeader(header); err != nil {
-			log.Error(err)
-			return err
-		}
+	log.Step("save").Logf("file=%q images=%d", file, len(images))
+	out, err := exec.Command("docker", args...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s: %s\n", strings.TrimSpace(string(out)), err.Error())
+	}
 
-		fd, err := os.Open(file)
-		if err != nil {
-			log.Error(err)
-			return err
-		}
-
-		log.Step("copy").Logf("file=%q", file)
-		if _, err := io.Copy(tw, fd); err != nil {
-			log.Error(err)
-			return err
-		}
-
+	defer func() {
 		if err := os.Remove(file); err != nil {
 			log.Error(err)
-			return err
 		}
+	}()
+
+	stat, err := os.Stat(file)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+
+	header := &tar.Header{
+		Typeflag: tar.TypeReg,
+		Name:     name,
+		Mode:     0600,
+		Size:     stat.Size(),
+	}
+
+	if err := tw.WriteHeader(header); err != nil {
+		log.Error(err)
+		return err
+	}
+
+	fd, err := os.Open(file)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+
+	log.Step("copy").Logf("file=%q", file)
+	if _, err := io.Copy(tw, fd); err != nil {
+		log.Error(err)
+		return err
 	}
 
 	if err := tw.Close(); err != nil {
@@ -317,7 +377,7 @@ func (p *AWSProvider) BuildImport(app string, r io.Reader) (*structs.Build, erro
 
 	tr := tar.NewReader(gz)
 
-	psi := make(map[string]string)
+	var manifest imageManifest
 
 	for {
 		header, err := tr.Next()
@@ -341,15 +401,16 @@ func (p *AWSProvider) BuildImport(app string, r io.Reader) (*structs.Build, erro
 				return nil, err
 			}
 
+			targetBuild.Id = sourceBuild.Id
+
 			_, err := p.BuildGet(app, sourceBuild.Id)
 			if _, ok := err.(NoSuchBuild); err != nil && !ok {
 				return nil, err
 			}
 			if err == nil {
-				return nil, fmt.Errorf("build id %s already exists", sourceBuild.Id)
+				// build id already exists
+				targetBuild.Id = generateId("B", 10)
 			}
-
-			targetBuild.Id = sourceBuild.Id
 		}
 
 		if strings.HasSuffix(header.Name, ".tar") {
@@ -370,7 +431,7 @@ func (p *AWSProvider) BuildImport(app string, r io.Reader) (*structs.Build, erro
 			}
 
 			log.Step("manifest").Logf("tar=%q", header.Name)
-			manifest, err := extractImageManifest(tee)
+			manifest, err = extractImageManifest(tee)
 			if err != nil {
 				log.Error(err)
 				return nil, err
@@ -382,31 +443,32 @@ func (p *AWSProvider) BuildImport(app string, r io.Reader) (*structs.Build, erro
 			}
 
 			if err := cmd.Wait(); err != nil {
-				return nil, log.Errorf("%s: %s\n", lastline(outb.Bytes()), err.Error())
+				out := strings.TrimSpace(outb.String())
+				return nil, log.Errorf("%s: %s\n", out, err.Error())
 			}
 
-			if len(manifest) != 1 || len(manifest[0].RepoTags) != 1 {
-				log.Errorf("invalid image manifest")
-				return nil, fmt.Errorf("invalid image manifest")
+			if len(manifest) == 0 {
+				log.Errorf("invalid image manifest: no data")
+				return nil, fmt.Errorf("invalid image manifest: no data")
 			}
-
-			image := manifest[0].RepoTags[0]
-			ps := strings.Split(header.Name, ".")[0]
-			psi[ps] = image
 		}
 	}
 
-	for ps, image := range psi {
-		target := fmt.Sprintf("%s:%s.%s", repo.URI, ps, targetBuild.Id)
+	for _, tags := range manifest {
+		for _, image := range tags.RepoTags {
+			fps := strings.Split(image, ":")[1]
+			ps := strings.Split(fps, ".")[0]
+			target := fmt.Sprintf("%s:%s.%s", repo.URI, ps, targetBuild.Id)
 
-		log.Step("tag").Logf("from=%q to=%q", image, target)
-		if out, err := exec.Command("docker", "tag", image, target).CombinedOutput(); err != nil {
-			return nil, log.Error(fmt.Errorf("%s: %s\n", lastline(out), err.Error()))
-		}
+			log.Step("tag").Logf("from=%q to=%q", image, target)
+			if out, err := exec.Command("docker", "tag", image, target).CombinedOutput(); err != nil {
+				return nil, log.Error(fmt.Errorf("%s: %s\n", lastline(out), err.Error()))
+			}
 
-		log.Step("push").Logf("to=%q", target)
-		if out, err := exec.Command("docker", "push", target).CombinedOutput(); err != nil {
-			return nil, log.Error(fmt.Errorf("%s: %s\n", lastline(out), err.Error()))
+			log.Step("push").Logf("to=%q", target)
+			if out, err := exec.Command("docker", "push", target).CombinedOutput(); err != nil {
+				return nil, log.Error(fmt.Errorf("%s: %s\n", lastline(out), err.Error()))
+			}
 		}
 	}
 
@@ -433,7 +495,7 @@ func (p *AWSProvider) BuildImport(app string, r io.Reader) (*structs.Build, erro
 		return nil, err
 	}
 
-	release.Env = env.Raw()
+	release.Env = env.String()
 	release.Build = targetBuild.Id
 	release.Manifest = targetBuild.Manifest
 
@@ -704,12 +766,12 @@ func (p *AWSProvider) buildAuth(build *structs.Build) (string, error) {
 		}
 	}
 
-	a, err := p.AppGet(build.App)
+	aid, err := p.accountId()
 	if err != nil {
 		return "", err
 	}
 
-	host := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", a.Outputs["RegistryId"], p.Region)
+	host := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", aid, p.Region)
 
 	un, pw, err := p.authECR(host, "", "")
 	if err != nil {
@@ -773,14 +835,9 @@ func (p *AWSProvider) authECR(host, access, secret string) (string, string, erro
 func (p *AWSProvider) runBuild(build *structs.Build, method, url string, opts structs.BuildOptions) error {
 	log := Logger.At("runBuild").Namespace("method=%q url=%q", method, url).Start()
 
-	br, err := p.stackResource(p.Rack, "RackBuildTasks")
+	br, err := p.stackResource(p.Rack, "ApiBuildTasks")
 	if err != nil {
 		log.Error(err)
-		return err
-	}
-
-	a, err := p.AppGet(build.App)
-	if err != nil {
 		return err
 	}
 
@@ -791,7 +848,37 @@ func (p *AWSProvider) runBuild(build *structs.Build, method, url string, opts st
 		return err
 	}
 
-	push := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:{service}.{build}", a.Outputs["RegistryId"], p.Region, a.Outputs["RegistryRepository"])
+	aid, err := p.accountId()
+	if err != nil {
+		return err
+	}
+
+	reg, err := p.appResource(build.App, "Registry")
+	if err != nil {
+		// handle generation 1
+		if strings.HasPrefix(err.Error(), "resource not found") {
+			app, err := p.AppGet(build.App)
+			if err != nil {
+				return err
+			}
+
+			reg = app.Outputs["RegistryRepository"]
+		} else {
+			return err
+		}
+	}
+
+	a, err := p.AppGet(build.App)
+	if err != nil {
+		return err
+	}
+
+	push := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:{service}.{build}", aid, p.Region, reg)
+
+	switch a.Tags["Generation"] {
+	case "2":
+		push = fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s", aid, p.Region, reg)
+	}
 
 	req := &ecs.RunTaskInput{
 		Cluster:        aws.String(p.BuildCluster),
@@ -819,6 +906,10 @@ func (p *AWSProvider) runBuild(build *structs.Build, method, url string, opts st
 						{
 							Name:  aws.String("BUILD_CONFIG"),
 							Value: aws.String(opts.Config),
+						},
+						{
+							Name:  aws.String("BUILD_GENERATION"),
+							Value: aws.String(a.Tags["Generation"]),
 						},
 						{
 							Name:  aws.String("BUILD_ID"),
@@ -948,7 +1039,7 @@ func (p *AWSProvider) buildFromItem(item map[string]*dynamodb.AttributeValue) *s
 // are not yet supported and return an error.
 func (p *AWSProvider) deleteImages(a *structs.App, b *structs.Build) error {
 
-	m, err := manifest.Load([]byte(b.Manifest))
+	m, err := manifest1.Load([]byte(b.Manifest))
 	if err != nil {
 		return err
 	}

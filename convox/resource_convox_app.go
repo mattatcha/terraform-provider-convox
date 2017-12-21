@@ -2,7 +2,6 @@ package convox
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -26,13 +25,22 @@ func ResourceConvoxApp(clientUnpacker ClientUnpacker) *schema.Resource {
 				Required: true,
 				ForceNew: true,
 			},
+			"generation": &schema.Schema{
+				Type:             schema.TypeString,
+				Optional:         true,
+				Default:          "1",
+				ForceNew:         true,
+				DiffSuppressFunc: generationDiffSuppress,
+			},
 			"status": &schema.Schema{
 				Type:     schema.TypeString,
 				Computed: true,
 			},
 			"environment": &schema.Schema{
-				Type:     schema.TypeMap,
-				Optional: true,
+				Type:             schema.TypeMap,
+				Optional:         true,
+				Sensitive:        true,
+				DiffSuppressFunc: environmentDiffSuppress,
 			},
 			"params": &schema.Schema{
 				Type:     schema.TypeMap,
@@ -64,7 +72,12 @@ func ResourceConvoxAppCreateFactory(clientUnpacker ClientUnpacker) schema.Create
 		}
 
 		name := d.Get("name").(string)
-		app, err := c.CreateApp(name)
+		generation := d.Get("generation").(string)
+		if generation == "" {
+			generation = "1"
+		}
+
+		app, err := c.CreateApp(name, generation)
 		if err != nil {
 			return errwrap.Wrapf(fmt.Sprintf(
 				"Error creating app (%s): {{err}}", name), err)
@@ -124,6 +137,7 @@ func ResourceConvoxAppReadFactory(clientUnpacker ClientUnpacker) schema.ReadFunc
 		if err != nil {
 			return fmt.Errorf("Error calling GetEnvironment(%s): %s", app.Name, err.Error())
 		}
+
 		d.Set("environment", env)
 
 		formation, err := c.ListFormation(app.Name)
@@ -212,6 +226,29 @@ func setParams(c Client, d *schema.ResourceData) error {
 	return nil
 }
 
+func environmentDiffSuppress(k, old, new string, d *schema.ResourceData) bool {
+	// Return true if the diff should be suppressed, false to retain it.
+
+	if d.IsNewResource() {
+		return false
+	}
+
+	if old == new {
+		return true
+	}
+
+	return strings.TrimSpace(old) == strings.TrimSpace(new)
+}
+
+func generationDiffSuppress(k, old, new string, d *schema.ResourceData) bool {
+	// Return true if the diff should be suppressed, false to retain it.
+	if old == "" && new == "1" {
+		return true
+	}
+
+	return old == new
+}
+
 func setEnv(c Client, d *schema.ResourceData) error {
 	if !d.HasChange("environment") {
 		return nil
@@ -222,11 +259,10 @@ func setEnv(c Client, d *schema.ResourceData) error {
 	for key, value := range env {
 		data += fmt.Sprintf("%s=%s\n", key, value)
 	}
-	_, rel, err := c.SetEnvironment(d.Id(), strings.NewReader(data))
+	_, _, err := c.SetEnvironment(d.Id(), strings.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("Error setting vars (%#v) for %s: %s", env, d.Id(), err)
 	}
-	log.Printf("[INFO] Release (%s) created on: %s", rel, d.Id())
 
 	return nil
 }

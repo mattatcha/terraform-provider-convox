@@ -5,7 +5,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"net/http"
-	"os"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -14,8 +14,9 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ecs"
-	"github.com/convox/rack/api/crypt"
-	"github.com/convox/rack/api/models"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/convox/rack/crypt"
+	"github.com/convox/rack/structs"
 )
 
 // Parses as [host]:[container]/[protocol?], where [protocol] is optional
@@ -106,7 +107,7 @@ func ECSTaskDefinitionCreate(req Request) (string, map[string]string, error) {
 	// get environment from S3 URL
 	// 'Environment' is a CloudFormation Template Property that references 'Environment' CF Parameter with S3 URL
 	// S3 body may be encrypted with KMS key
-	var env models.Environment
+	env := structs.Environment{}
 
 	if taskRole, ok := req.ResourceProperties["TaskRole"].(string); ok && taskRole != "" {
 		r.TaskRoleArn = &taskRole
@@ -117,22 +118,15 @@ func ECSTaskDefinitionCreate(req Request) (string, map[string]string, error) {
 	envURL, ok := req.ResourceProperties["Environment"].(string)
 
 	if ok && envURL != "" {
-		res, err := http.Get(envURL)
-
+		data, err := fetchEnvironment(req, envURL)
 		if err != nil {
 			return "invalid", nil, err
 		}
 
-		defer res.Body.Close()
-
-		data, err := ioutil.ReadAll(res.Body)
-
 		if pkey, ok := req.ResourceProperties["Key"].(string); ok && pkey != "" {
 			key = pkey
-			cr := crypt.New(*Region(&req), os.Getenv("AWS_ACCESS_KEY_ID"), os.Getenv("AWS_SECRET_ACCESS_KEY"))
-			cr.AwsToken = os.Getenv("AWS_SESSION_TOKEN")
 
-			dec, err := cr.Decrypt(pkey, data)
+			dec, err := crypt.New().Decrypt(pkey, data)
 
 			if err != nil {
 				return "invalid", nil, err
@@ -141,8 +135,7 @@ func ECSTaskDefinitionCreate(req Request) (string, map[string]string, error) {
 			data = dec
 		}
 
-		env, err = models.LoadEnvironment(data)
-		if err != nil {
+		if err := env.Load(data); err != nil {
 			return "invalid", nil, err
 		}
 	}
@@ -162,11 +155,6 @@ func ECSTaskDefinitionCreate(req Request) (string, map[string]string, error) {
 			}
 		}
 
-		memory, err := strconv.Atoi(task["Memory"].(string))
-		if err != nil {
-			return "invalid", nil, err
-		}
-
 		privileged := false
 
 		if p, ok := task["Privileged"].(string); ok && p != "" {
@@ -181,8 +169,23 @@ func ECSTaskDefinitionCreate(req Request) (string, map[string]string, error) {
 			Essential:  aws.Bool(true),
 			Image:      aws.String(task["Image"].(string)),
 			Cpu:        aws.Int64(int64(cpu)),
-			Memory:     aws.Int64(int64(memory)),
 			Privileged: aws.Bool(privileged),
+		}
+
+		if m, ok := task["Memory"].(string); ok && m != "" {
+			memory, err := strconv.Atoi(m)
+			if err != nil {
+				return "invalid", nil, err
+			}
+			r.ContainerDefinitions[i].Memory = aws.Int64(int64(memory))
+		}
+
+		if m, ok := task["MemoryReservation"].(string); ok && m != "" {
+			memory, err := strconv.Atoi(m)
+			if err != nil {
+				return "invalid", nil, err
+			}
+			r.ContainerDefinitions[i].MemoryReservation = aws.Int64(int64(memory))
 		}
 
 		// set Command from either -
@@ -254,6 +257,12 @@ func ECSTaskDefinitionCreate(req Request) (string, map[string]string, error) {
 				Name:  aws.String("RELEASE"),
 				Value: aws.String(release),
 			})
+
+			if release != "" {
+				r.ContainerDefinitions[i].DockerLabels = map[string]*string{
+					"convox.release": aws.String(release),
+				}
+			}
 		}
 
 		// set links
@@ -360,6 +369,43 @@ func ECSTaskDefinitionDelete(req Request) (string, map[string]string, error) {
 }
 
 var idAlphabet = []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+func fetchEnvironment(req Request, env string) ([]byte, error) {
+	u, err := url.Parse(env)
+	if err != nil {
+		return nil, err
+	}
+
+	if strings.HasSuffix(u.Host, "s3.amazonaws.com") {
+		return fetchEnvironmentS3(req, strings.Split(u.Host, ".")[0], u.Path)
+	}
+
+	res, err := http.Get(env)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	data, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return data, nil
+}
+
+func fetchEnvironmentS3(req Request, bucket, key string) ([]byte, error) {
+	res, err := S3(req).GetObject(&s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	return ioutil.ReadAll(res.Body)
+}
 
 func generateId(prefix string, size int) string {
 	b := make([]rune, size)

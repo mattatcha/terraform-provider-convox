@@ -2,9 +2,11 @@
 
 package seccomp
 
-import "github.com/opencontainers/runc/libcontainer/configs"
-
-var (
-	// defaultProfile is a nil pointer on unsupported systems.
-	defaultProfile *configs.Seccomp
+import (
+	"github.com/docker/docker/api/types"
 )
+
+// DefaultProfile returns a nil pointer on unsupported systems.
+func DefaultProfile() *types.Seccomp {
+	return nil
+}

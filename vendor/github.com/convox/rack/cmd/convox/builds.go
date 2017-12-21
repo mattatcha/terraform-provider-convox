@@ -44,11 +44,10 @@ var (
 		cli.StringFlag{
 			Name:   "file, f",
 			EnvVar: "COMPOSE_FILE",
-			Value:  "docker-compose.yml",
 			Usage:  "path to an alternate docker compose manifest file",
 		},
 		cli.StringFlag{
-			Name:  "description",
+			Name:  "description, d",
 			Value: "",
 			Usage: "description of the build",
 		},
@@ -80,7 +79,7 @@ func init() {
 			},
 			{
 				Name:        "delete",
-				Description: "archive a build and its artifacts",
+				Description: "delete a build and its artifacts",
 				Usage:       "<build id>",
 				ArgsUsage:   "<build id>",
 				Action:      cmdBuildsDelete,

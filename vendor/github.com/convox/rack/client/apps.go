@@ -7,9 +7,10 @@ import (
 )
 
 type App struct {
-	Name    string `json:"name"`
-	Release string `json:"release"`
-	Status  string `json:"status"`
+	Generation string `json:"generation"`
+	Name       string `json:"name"`
+	Release    string `json:"release"`
+	Status     string `json:"status"`
 }
 
 type Apps []App
@@ -26,9 +27,10 @@ func (c *Client) GetApps() (Apps, error) {
 	return apps, nil
 }
 
-func (c *Client) CreateApp(name string) (*App, error) {
+func (c *Client) CreateApp(name, generation string) (*App, error) {
 	params := Params{
-		"name": name,
+		"generation": generation,
+		"name":       name,
 	}
 
 	var app App

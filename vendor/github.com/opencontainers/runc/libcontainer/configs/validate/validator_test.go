@@ -100,7 +100,7 @@ func TestValidateHostnameWithoutUTSNamespace(t *testing.T) {
 func TestValidateSecurityWithMaskPaths(t *testing.T) {
 	config := &configs.Config{
 		Rootfs:    "/var",
-		MaskPaths: []string{"/proc/kcore"},
+		MaskPaths: []string{"/proc/kcores"},
 		Namespaces: configs.Namespaces(
 			[]configs.Namespace{
 				{Type: configs.NEWNS},
@@ -136,7 +136,7 @@ func TestValidateSecurityWithROPaths(t *testing.T) {
 func TestValidateSecurityWithoutNEWNS(t *testing.T) {
 	config := &configs.Config{
 		Rootfs:        "/var",
-		MaskPaths:     []string{"/proc/kcore"},
+		MaskPaths:     []string{"/proc/kcores"},
 		ReadonlyPaths: []string{"/proc/sys"},
 	}
 

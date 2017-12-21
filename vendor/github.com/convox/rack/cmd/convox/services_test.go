@@ -1,7 +1,9 @@
 package main
 
 import (
+	"net/url"
 	"testing"
+	"time"
 
 	"github.com/convox/rack/client"
 	"github.com/convox/rack/test"
@@ -130,4 +132,41 @@ func TestServicesDelete(t *testing.T) {
 			Stdout:  "Deleting syslog-1234... DELETING\n",
 		},
 	)
+}
+
+// func TestWaitForResource(t *testing.T) {
+//   err := testWaitForResource(t, "running", false)
+//   require.NoError(t, err)
+
+//   err = testWaitForResource(t, "running", true)
+//   require.NoError(t, err)
+
+//   err = testWaitForResource(t, "updating", true)
+//   assert.EqualError(t, err, "timeout")
+
+//   err = testWaitForResource(t, "rollback", true)
+//   assert.EqualError(t, err, "timeout")
+// }
+
+func testWaitForResource(t *testing.T, s string, w bool) error {
+	ts := testServer(t,
+		test.Http{
+			Method: "GET",
+			Path:   "/services/mysql-db",
+			Code:   200,
+			Response: client.Resource{
+				Name:   "mysql-db",
+				Status: s,
+				Type:   "mysql",
+			},
+		},
+	)
+	defer ts.Close()
+
+	u, _ := url.Parse(ts.URL)
+
+	c := client.New(u.Host, "test", "test")
+
+	waitSecond = time.Millisecond
+	return waitForResource(c, "mysql-db", "CREATING", w)
 }

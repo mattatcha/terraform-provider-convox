@@ -8,7 +8,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/convox/rack/client"
 	"github.com/convox/rack/cmd/convox/stdcli"
 	"gopkg.in/urfave/cli.v1"
 )
@@ -29,15 +31,15 @@ var resourceTypes = []ResourceType{
 	},
 	{
 		"mysql",
-		"[--allocated-storage=10] [--database=db-name] [--instance-type=db.t2.micro] [--multi-az] [--password=example] [--private] [--username=example]",
+		"[--allocated-storage=10] [--database=db-name] [--instance-type=db.t2.micro] [--multi-az] [--password=example] [--private] [--username=example] [--version=5.7.16]",
 	},
 	{
 		"postgres",
-		"[--allocated-storage=10] [--database=db-name] [--instance-type=db.t2.micro] [--max-connections={DBInstanceClassMemory/15000000}] [--multi-az] [--password=example] [--private] [--username=example] [--version=9.5.2]",
+		"[--allocated-storage=10] [--backup-retention-period=1] [--database=db-name] [--database-snapshot-identifier=db-snapshot-arn] [--encrypted] [--instance-type=db.t2.micro] [--max-connections={DBInstanceClassMemory/15000000}] [--multi-az] [--password=example] [--private] [--username=example] [--version=9.5.2]",
 	},
 	{
 		"redis",
-		"[--automatic-failover-enabled] [--database=db-name] [--instance-type=cache.t2.micro] [--num-cache-clusters=1] [--private]",
+		"[--automatic-failover-enabled] [--database=db-name] [--encrypted] [--instance-type=cache.t2.micro] [--num-cache-clusters=1] [--private] [--version=3.2.6]",
 	},
 	{
 		"s3",
@@ -61,6 +63,8 @@ var resourceTypes = []ResourceType{
 	},
 }
 
+var waitSecond = time.Second
+
 func init() {
 
 	usage := "Supported types / options:"
@@ -83,7 +87,7 @@ func init() {
 				Usage:           "<type> [--name=value] [--option-name=value] [options]\n\n" + usage,
 				ArgsUsage:       "<type>",
 				Action:          cmdResourceCreate,
-				Flags:           []cli.Flag{rackFlag},
+				Flags:           []cli.Flag{rackFlag, waitFlag},
 				SkipFlagParsing: true,
 			},
 			{
@@ -92,7 +96,7 @@ func init() {
 				Usage:       "<name> [options]",
 				ArgsUsage:   "<name>",
 				Action:      cmdResourceDelete,
-				Flags:       []cli.Flag{rackFlag},
+				Flags:       []cli.Flag{rackFlag, waitFlag},
 			},
 			{
 				Name:            "update",
@@ -101,7 +105,7 @@ func init() {
 				Usage:           "<name> --option-name=value [--option-name=value]\n\n" + usage,
 				ArgsUsage:       "<name>",
 				Action:          cmdResourceUpdate,
-				Flags:           []cli.Flag{rackFlag},
+				Flags:           []cli.Flag{rackFlag, waitFlag},
 				SkipFlagParsing: true,
 			},
 			{
@@ -227,13 +231,16 @@ func cmdResourceCreate(c *cli.Context) error {
 		return stdcli.Error(err)
 	}
 
-	fmt.Println("CREATING")
-	return nil
+	return waitForResource(
+		rackClient(c),
+		options["name"],
+		"CREATING",
+		c.Bool("wait") || options["wait"] == "true",
+	)
 }
 
 func cmdResourceUpdate(c *cli.Context) error {
 	stdcli.NeedHelp(c)
-	stdcli.NeedArg(c, -1)
 
 	name := c.Args()[0]
 	args := c.Args()[1:]
@@ -247,20 +254,24 @@ func cmdResourceUpdate(c *cli.Context) error {
 		optionsList = append(optionsList, fmt.Sprintf("%s=%q", key, val))
 	}
 
-	if len(optionsList) == 0 {
-		stdcli.Usage(c)
-		return nil
+	optionsSuffix := ""
+	if len(optionsList) > 0 {
+		optionsSuffix = fmt.Sprintf(" (%s)", strings.Join(optionsList, " "))
 	}
 
-	fmt.Printf("Updating %s (%s)...", name, strings.Join(optionsList, " "))
+	fmt.Printf("Updating %s%s...", name, optionsSuffix)
 
 	_, err := rackClient(c).UpdateResource(name, options)
 	if err != nil {
 		return stdcli.Error(err)
 	}
 
-	fmt.Println("UPDATING")
-	return nil
+	return waitForResource(
+		rackClient(c),
+		options["name"],
+		"UPDATING",
+		c.Bool("wait") || options["wait"] == "true",
+	)
 }
 
 func cmdResourceDelete(c *cli.Context) error {
@@ -276,8 +287,12 @@ func cmdResourceDelete(c *cli.Context) error {
 		return stdcli.Error(err)
 	}
 
-	fmt.Println("DELETING")
-	return nil
+	return waitForResource(
+		rackClient(c),
+		name,
+		"DELETING",
+		c.Bool("wait"),
+	)
 }
 
 func cmdResourceInfo(c *cli.Context) error {
@@ -428,5 +443,50 @@ func cmdResourceProxy(c *cli.Context) error {
 	}
 
 	proxy(localhost, lp, remotehost, rp, rackClient(c))
+	return nil
+}
+
+func waitForResource(c *client.Client, n string, t string, w bool) error {
+	timeout := time.After(30 * 60 * waitSecond)
+	tick := time.Tick(2 * waitSecond)
+
+	if !w {
+		fmt.Println(t)
+		return nil
+	}
+
+	fmt.Println("Waiting for completion")
+
+	// give the rack some time to start updating
+	time.Sleep(5 * waitSecond)
+
+	failed := false
+
+	for {
+		select {
+		case <-tick:
+			r, err := c.GetResource(n)
+			if err != nil {
+				return err
+			}
+
+			switch r.Status {
+			case "running":
+				if failed {
+					fmt.Println("DONE")
+					return fmt.Errorf("Update rolled back")
+				}
+				return nil
+			case "rollback":
+				if !failed {
+					failed = true
+					fmt.Print("FAILED\nRolling back... ")
+				}
+			}
+		case <-timeout:
+			return fmt.Errorf("timeout")
+		}
+	}
+
 	return nil
 }

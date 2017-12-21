@@ -3,8 +3,8 @@ package aws_test
 import (
 	"testing"
 
-	"github.com/convox/rack/api/awsutil"
-	"github.com/convox/rack/api/structs"
+	"github.com/convox/rack/test/awsutil"
+	"github.com/convox/rack/structs"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -79,9 +79,10 @@ func TestResourceGet(t *testing.T) {
 		Status: "running",
 		Apps: structs.Apps{
 			structs.App{
-				Name:    "httpd",
-				Release: "RVFETUHHKKD",
-				Status:  "running",
+				Generation: "1",
+				Name:       "httpd",
+				Release:    "RVFETUHHKKD",
+				Status:     "running",
 				Outputs: map[string]string{
 					"BalancerWebHost":       "httpd-web-7E5UPCM-1241527783.us-east-1.elb.amazonaws.com",
 					"Kinesis":               "convox-httpd-Kinesis-1MAP0GJ6RITJF",
@@ -279,7 +280,7 @@ var cycleResourceCreateWebhook = awsutil.Cycle{
 var cycleResourceCreateNotificationPublish = awsutil.Cycle{
 	Request: awsutil.Request{
 		RequestURI: "/",
-		Body:       `Action=Publish&Message=%7B%22action%22%3A%22service%3Acreate%22%2C%22status%22%3A%22success%22%2C%22data%22%3A%7B%22name%22%3A%22mywebhook%22%2C%22type%22%3A%22webhook%22%7D%2C%22timestamp%22%3A%220001-01-01T00%3A00%3A00Z%22%7D&Subject=service%3Acreate&TargetArn=&Version=2010-03-31`,
+		Body:       `Action=Publish&Message=%7B%22action%22%3A%22resource%3Acreate%22%2C%22status%22%3A%22success%22%2C%22data%22%3A%7B%22name%22%3A%22mywebhook%22%2C%22rack%22%3A%22convox%22%2C%22type%22%3A%22webhook%22%7D%2C%22timestamp%22%3A%220001-01-01T00%3A00%3A00Z%22%7D&Subject=resource%3Acreate&TargetArn=&Version=2010-03-31`,
 	},
 	Response: awsutil.Response{
 		StatusCode: 200,

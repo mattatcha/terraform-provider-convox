@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/convox/rack/api/awsutil"
-	"github.com/convox/rack/api/structs"
+	"github.com/convox/rack/test/awsutil"
 	"github.com/convox/rack/provider/aws"
+	"github.com/convox/rack/structs"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -24,12 +24,14 @@ func TestSystemGet(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.EqualValues(t, &structs.System{
-		Count:   3,
-		Name:    "convox",
-		Region:  "us-test-1",
-		Status:  "running",
-		Type:    "t2.small",
-		Version: "dev",
+		Count:      3,
+		Name:       "convox",
+		Region:     "us-test-1",
+		Status:     "running",
+		Type:       "t2.small",
+		Version:    "dev",
+		Outputs:    map[string]string{},
+		Parameters: map[string]string{"Autoscale": "No", "SubnetPrivate2CIDR": "10.0.6.0/24", "Subnet0CIDR": "10.0.1.0/24", "Encryption": "Yes", "Development": "Yes", "Private": "No", "InstanceUpdateBatchSize": "1", "InstanceRunCommand": "", "ExistingVpc": "", "PrivateApi": "No", "ContainerDisk": "10", "Ami": "", "VolumeSize": "50", "Tenancy": "default", "Version": "dev", "VPCCIDR": "10.0.0.0/16", "Subnet2CIDR": "10.0.3.0/24", "InstanceType": "t2.small", "Password": "****", "Key": "convox-keypair-4415", "ApiCpu": "128", "SwapSize": "5", "ApiMemory": "128", "SubnetPrivate0CIDR": "10.0.4.0/24", "InstanceCount": "3", "InstanceBootCommand": "", "Internal": "No", "Subnet1CIDR": "10.0.2.0/24", "ClientId": "nmert38iwdsrj362jdf", "SubnetPrivate1CIDR": "10.0.5.0/24"},
 	}, s)
 }
 
@@ -45,12 +47,14 @@ func TestSystemGetConverging(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.EqualValues(t, &structs.System{
-		Count:   3,
-		Name:    "convox",
-		Region:  "us-test-1",
-		Status:  "converging",
-		Type:    "t2.small",
-		Version: "dev",
+		Count:      3,
+		Name:       "convox",
+		Region:     "us-test-1",
+		Status:     "converging",
+		Type:       "t2.small",
+		Version:    "dev",
+		Outputs:    map[string]string{},
+		Parameters: map[string]string{"Autoscale": "No", "SubnetPrivate2CIDR": "10.0.6.0/24", "Subnet0CIDR": "10.0.1.0/24", "Encryption": "Yes", "Development": "Yes", "Private": "No", "InstanceUpdateBatchSize": "1", "InstanceRunCommand": "", "ExistingVpc": "", "PrivateApi": "No", "ContainerDisk": "10", "Ami": "", "VolumeSize": "50", "Tenancy": "default", "Version": "dev", "VPCCIDR": "10.0.0.0/16", "Subnet2CIDR": "10.0.3.0/24", "InstanceType": "t2.small", "Password": "****", "Key": "convox-keypair-4415", "ApiCpu": "128", "SwapSize": "5", "ApiMemory": "128", "SubnetPrivate0CIDR": "10.0.4.0/24", "InstanceCount": "3", "InstanceBootCommand": "", "Internal": "No", "Subnet1CIDR": "10.0.2.0/24", "ClientId": "nmert38iwdsrj362jdf", "SubnetPrivate1CIDR": "10.0.5.0/24"},
 	}, s)
 }
 
@@ -385,7 +389,7 @@ var cycleReleasePutItem = awsutil.Cycle{
 var cycleSystemUpdateNotificationPublish = awsutil.Cycle{
 	Request: awsutil.Request{
 		RequestURI: "/",
-		Body:       `Action=Publish&Message=%7B%22action%22%3A%22rack%3Aupdate%22%2C%22status%22%3A%22success%22%2C%22data%22%3A%7B%22count%22%3A%225%22%2C%22version%22%3A%2220160820033210%22%7D%2C%22timestamp%22%3A%220001-01-01T00%3A00%3A00Z%22%7D&Subject=rack%3Aupdate&TargetArn=&Version=2010-03-31`,
+		Body:       `Action=Publish&Message=%7B%22action%22%3A%22rack%3Aupdate%22%2C%22status%22%3A%22success%22%2C%22data%22%3A%7B%22count%22%3A%225%22%2C%22rack%22%3A%22convox%22%2C%22version%22%3A%2220160820033210%22%7D%2C%22timestamp%22%3A%220001-01-01T00%3A00%3A00Z%22%7D&Subject=rack%3Aupdate&TargetArn=&Version=2010-03-31`,
 	},
 	Response: awsutil.Response{
 		StatusCode: 200,
@@ -710,6 +714,15 @@ var cycleSystemDescribeStackResources = awsutil.Cycle{
 							<Timestamp>2016-09-10T04:35:11.280Z</Timestamp>
 							<ResourceType>AWS::ECS::Service</ResourceType>
 						</member>
+						<member>
+							<PhysicalResourceId>arn:kms::::::</PhysicalResourceId>
+							<ResourceStatus>UPDATE_COMPLETE</ResourceStatus>
+							<StackId>arn:aws:cloudformation:us-east-1:990037048036:stack/convox/b8423690-917d-1fe6-8737-50dseaf92cd2</StackId>
+							<StackName>convox</StackName>
+							<LogicalResourceId>EncryptionKey</LogicalResourceId>
+							<Timestamp>2016-10-22T02:53:23.817Z</Timestamp>
+							<ResourceType>AWS::AutoScaling::AutoScalingGroup</ResourceType>
+						</member>
 					</StackResources>
 				</DescribeStackResourcesResult>
 				<ResponseMetadata>
@@ -892,7 +905,7 @@ var cycleSystemDescribeRackInstances = awsutil.Cycle{
 						</instancesSet>
 					</item>
 				</reservationSet>
-			</DescribeInstancesRepsonse>
+			</DescribeInstancesResponse>
 		}`,
 	},
 }
