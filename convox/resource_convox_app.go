@@ -198,7 +198,11 @@ func readFormation(d *schema.ResourceData, v client.Formation) error {
 	balancers := make(map[string]string, len(v))
 
 	for _, f := range v {
-		balancers[f.Name] = f.Balancer
+		v := f.Balancer
+		if v == "" {
+			v = f.Hostname
+		}
+		balancers[f.Name] = v
 	}
 
 	if err := d.Set("balancers", balancers); err != nil {

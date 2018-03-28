@@ -74,10 +74,10 @@
   revision = "3e8f2ea4b190484acb976a5b378d373429639a1a"
 
 [[projects]]
-  branch = "master"
   name = "github.com/convox/rack"
   packages = ["client","structs"]
   revision = "6f30e0e66a3b1ead24efd93bf87627412911a286"
+  version = "20180324152434"
 
 [[projects]]
   name = "github.com/davecgh/go-spew"
