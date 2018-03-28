@@ -169,6 +169,18 @@ func ct(t *time.Time) time.Time {
 	return time.Time{}
 }
 
+func generation(g *string) string {
+	if g == nil {
+		return "1"
+	}
+
+	if *g == "" {
+		return "1"
+	}
+
+	return *g
+}
+
 var idAlphabet = []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 func generateId(prefix string, size int) string {
@@ -277,6 +289,15 @@ func recoverWith(f func(err error)) {
 
 		f(err)
 	}
+}
+
+func remarshal(v interface{}, w interface{}) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(data, &w)
 }
 
 func stackName(app *structs.App) string {
@@ -603,6 +624,29 @@ func (p *AWSProvider) describeStackEvents(input *cloudformation.DescribeStackEve
 	return res, nil
 }
 
+func (p *AWSProvider) describeStackResource(input *cloudformation.DescribeStackResourceInput) (*cloudformation.DescribeStackResourceOutput, error) {
+	key := fmt.Sprintf("%s.%s", *input.StackName, *input.LogicalResourceId)
+
+	res, ok := cache.Get("describeStackResource", key).(*cloudformation.DescribeStackResourceOutput)
+
+	if ok {
+		return res, nil
+	}
+
+	res, err := p.cloudformation().DescribeStackResource(input)
+	if err != nil {
+		return nil, err
+	}
+
+	if !p.SkipCache {
+		if err := cache.Set("describeStackResource", key, res, 5*time.Second); err != nil {
+			return nil, err
+		}
+	}
+
+	return res, nil
+}
+
 func (p *AWSProvider) describeStackResources(input *cloudformation.DescribeStackResourcesInput) (*cloudformation.DescribeStackResourcesOutput, error) {
 	res, ok := cache.Get("describeStackResources", input.StackName).(*cloudformation.DescribeStackResourcesOutput)
 
@@ -624,6 +668,42 @@ func (p *AWSProvider) describeStackResources(input *cloudformation.DescribeStack
 	return res, nil
 }
 
+func (p *AWSProvider) listStackResources(stack string) ([]*cloudformation.StackResourceSummary, error) {
+	res, ok := cache.Get("listStackResources", stack).([]*cloudformation.StackResourceSummary)
+	if ok {
+		return res, nil
+	}
+
+	req := &cloudformation.ListStackResourcesInput{
+		StackName: aws.String(stack),
+	}
+
+	srs := []*cloudformation.StackResourceSummary{}
+
+	for {
+		res, err := p.cloudformation().ListStackResources(req)
+		if err != nil {
+			return nil, err
+		}
+
+		srs = append(srs, res.StackResourceSummaries...)
+
+		if res.NextToken == nil {
+			break
+		}
+
+		req.NextToken = res.NextToken
+	}
+
+	if !p.SkipCache {
+		if err := cache.Set("listStackResources", stack, srs, 5*time.Second); err != nil {
+			return nil, err
+		}
+	}
+
+	return srs, nil
+}
+
 func (p *AWSProvider) rackResource(resource string) (string, error) {
 	res, err := p.stackResource(p.Rack, resource)
 	if err != nil {
@@ -642,21 +722,21 @@ func (p *AWSProvider) appResource(app, resource string) (string, error) {
 	return *res.PhysicalResourceId, nil
 }
 
-func (p *AWSProvider) stackResource(stack, resource string) (*cloudformation.StackResource, error) {
-	rs, err := p.describeStackResources(&cloudformation.DescribeStackResourcesInput{
-		StackName: aws.String(stack),
-	})
+func (p *AWSProvider) stackResource(stack, resource string) (*cloudformation.StackResourceSummary, error) {
+	log := Logger.At("stackResource").Namespace("stack=%s resource=%s", stack, resource).Start()
+
+	srs, err := p.listStackResources(stack)
 	if err != nil {
-		return nil, err
+		return nil, log.Error(err)
 	}
 
-	for _, r := range rs.StackResources {
-		if *r.LogicalResourceId == resource {
-			return r, nil
+	for _, sr := range srs {
+		if *sr.LogicalResourceId == resource && sr.PhysicalResourceId != nil {
+			return sr, log.Successf("physical=%s", *sr.PhysicalResourceId)
 		}
 	}
 
-	return nil, fmt.Errorf("resource not found: %s", resource)
+	return nil, log.Error(fmt.Errorf("resource not found: %s", resource))
 }
 
 func (p *AWSProvider) stackParameter(stack, param string) (string, error) {
@@ -904,7 +984,7 @@ func (p *AWSProvider) updateStack(name string, template string, changes map[stri
 				return err
 			}
 
-			r, err := p.ObjectFetch(u.Path)
+			r, err := p.ObjectFetch(u.Host, u.Path)
 			if err != nil {
 				return err
 			}

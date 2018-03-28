@@ -3,12 +3,12 @@ package controllers
 import (
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/convox/rack/api/httperr"
-	"github.com/convox/rack/structs"
+	"github.com/convox/rack/options"
 	"github.com/convox/rack/provider"
+	"github.com/convox/rack/structs"
 	"github.com/gorilla/mux"
 	"golang.org/x/net/websocket"
 )
@@ -63,13 +63,18 @@ func AppCancel(rw http.ResponseWriter, r *http.Request) *httperr.Error {
 // AppCreate creates an application
 func AppCreate(rw http.ResponseWriter, r *http.Request) *httperr.Error {
 	name := r.FormValue("name")
-	generation := r.FormValue("generation")
 
 	if name == os.Getenv("RACK") {
 		return httperr.Errorf(403, "application name cannot match rack name (%s). Please choose a different name for your app.", name)
 	}
 
-	app, err := Provider.AppCreate(name, structs.AppCreateOptions{Generation: generation})
+	opts := structs.AppCreateOptions{}
+
+	if v := r.FormValue("generation"); v != "" {
+		opts.Generation = options.String(v)
+	}
+
+	app, err := Provider.AppCreate(name, opts)
 	if err != nil {
 		return httperr.Server(err)
 	}
@@ -81,16 +86,12 @@ func AppCreate(rw http.ResponseWriter, r *http.Request) *httperr.Error {
 func AppDelete(rw http.ResponseWriter, r *http.Request) *httperr.Error {
 	name := mux.Vars(r)["app"]
 
-	app, err := Provider.AppGet(name)
+	_, err := Provider.AppGet(name)
 	if awsError(err) == "ValidationError" {
 		return httperr.Errorf(404, "no such app: %s", name)
 	}
 	if err != nil {
 		return httperr.Server(err)
-	}
-
-	if app.Tags["Type"] != "app" || app.Tags["System"] != "convox" || app.Tags["Rack"] != os.Getenv("RACK") {
-		return httperr.Errorf(404, "invalid app: %s", name)
 	}
 
 	if err := Provider.AppDelete(name); err != nil {
@@ -120,16 +121,18 @@ func AppLogs(ws *websocket.Conn) *httperr.Error {
 		}
 	}
 
-	err = Provider.LogStream(app, ws, structs.LogStreamOptions{
+	r, err := Provider.AppLogs(app, structs.LogsOptions{
 		Filter: header.Get("Filter"),
 		Follow: follow,
-		Since:  time.Now().Add(-1 * since),
+		Since:  time.Now().UTC().Add(-1 * since),
 	})
 	if err != nil {
-		if strings.HasSuffix(err.Error(), "write: broken pipe") {
-			return nil
-		}
 		return httperr.Server(err)
 	}
+
+	if err := streamWebsocket(ws, r); err != nil {
+		return httperr.Server(err)
+	}
+
 	return nil
 }

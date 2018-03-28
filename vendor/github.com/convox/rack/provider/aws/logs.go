@@ -3,7 +3,6 @@ package aws
 import (
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -14,91 +13,86 @@ import (
 	"github.com/convox/rack/structs"
 )
 
-func (p *AWSProvider) LogStream(app string, w io.Writer, opts structs.LogStreamOptions) error {
-	logGroup, err := p.stackResource(fmt.Sprintf("%s-%s", p.Rack, app), "LogGroup")
-	if err != nil {
-		return err
-	}
+func (p *AWSProvider) subscribeLogs(group string, opts structs.LogsOptions) (io.ReadCloser, error) {
+	r, w := io.Pipe()
 
-	return p.subscribeLogs(w, *logGroup.PhysicalResourceId, opts)
+	go p.streamLogs(w, group, opts)
+
+	return r, nil
 }
 
-func (p *AWSProvider) subscribeLogs(w io.Writer, group string, opts structs.LogStreamOptions) error {
-	since := opts.Since
+func (p *AWSProvider) streamLogs(w io.WriteCloser, group string, opts structs.LogsOptions) error {
+	log := Logger.At("streamLogs").Namespace("group=%s", group)
 
-	if since.IsZero() {
-		since = time.Now().Add(10 * time.Minute)
-	}
-
-	// number of milliseconds since Jan 1, 1970 00:00:00 UTC
-	start := since.UnixNano() / int64(time.Millisecond)
-
-	for {
-		s, err := p.fetchLogs(w, group, opts.Filter, start)
-		if err != nil {
-			return err
-		}
-
-		if !opts.Follow {
-			return nil
-		}
-
-		start = s + 1
-
-		time.Sleep(200 * time.Millisecond)
-	}
-}
-
-// fetch logs until we run out of NextTokens, writing them the whole way
-func (p *AWSProvider) fetchLogs(w io.Writer, group, filter string, start int64) (int64, error) {
-	log := Logger.At("fetchLogs").Namespace("start=%d", start).Start()
+	defer w.Close()
 
 	req := &cloudwatchlogs.FilterLogEventsInput{
 		Interleaved:  aws.Bool(true),
 		LogGroupName: aws.String(group),
-		StartTime:    aws.Int64(start),
 	}
 
-	if filter != "" {
-		req.FilterPattern = aws.String(filter)
+	if opts.Filter != "" {
+		log = log.Namespace("filter=%s", opts.Filter)
+		req.FilterPattern = aws.String(opts.Filter)
 	}
 
-	end := start + 1
+	var start int64
+
+	if !opts.Since.IsZero() {
+		start = opts.Since.UnixNano() / int64(time.Millisecond)
+		log = log.Namespace("start=%d", start)
+		req.StartTime = aws.Int64(start)
+	}
 
 	for {
+		// check for closed connection
+		if _, err := w.Write([]byte{}); err != nil {
+			break
+		}
+
 		res, err := p.cloudwatchlogs().FilterLogEvents(req)
 		if ae, ok := err.(awserr.Error); ok && ae.Code() == "ThrottlingException" {
-			// backoff
-			log.Error(err)
+			log.Errorf("backoff")
 			time.Sleep(1 * time.Second)
 			continue
 		}
 		if err != nil {
-			log.Error(err)
-			return 0, err
+			return err
 		}
 
 		latest, err := p.writeLogEvents(w, res.Events)
 		if err != nil {
-			log.Error(err)
-			return 0, err
+			return nil
 		}
 
-		log = log.Namespace("events=%d", len(res.Events))
-
-		if latest >= end {
-			end = latest + 1
+		if latest > start {
+			start = latest + 1
 		}
 
-		if res.NextToken == nil {
+		log.Success()
+
+		if res.NextToken != nil {
+			req.NextToken = res.NextToken
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+
+		req.NextToken = nil
+
+		if !opts.Follow {
 			break
 		}
 
-		req.NextToken = res.NextToken
+		if start > 0 {
+			log = log.Replace("start", fmt.Sprintf("%d", start))
+			req.StartTime = aws.Int64(start)
+			time.Sleep(1 * time.Second)
+		}
 	}
 
-	log.Successf("end=%d", end)
-	return end, nil
+	log.Successf("done=true")
+
+	return nil
 }
 
 func (p *AWSProvider) writeLogEvents(w io.Writer, events []*cloudwatchlogs.FilteredLogEvent) (int64, error) {
@@ -126,13 +120,13 @@ func (p *AWSProvider) writeLogEvents(w io.Writer, events []*cloudwatchlogs.Filte
 			if len(parts) >= 3 {
 				release, err := p.taskRelease(parts[2])
 				if err != nil {
-					return 0, err
+					prefix = fmt.Sprintf("%s/%s:%s ", name, parts[1], arnToPid(parts[2]))
+				} else {
+					prefix = fmt.Sprintf("%s/%s:%s/%s ", name, parts[1], release, arnToPid(parts[2]))
 				}
-
-				prefix = fmt.Sprintf("%s/%s:%s/%s ", name, parts[1], release, arnToPid(parts[2]))
 			}
 		case "system":
-			prefix = fmt.Sprintf("system:%s/", os.Getenv("RELEASE"))
+			prefix = "system/"
 		}
 
 		sec := *e.Timestamp / 1000

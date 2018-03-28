@@ -153,7 +153,7 @@ func ResourceConvoxSyslogReadFactory(clientUnpacker ClientUnpacker) schema.ReadF
 		}
 
 		d.SetId(name)
-		d.Set("url", convoxResource.Exports["URL"])
+		d.Set("url", convoxResource.Url)
 
 		return nil
 	}

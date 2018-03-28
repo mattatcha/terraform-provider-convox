@@ -22,7 +22,7 @@
 
 [[constraint]]
   name = "github.com/convox/rack"
-  version = "20171213132441"
+  version = "20180324152434"
 
 [[constraint]]
   branch = "master"

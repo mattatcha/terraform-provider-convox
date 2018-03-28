@@ -78,11 +78,17 @@ func (m *Manifest) ServiceEnvironment(service string) (Environment, error) {
 
 		switch len(parts) {
 		case 1:
-			v, ok := m.Environment[parts[0]]
-			if !ok {
-				missing = append(missing, parts[0])
+			if parts[0] == "*" {
+				for k, v := range m.Environment {
+					env[k] = v
+				}
+			} else {
+				v, ok := m.Environment[parts[0]]
+				if !ok {
+					missing = append(missing, parts[0])
+				}
+				env[parts[0]] = v
 			}
-			env[parts[0]] = v
 		case 2:
 			v, ok := m.Environment[parts[0]]
 			if ok {
@@ -129,6 +135,10 @@ func (m *Manifest) ApplyDefaults() error {
 	for i, s := range m.Services {
 		if s.Build.Path == "" && s.Image == "" {
 			m.Services[i].Build.Path = "."
+		}
+
+		if m.Services[i].Build.Path != "" && s.Build.Manifest == "" {
+			m.Services[i].Build.Manifest = "Dockerfile"
 		}
 
 		if s.Scale.Count == nil {
