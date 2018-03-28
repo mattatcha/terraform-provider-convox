@@ -11,7 +11,8 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/integration-cli/checker"
 	"github.com/go-check/check"
-	"github.com/stretchr/testify/assert"
+	"github.com/gotestyourself/gotestyourself/assert"
+	is "github.com/gotestyourself/gotestyourself/assert/cmp"
 )
 
 func (s *DockerSuite) TestInspectAPIContainerResponse(c *check.C) {
@@ -28,7 +29,7 @@ func (s *DockerSuite) TestInspectAPIContainerResponse(c *check.C) {
 
 	var cases []acase
 
-	if testEnv.DaemonPlatform() == "windows" {
+	if testEnv.OSType == "windows" {
 		cases = []acase{
 			{"v1.25", append(keysBase, "Mounts")},
 		}
@@ -115,8 +116,8 @@ func (s *DockerSuite) TestInspectAPIImageResponse(c *check.C) {
 	c.Assert(err, checker.IsNil)
 
 	c.Assert(imageJSON.RepoTags, checker.HasLen, 2)
-	assert.Contains(c, imageJSON.RepoTags, "busybox:latest")
-	assert.Contains(c, imageJSON.RepoTags, "busybox:mytag")
+	assert.Check(c, is.Contains(imageJSON.RepoTags, "busybox:latest"))
+	assert.Check(c, is.Contains(imageJSON.RepoTags, "busybox:mytag"))
 }
 
 // #17131, #17139, #17173

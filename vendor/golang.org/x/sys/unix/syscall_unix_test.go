@@ -383,6 +383,7 @@ func TestGetwd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open .: %s", err)
 	}
+	defer fd.Close()
 	// These are chosen carefully not to be symlinks on a Mac
 	// (unlike, say, /var, /etc)
 	dirs := []string{"/", "/usr/bin"}
@@ -406,30 +407,118 @@ func TestGetwd(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Chdir: %v", err)
 		}
-		pwd, err1 := unix.Getwd()
+		pwd, err := unix.Getwd()
+		if err != nil {
+			t.Fatalf("Getwd in %s: %s", d, err)
+		}
 		os.Setenv("PWD", oldwd)
-		err2 := fd.Chdir()
-		if err2 != nil {
+		err = fd.Chdir()
+		if err != nil {
 			// We changed the current directory and cannot go back.
 			// Don't let the tests continue; they'll scribble
 			// all over some other directory.
-			fmt.Fprintf(os.Stderr, "fchdir back to dot failed: %s\n", err2)
+			fmt.Fprintf(os.Stderr, "fchdir back to dot failed: %s\n", err)
 			os.Exit(1)
 		}
-		if err != nil {
-			fd.Close()
-			t.Fatalf("Chdir %s: %s", d, err)
-		}
-		if err1 != nil {
-			fd.Close()
-			t.Fatalf("Getwd in %s: %s", d, err1)
-		}
 		if pwd != d {
-			fd.Close()
 			t.Fatalf("Getwd returned %q want %q", pwd, d)
 		}
 	}
-	fd.Close()
+}
+
+func TestFstatat(t *testing.T) {
+	defer chtmpdir(t)()
+
+	touch(t, "file1")
+
+	var st1 unix.Stat_t
+	err := unix.Stat("file1", &st1)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+
+	var st2 unix.Stat_t
+	err = unix.Fstatat(unix.AT_FDCWD, "file1", &st2, 0)
+	if err != nil {
+		t.Fatalf("Fstatat: %v", err)
+	}
+
+	if st1 != st2 {
+		t.Errorf("Fstatat: returned stat does not match Stat")
+	}
+
+	err = os.Symlink("file1", "symlink1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = unix.Lstat("symlink1", &st1)
+	if err != nil {
+		t.Fatalf("Lstat: %v", err)
+	}
+
+	err = unix.Fstatat(unix.AT_FDCWD, "symlink1", &st2, unix.AT_SYMLINK_NOFOLLOW)
+	if err != nil {
+		t.Fatalf("Fstatat: %v", err)
+	}
+
+	if st1 != st2 {
+		t.Errorf("Fstatat: returned stat does not match Lstat")
+	}
+}
+
+func TestFchmodat(t *testing.T) {
+	defer chtmpdir(t)()
+
+	touch(t, "file1")
+	err := os.Symlink("file1", "symlink1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mode := os.FileMode(0444)
+	err = unix.Fchmodat(unix.AT_FDCWD, "symlink1", uint32(mode), 0)
+	if err != nil {
+		t.Fatalf("Fchmodat: unexpected error: %v", err)
+	}
+
+	fi, err := os.Stat("file1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if fi.Mode() != mode {
+		t.Errorf("Fchmodat: failed to change file mode: expected %v, got %v", mode, fi.Mode())
+	}
+
+	mode = os.FileMode(0644)
+	didChmodSymlink := true
+	err = unix.Fchmodat(unix.AT_FDCWD, "symlink1", uint32(mode), unix.AT_SYMLINK_NOFOLLOW)
+	if err != nil {
+		if (runtime.GOOS == "linux" || runtime.GOOS == "solaris") && err == unix.EOPNOTSUPP {
+			// Linux and Illumos don't support flags != 0
+			didChmodSymlink = false
+		} else {
+			t.Fatalf("Fchmodat: unexpected error: %v", err)
+		}
+	}
+
+	if !didChmodSymlink {
+		// Didn't change mode of the symlink. On Linux, the permissions
+		// of a symbolic link are always 0777 according to symlink(7)
+		mode = os.FileMode(0777)
+	}
+
+	var st unix.Stat_t
+	err = unix.Lstat("symlink1", &st)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := os.FileMode(st.Mode & 0777)
+	if got != mode {
+		t.Errorf("Fchmodat: failed to change symlink mode: expected %v, got %v", mode, got)
+	}
 }
 
 // mktmpfifo creates a temporary FIFO and provides a cleanup function.
@@ -448,5 +537,39 @@ func mktmpfifo(t *testing.T) (*os.File, func()) {
 	return f, func() {
 		f.Close()
 		os.Remove("fifo")
+	}
+}
+
+// utilities taken from os/os_test.go
+
+func touch(t *testing.T, name string) {
+	f, err := os.Create(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// chtmpdir changes the working directory to a new temporary directory and
+// provides a cleanup function. Used when PWD is read-only.
+func chtmpdir(t *testing.T) func() {
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("chtmpdir: %v", err)
+	}
+	d, err := ioutil.TempDir("", "test")
+	if err != nil {
+		t.Fatalf("chtmpdir: %v", err)
+	}
+	if err := os.Chdir(d); err != nil {
+		t.Fatalf("chtmpdir: %v", err)
+	}
+	return func() {
+		if err := os.Chdir(oldwd); err != nil {
+			t.Fatalf("chtmpdir: %v", err)
+		}
+		os.RemoveAll(d)
 	}
 }

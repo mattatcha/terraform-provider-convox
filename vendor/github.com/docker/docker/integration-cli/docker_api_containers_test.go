@@ -31,9 +31,9 @@ import (
 	"github.com/docker/docker/volume"
 	"github.com/docker/go-connections/nat"
 	"github.com/go-check/check"
+	"github.com/gotestyourself/gotestyourself/assert"
+	is "github.com/gotestyourself/gotestyourself/assert/cmp"
 	"github.com/gotestyourself/gotestyourself/poll"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
 )
 
@@ -1016,7 +1016,7 @@ func (s *DockerSuite) TestContainerAPIWait(c *check.C) {
 	name := "test-api-wait"
 
 	sleepCmd := "/bin/sleep"
-	if testEnv.DaemonPlatform() == "windows" {
+	if testEnv.OSType == "windows" {
 		sleepCmd = "sleep"
 	}
 	dockerCmd(c, "run", "--name", name, "busybox", sleepCmd, "2")
@@ -1216,7 +1216,7 @@ func (s *DockerSuite) TestContainerAPIDeleteRemoveVolume(c *check.C) {
 	testRequires(c, SameHostDaemon)
 
 	vol := "/testvolume"
-	if testEnv.DaemonPlatform() == "windows" {
+	if testEnv.OSType == "windows" {
 		vol = `c:\testvolume`
 	}
 
@@ -1372,7 +1372,8 @@ func (s *DockerSuite) TestContainerAPICreateNoHostConfig118(c *check.C) {
 		Image: "busybox",
 	}
 
-	cli, err := request.NewEnvClientWithVersion("v1.18")
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithVersion("v1.18"))
+	c.Assert(err, checker.IsNil)
 
 	_, err = cli.ContainerCreate(context.Background(), &config, &containertypes.HostConfig{}, &networktypes.NetworkingConfig{}, "")
 	c.Assert(err, checker.IsNil)
@@ -1712,7 +1713,7 @@ func (s *DockerSuite) TestContainersAPICreateMountsValidation(c *check.C) {
 					Type:   "bind",
 					Source: notExistPath,
 					Target: destPath}}},
-			msg: "bind source path does not exist",
+			msg: "bind mount source path does not exist: " + notExistPath,
 		},
 		{
 			config: containertypes.Config{
@@ -1890,7 +1891,7 @@ func (s *DockerSuite) TestContainersAPICreateMountsCreate(c *check.C) {
 	var (
 		testImg string
 	)
-	if testEnv.DaemonPlatform() != "windows" {
+	if testEnv.OSType != "windows" {
 		testImg = "test-mount-config"
 		buildImageSuccessfully(c, testImg, build.WithDockerfile(`
 	FROM busybox
@@ -1987,7 +1988,7 @@ func (s *DockerSuite) TestContainersAPICreateMountsCreate(c *check.C) {
 		}
 	}
 
-	if testEnv.DaemonPlatform() != "windows" { // Windows does not support volume populate
+	if testEnv.OSType != "windows" { // Windows does not support volume populate
 		cases = append(cases, []testCase{
 			{
 				spec:     mounttypes.Mount{Type: "volume", Target: destPath, VolumeOptions: &mounttypes.VolumeOptions{NoCopy: true}},
@@ -2026,47 +2027,47 @@ func (s *DockerSuite) TestContainersAPICreateMountsCreate(c *check.C) {
 			&containertypes.HostConfig{Mounts: []mounttypes.Mount{x.spec}},
 			&networktypes.NetworkingConfig{},
 			"")
-		require.NoError(c, err)
+		assert.NilError(c, err)
 
 		containerInspect, err := apiclient.ContainerInspect(ctx, container.ID)
-		require.NoError(c, err)
+		assert.NilError(c, err)
 		mps := containerInspect.Mounts
-		require.Len(c, mps, 1)
+		assert.Assert(c, is.Len(mps, 1))
 		mountPoint := mps[0]
 
 		if x.expected.Source != "" {
-			assert.Equal(c, x.expected.Source, mountPoint.Source)
+			assert.Check(c, is.Equal(x.expected.Source, mountPoint.Source))
 		}
 		if x.expected.Name != "" {
-			assert.Equal(c, x.expected.Name, mountPoint.Name)
+			assert.Check(c, is.Equal(x.expected.Name, mountPoint.Name))
 		}
 		if x.expected.Driver != "" {
-			assert.Equal(c, x.expected.Driver, mountPoint.Driver)
+			assert.Check(c, is.Equal(x.expected.Driver, mountPoint.Driver))
 		}
 		if x.expected.Propagation != "" {
-			assert.Equal(c, x.expected.Propagation, mountPoint.Propagation)
+			assert.Check(c, is.Equal(x.expected.Propagation, mountPoint.Propagation))
 		}
-		assert.Equal(c, x.expected.RW, mountPoint.RW)
-		assert.Equal(c, x.expected.Type, mountPoint.Type)
-		assert.Equal(c, x.expected.Mode, mountPoint.Mode)
-		assert.Equal(c, x.expected.Destination, mountPoint.Destination)
+		assert.Check(c, is.Equal(x.expected.RW, mountPoint.RW))
+		assert.Check(c, is.Equal(x.expected.Type, mountPoint.Type))
+		assert.Check(c, is.Equal(x.expected.Mode, mountPoint.Mode))
+		assert.Check(c, is.Equal(x.expected.Destination, mountPoint.Destination))
 
 		err = apiclient.ContainerStart(ctx, container.ID, types.ContainerStartOptions{})
-		require.NoError(c, err)
+		assert.NilError(c, err)
 		poll.WaitOn(c, containerExit(apiclient, container.ID), poll.WithDelay(time.Second))
 
 		err = apiclient.ContainerRemove(ctx, container.ID, types.ContainerRemoveOptions{
 			RemoveVolumes: true,
 			Force:         true,
 		})
-		require.NoError(c, err)
+		assert.NilError(c, err)
 
 		switch {
 
 		// Named volumes still exist after the container is removed
 		case x.spec.Type == "volume" && len(x.spec.Source) > 0:
 			_, err := apiclient.VolumeInspect(ctx, mountPoint.Name)
-			require.NoError(c, err)
+			assert.NilError(c, err)
 
 		// Bind mounts are never removed with the container
 		case x.spec.Type == "bind":
@@ -2074,7 +2075,7 @@ func (s *DockerSuite) TestContainersAPICreateMountsCreate(c *check.C) {
 		// anonymous volumes are removed
 		default:
 			_, err := apiclient.VolumeInspect(ctx, mountPoint.Name)
-			assert.True(c, client.IsErrNotFound(err))
+			assert.Check(c, client.IsErrNotFound(err))
 		}
 	}
 }

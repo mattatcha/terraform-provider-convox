@@ -1,4 +1,4 @@
-package store
+package store // import "github.com/docker/docker/volume/store"
 
 import (
 	"net"
@@ -29,7 +29,10 @@ type volumeWrapper struct {
 }
 
 func (v volumeWrapper) Options() map[string]string {
-	options := map[string]string{}
+	if v.options == nil {
+		return nil
+	}
+	options := make(map[string]string, len(v.options))
 	for key, value := range v.options {
 		options[key] = value
 	}
@@ -37,7 +40,15 @@ func (v volumeWrapper) Options() map[string]string {
 }
 
 func (v volumeWrapper) Labels() map[string]string {
-	return v.labels
+	if v.labels == nil {
+		return nil
+	}
+
+	labels := make(map[string]string, len(v.labels))
+	for key, value := range v.labels {
+		labels[key] = value
+	}
+	return labels
 }
 
 func (v volumeWrapper) Scope() string {
@@ -145,8 +156,9 @@ func (s *VolumeStore) Purge(name string) {
 	s.globalLock.Lock()
 	v, exists := s.names[name]
 	if exists {
-		if _, err := volumedrivers.ReleaseDriver(v.DriverName()); err != nil {
-			logrus.Errorf("Error dereferencing volume driver: %v", err)
+		driverName := v.DriverName()
+		if _, err := volumedrivers.ReleaseDriver(driverName); err != nil {
+			logrus.WithError(err).WithField("driver", driverName).Error("Error releasing reference to volume driver")
 		}
 	}
 	if err := s.removeMeta(name); err != nil {

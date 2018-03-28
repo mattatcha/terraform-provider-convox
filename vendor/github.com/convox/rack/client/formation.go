@@ -3,7 +3,7 @@ package client
 import "fmt"
 
 type FormationEntry struct {
-	Balancer string `json:"balancer"`
+	Balancer string `json:"hostname"`
 	Name     string `json:"name"`
 	Count    int    `json:"count"`
 	Memory   int    `json:"memory"`
