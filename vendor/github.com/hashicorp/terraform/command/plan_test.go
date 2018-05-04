@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform/helper/copy"
 	"github.com/hashicorp/terraform/terraform"
@@ -828,6 +830,66 @@ func TestPlan_detailedExitcode_emptyDiff(t *testing.T) {
 	args := []string{"-detailed-exitcode"}
 	if code := c.Run(args); code != 0 {
 		t.Fatalf("bad: %d\n\n%s", code, ui.ErrorWriter.String())
+	}
+}
+
+func TestPlan_shutdown(t *testing.T) {
+	cancelled := make(chan struct{})
+	shutdownCh := make(chan struct{})
+
+	p := testProvider()
+	ui := new(cli.MockUi)
+	c := &PlanCommand{
+		Meta: Meta{
+			testingOverrides: metaOverridesForProvider(p),
+			Ui:               ui,
+			ShutdownCh:       shutdownCh,
+		},
+	}
+
+	p.StopFn = func() error {
+		close(cancelled)
+		return nil
+	}
+
+	var once sync.Once
+
+	p.DiffFn = func(
+		*terraform.InstanceInfo,
+		*terraform.InstanceState,
+		*terraform.ResourceConfig) (*terraform.InstanceDiff, error) {
+
+		once.Do(func() {
+			shutdownCh <- struct{}{}
+		})
+
+		// Because of the internal lock in the MockProvider, we can't
+		// coordiante directly with the calling of Stop, and making the
+		// MockProvider concurrent is disruptive to a lot of existing tests.
+		// Wait here a moment to help make sure the main goroutine gets to the
+		// Stop call before we exit, or the plan may finish before it can be
+		// canceled.
+		time.Sleep(200 * time.Millisecond)
+
+		return &terraform.InstanceDiff{
+			Attributes: map[string]*terraform.ResourceAttrDiff{
+				"ami": &terraform.ResourceAttrDiff{
+					New: "bar",
+				},
+			},
+		}, nil
+	}
+
+	if code := c.Run([]string{testFixturePath("apply-shutdown")}); code != 1 {
+		// FIXME: we should be able to avoid the error during evaluation
+		// the early exit isn't caught before the interpolation is evaluated
+		t.Fatal(ui.OutputWriter.String())
+	}
+
+	select {
+	case <-cancelled:
+	default:
+		t.Fatal("command not cancelled")
 	}
 }
 

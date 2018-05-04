@@ -18,26 +18,48 @@ import (
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/convox/rack/crypt"
+	"github.com/convox/rack/helpers"
 	"github.com/convox/rack/manifest"
 	"github.com/convox/rack/manifest1"
+	"github.com/convox/rack/options"
 	"github.com/convox/rack/structs"
 )
 
-// ReleaseDelete will delete all releases that belong to app and buildID
-// This could includes the active release which implies this should be called with caution.
-func (p *AWSProvider) ReleaseDelete(app, buildID string) error {
-	qi := &dynamodb.QueryInput{
-		KeyConditionExpression: aws.String("app = :app"),
-		FilterExpression:       aws.String("build = :build"),
-		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-			":app":   {S: aws.String(app)},
-			":build": {S: aws.String(buildID)},
-		},
-		IndexName: aws.String("app.created"),
-		TableName: aws.String(p.DynamoReleases),
+func (p *AWSProvider) ReleaseCreate(app string, opts structs.ReleaseCreateOptions) (*structs.Release, error) {
+	r := structs.NewRelease(app)
+
+	cr, err := helpers.ReleaseLatest(p, app)
+	if err != nil {
+		return nil, err
 	}
 
-	return p.deleteReleaseItems(qi, p.DynamoReleases)
+	if cr != nil {
+		r.Build = cr.Build
+		r.Env = cr.Env
+	}
+
+	if opts.Build != nil {
+		r.Build = *opts.Build
+	}
+
+	if opts.Env != nil {
+		r.Env = *opts.Env
+	}
+
+	if r.Build != "" {
+		b, err := p.BuildGet(app, r.Build)
+		if err != nil {
+			return nil, err
+		}
+
+		r.Manifest = b.Manifest
+	}
+
+	if err := p.releaseSave(r); err != nil {
+		return nil, err
+	}
+
+	return r, nil
 }
 
 // ReleaseGet returns a release
@@ -89,10 +111,14 @@ func (p *AWSProvider) ReleaseGet(app, id string) (*structs.Release, error) {
 }
 
 // ReleaseList returns a list of the latest releases, with the length specified in limit
-func (p *AWSProvider) ReleaseList(app string, limit int64) (structs.Releases, error) {
+func (p *AWSProvider) ReleaseList(app string, opts structs.ReleaseListOptions) (structs.Releases, error) {
 	a, err := p.AppGet(app)
 	if err != nil {
 		return nil, err
+	}
+
+	if opts.Count == nil {
+		opts.Count = options.Int(10)
 	}
 
 	req := &dynamodb.QueryInput{
@@ -105,7 +131,7 @@ func (p *AWSProvider) ReleaseList(app string, limit int64) (structs.Releases, er
 			},
 		},
 		IndexName:        aws.String("app.created"),
-		Limit:            aws.Int64(limit),
+		Limit:            aws.Int64(int64(*opts.Count)),
 		ScanIndexForward: aws.Bool(false),
 		TableName:        aws.String(p.DynamoReleases),
 	}
@@ -130,8 +156,13 @@ func (p *AWSProvider) ReleaseList(app string, limit int64) (structs.Releases, er
 }
 
 // ReleasePromote promotes a release
-func (p *AWSProvider) ReleasePromote(r *structs.Release) error {
-	a, err := p.AppGet(r.App)
+func (p *AWSProvider) ReleasePromote(app, id string) error {
+	a, err := p.AppGet(app)
+	if err != nil {
+		return err
+	}
+
+	r, err := p.ReleaseGet(app, id)
 	if err != nil {
 		return err
 	}
@@ -176,7 +207,7 @@ func (p *AWSProvider) ReleasePromote(r *structs.Release) error {
 
 	// fmt.Printf("string(data) = %+v\n", string(data))
 
-	ou, err := p.ObjectStore("", bytes.NewReader(data), structs.ObjectOptions{})
+	ou, err := p.ObjectStore(app, "", bytes.NewReader(data), structs.ObjectStoreOptions{Public: options.Bool(true)})
 	if err != nil {
 		return err
 	}
@@ -185,7 +216,7 @@ func (p *AWSProvider) ReleasePromote(r *structs.Release) error {
 		"LogBucket": p.LogBucket,
 	}
 
-	if err := p.updateStack(p.rackStack(r.App), ou, updates); err != nil {
+	if err := p.updateStack(p.rackStack(r.App), ou.Url, updates); err != nil {
 		return err
 	}
 
@@ -212,17 +243,18 @@ func (p *AWSProvider) releasePromoteGeneration1(a *structs.App, r *structs.Relea
 		return err
 	}
 
-	tp := map[string]interface{}{
-		"App":      a,
-		"Manifest": m,
-	}
-
-	data, err := formationTemplate("g1/app", tp)
+	settings, err := p.appResource(r.App, "Settings")
 	if err != nil {
 		return err
 	}
 
-	settings, err := p.appResource(r.App, "Settings")
+	tp := map[string]interface{}{
+		"App":         a,
+		"Environment": fmt.Sprintf("https://%s.s3.amazonaws.com/releases/%s/env", settings, r.Id),
+		"Manifest":    m,
+	}
+
+	data, err := formationTemplate("g1/app", tp)
 	if err != nil {
 		return err
 	}
@@ -240,13 +272,16 @@ func (p *AWSProvider) releasePromoteGeneration1(a *structs.App, r *structs.Relea
 
 	params := map[string]string{}
 
-	params["Environment"] = fmt.Sprintf("https://%s.s3.amazonaws.com/releases/%s/env", settings, r.Id)
+	params["Cluster"] = p.Cluster
+	params["Key"] = p.EncryptionKey
 	params["LogBucket"] = p.LogBucket
 	params["Rack"] = p.Rack
 	params["Release"] = r.Id
 	params["Subnets"] = p.Subnets
 	params["SubnetsPrivate"] = coalesces(p.SubnetsPrivate, p.Subnets)
 	params["Version"] = p.Release
+	params["VPC"] = p.Vpc
+	params["VPCCIDR"] = p.VpcCidr
 
 	for _, entry := range m.Services {
 		for _, mapping := range entry.Ports {
@@ -321,12 +356,12 @@ func (p *AWSProvider) releasePromoteGeneration1(a *structs.App, r *structs.Relea
 		return err
 	}
 
-	url, err := p.ObjectStore("", bytes.NewReader(data), structs.ObjectOptions{Public: true})
+	ou, err := p.ObjectStore(a.Name, "", bytes.NewReader(data), structs.ObjectStoreOptions{Public: options.Bool(true)})
 	if err != nil {
 		return err
 	}
 
-	if err := p.updateStack(p.rackStack(a.Name), url, params); err != nil {
+	if err := p.updateStack(p.rackStack(a.Name), ou.Url, params); err != nil {
 		return err
 	}
 
@@ -336,7 +371,7 @@ func (p *AWSProvider) releasePromoteGeneration1(a *structs.App, r *structs.Relea
 }
 
 // ReleaseSave saves a Release
-func (p *AWSProvider) ReleaseSave(r *structs.Release) error {
+func (p *AWSProvider) releaseSave(r *structs.Release) error {
 	if r.Id == "" {
 		return fmt.Errorf("Id can not be blank")
 	}
@@ -550,9 +585,8 @@ func (p *AWSProvider) resolveLinks(a *structs.App, m *manifest1.Manifest, r *str
 
 		entry.Exports = make(map[string]string)
 		linkableEnvs := make([]string, len(entry.Environment))
-		for k, v := range entry.Environment {
-			val := fmt.Sprintf("%s=%s", k, v)
-			linkableEnvs = append(linkableEnvs, val)
+		for _, env := range entry.Environment {
+			linkableEnvs = append(linkableEnvs, fmt.Sprintf("%s=%s", env.Name, env.Value))
 		}
 
 		if len(inspect) == 1 {
@@ -647,13 +681,6 @@ func (p *AWSProvider) resolveLinks(a *structs.App, m *manifest1.Manifest, r *str
 }
 
 func (p *AWSProvider) waitForPromotion(r *structs.Release) {
-	event := &structs.Event{
-		Action: "release:promote",
-		Data: map[string]string{
-			"app": r.App,
-			"id":  r.Id,
-		},
-	}
 	stackName := fmt.Sprintf("%s-%s", os.Getenv("RACK"), r.App)
 
 	waitch := make(chan error)
@@ -678,13 +705,12 @@ func (p *AWSProvider) waitForPromotion(r *structs.Release) {
 		select {
 		case err := <-waitch:
 			if err == nil {
-				event.Status = "success"
-				p.EventSend(event, nil)
+				p.EventSend("release:promote", structs.EventSendOptions{Data: map[string]string{"app": r.App, "id": r.Id}})
 				return
 			}
 
 			if err != nil && err.Error() == "exceeded 120 wait attempts" {
-				p.EventSend(event, fmt.Errorf("couldn't determine promotion status, timed out"))
+				p.EventSend("release:promote", structs.EventSendOptions{Data: map[string]string{"app": r.App, "id": r.Id}, Error: "timeout"})
 				fmt.Println(fmt.Errorf("couldn't determine promotion status, timed out"))
 				return
 			}
@@ -693,13 +719,13 @@ func (p *AWSProvider) waitForPromotion(r *structs.Release) {
 				StackName: aws.String(stackName),
 			})
 			if err != nil {
-				p.EventSend(event, fmt.Errorf("unable to check stack status: %s", err))
+				p.EventSend("release:promote", structs.EventSendOptions{Data: map[string]string{"app": r.App, "id": r.Id}, Error: "unable to check status"})
 				fmt.Println(fmt.Errorf("unable to check stack status: %s", err))
 				return
 			}
 
 			if len(resp.Stacks) < 1 {
-				p.EventSend(event, fmt.Errorf("app stack was not found: %s", stackName))
+				p.EventSend("release:promote", structs.EventSendOptions{Data: map[string]string{"app": r.App, "id": r.Id}, Error: "app stack not found"})
 				fmt.Println(fmt.Errorf("app stack was not found: %s", stackName))
 				return
 			}
@@ -708,7 +734,7 @@ func (p *AWSProvider) waitForPromotion(r *structs.Release) {
 				StackName: aws.String(stackName),
 			})
 			if err != nil {
-				p.EventSend(event, fmt.Errorf("unable to check stack events: %s", err))
+				p.EventSend("release:promote", structs.EventSendOptions{Data: map[string]string{"app": r.App, "id": r.Id}, Error: "unable to check stack events"})
 				fmt.Println(fmt.Errorf("unable to check stack events: %s", err))
 				return
 			}
@@ -734,7 +760,7 @@ func (p *AWSProvider) waitForPromotion(r *structs.Release) {
 				)
 			}
 
-			p.EventSend(event, fmt.Errorf("release %s failed - %s", r.Id, ee.Error()))
+			p.EventSend("release:promote", structs.EventSendOptions{Data: map[string]string{"app": r.App, "id": r.Id}, Error: ee.Error()})
 		}
 	}
 }

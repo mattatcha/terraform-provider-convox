@@ -2,6 +2,7 @@ package aws
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -28,12 +29,12 @@ func (p *AWSProvider) AppCancel(name string) error {
 }
 
 func (p *AWSProvider) AppCreate(name string, opts structs.AppCreateOptions) (*structs.App, error) {
-	switch opts.Generation {
-	case "1", "":
+	switch generation(opts.Generation) {
+	case "1":
 		return p.appCreateGeneration1(name)
 	case "2":
 	default:
-		return nil, fmt.Errorf("unknown generation: %s", opts.Generation)
+		return nil, fmt.Errorf("unknown generation")
 	}
 
 	data, err := formationTemplate("app", nil)
@@ -62,7 +63,7 @@ func (p *AWSProvider) AppCreate(name string, opts structs.AppCreateOptions) (*st
 		return nil, err
 	}
 
-	p.EventSend(&structs.Event{Action: "app:create", Data: map[string]string{"name": name}}, nil)
+	p.EventSend("app:create", structs.EventSendOptions{Data: map[string]string{"name": name}})
 
 	return p.AppGet(name)
 }
@@ -98,7 +99,7 @@ func (p *AWSProvider) appCreateGeneration1(name string) (*structs.App, error) {
 		return nil, err
 	}
 
-	p.EventSend(&structs.Event{Action: "app:create", Data: map[string]string{"name": name}}, nil)
+	p.EventSend("app:create", structs.EventSendOptions{Data: map[string]string{"name": name}})
 
 	return p.AppGet(name)
 }
@@ -134,18 +135,22 @@ func (p *AWSProvider) AppDelete(name string) error {
 		return err
 	}
 
+	if app.Tags["Type"] != "app" || app.Tags["System"] != "convox" || app.Tags["Rack"] != os.Getenv("RACK") {
+		return fmt.Errorf("invalid app: %s", name)
+	}
+
 	resources, err := p.ResourceList()
 	if err != nil {
 		return err
 	}
 
 	for _, s := range resources {
-		s.Apps, err = p.resourceApps(s)
+		apps, err := p.resourceApps(s)
 		if err != nil {
 			return err
 		}
 
-		for _, a := range s.Apps {
+		for _, a := range apps {
 			if a.Name == name {
 				return fmt.Errorf("app is linked to %s resource", s.Name)
 			}
@@ -180,6 +185,15 @@ func (p *AWSProvider) AppList() (structs.Apps, error) {
 	}
 
 	return apps, nil
+}
+
+func (p *AWSProvider) AppLogs(app string, opts structs.LogsOptions) (io.ReadCloser, error) {
+	group, err := p.appResource(app, "LogGroup")
+	if err != nil {
+		return nil, err
+	}
+
+	return p.subscribeLogs(group, opts)
 }
 
 func (p *AWSProvider) AppUpdate(app string, opts structs.AppUpdateOptions) error {

@@ -1,6 +1,6 @@
 // +build !windows
 
-package authz
+package authz // import "github.com/docker/docker/integration/plugin/authz"
 
 import (
 	"encoding/json"
@@ -16,6 +16,7 @@ import (
 	"github.com/docker/docker/internal/test/environment"
 	"github.com/docker/docker/pkg/authorization"
 	"github.com/docker/docker/pkg/plugins"
+	"github.com/gotestyourself/gotestyourself/skip"
 )
 
 var (
@@ -48,6 +49,7 @@ func TestMain(m *testing.M) {
 }
 
 func setupTest(t *testing.T) func() {
+	skip.IfCondition(t, testEnv.IsRemoteDaemon(), "cannot run daemon when remote daemon")
 	environment.ProtectAll(t, testEnv)
 
 	d = daemon.New(t, "", dockerdBinary, daemon.Config{

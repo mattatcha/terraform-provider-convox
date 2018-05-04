@@ -81,6 +81,11 @@ provisioner "file" {
   only supported SSH authentication agent is
   [Pageant](http://the.earth.li/~sgtatham/putty/0.66/htmldoc/Chapter9.html#pageant).
 
+* `agent_identity` - The preferred identity from the ssh agent for authentication.
+
+* `host_key` - The public key from the remote host or the signing CA, used to
+  verify the connection.
+
 **Additional arguments only supported by the `winrm` connection type:**
 
 * `https` - Set to `true` to connect using HTTPS instead of HTTP.
@@ -97,6 +102,9 @@ The `ssh` connection also supports the following fields to facilitate connnectio
 
 * `bastion_host` - Setting this enables the bastion Host connection. This host
   will be connected to first, and then the `host` connection will be made from there.
+
+* `bastion_host_key` - The public key from the remote host or the signing CA,
+  used to verify the host connection.
 
 * `bastion_port` - The port to use connect to the bastion host. Defaults to the
   value of the `port` field.

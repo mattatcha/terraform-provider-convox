@@ -1,7 +1,6 @@
 package structs
 
 import (
-	"math/rand"
 	"time"
 )
 
@@ -11,6 +10,7 @@ type Build struct {
 	Description string `json:"description"`
 	Logs        string `json:"logs"`
 	Manifest    string `json:"manifest"`
+	Process     string `json:"process"`
 	Release     string `json:"release"`
 	Reason      string `json:"reason"`
 	Status      string `json:"status"`
@@ -23,27 +23,32 @@ type Build struct {
 
 type Builds []Build
 
-type BuildOptions struct {
-	Cache       bool
-	Config      string
-	Description string
+type BuildListOptions struct {
+	Count *int
+}
+
+type BuildCreateOptions struct {
+	Cache       *bool
+	Config      *string
+	Description *string
+	Development *bool
+	Manifest    *string
+}
+
+type BuildUpdateOptions struct {
+	Ended    *time.Time `param:"ended"`
+	Logs     *string    `param:"logs"`
+	Manifest *string    `param:"manifest"`
+	Release  *string    `param:"release"`
+	Started  *time.Time `param:"started"`
+	Status   *string    `param:"status"`
 }
 
 func NewBuild(app string) *Build {
 	return &Build{
 		App:    app,
-		Id:     generateId("B", 10),
+		Id:     id("B", 10),
 		Status: "created",
 		Tags:   map[string]string{},
 	}
-}
-
-var idAlphabet = []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-
-func generateId(prefix string, size int) string {
-	b := make([]rune, size)
-	for i := range b {
-		b[i] = idAlphabet[rand.Intn(len(idAlphabet))]
-	}
-	return prefix + string(b)
 }

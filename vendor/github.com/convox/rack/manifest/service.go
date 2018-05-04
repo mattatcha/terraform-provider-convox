@@ -30,8 +30,9 @@ type Service struct {
 type Services []Service
 
 type ServiceBuild struct {
-	Args []string `yaml:"args,omitempty"`
-	Path string   `yaml:"path,omitempty"`
+	Args     []string `yaml:"args,omitempty"`
+	Manifest string   `yaml:"manifest,omitempty"`
+	Path     string   `yaml:"path,omitempty"`
 }
 
 type ServiceCommand struct {
@@ -45,6 +46,7 @@ type ServiceDomains []string
 type ServiceEnvironment []string
 
 type ServiceHealth struct {
+	Grace    int
 	Interval int
 	Path     string
 	Timeout  int
@@ -57,6 +59,7 @@ type ServicePort struct {
 
 type ServiceScale struct {
 	Count  *ServiceScaleCount
+	Cpu    int
 	Memory int
 }
 
@@ -66,7 +69,7 @@ type ServiceScaleCount struct {
 }
 
 func (s Service) BuildHash() string {
-	return fmt.Sprintf("%x", sha1.Sum([]byte(fmt.Sprintf("build[path=%q, args=%v] image=%q", s.Build.Path, s.Build.Args, s.Image))))
+	return fmt.Sprintf("%x", sha1.Sum([]byte(fmt.Sprintf("build[path=%q, manifest=%q, args=%v] image=%q", s.Build.Path, s.Build.Manifest, s.Build.Args, s.Image))))
 }
 
 func (s Service) Domain() string {
@@ -109,6 +112,14 @@ func (s Service) GetName() string {
 func (s *Service) SetDefaults() error {
 	if s.Scale.Count == nil {
 		s.Scale.Count = &ServiceScaleCount{Min: 1, Max: 1}
+	}
+
+	if s.Scale.Cpu == 0 {
+		s.Scale.Cpu = 128
+	}
+
+	if s.Scale.Memory == 0 {
+		s.Scale.Memory = 256
 	}
 
 	return nil

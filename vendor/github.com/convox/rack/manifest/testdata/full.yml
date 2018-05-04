@@ -4,6 +4,7 @@ resources:
 services:
   api:
     build:
+      manifest: Dockerfile2
       path: api
     domain: foo.example.org
     environment:
@@ -27,6 +28,7 @@ services:
     health: /auth
     port: https:2000
     scale:
+      cpu: 256
       memory: 512
   foo:
     command: foo

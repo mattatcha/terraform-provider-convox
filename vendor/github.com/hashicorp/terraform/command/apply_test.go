@@ -824,22 +824,24 @@ func TestApply_refresh(t *testing.T) {
 }
 
 func TestApply_shutdown(t *testing.T) {
-	stopped := false
-	stopCh := make(chan struct{})
-	stopReplyCh := make(chan struct{})
+	cancelled := make(chan struct{})
+	shutdownCh := make(chan struct{})
 
 	statePath := testTempFile(t)
-
 	p := testProvider()
-	shutdownCh := make(chan struct{})
+
 	ui := new(cli.MockUi)
 	c := &ApplyCommand{
 		Meta: Meta{
 			testingOverrides: metaOverridesForProvider(p),
 			Ui:               ui,
+			ShutdownCh:       shutdownCh,
 		},
+	}
 
-		ShutdownCh: shutdownCh,
+	p.StopFn = func() error {
+		close(cancelled)
+		return nil
 	}
 
 	p.DiffFn = func(
@@ -854,15 +856,25 @@ func TestApply_shutdown(t *testing.T) {
 			},
 		}, nil
 	}
+
+	var once sync.Once
 	p.ApplyFn = func(
 		*terraform.InstanceInfo,
 		*terraform.InstanceState,
 		*terraform.InstanceDiff) (*terraform.InstanceState, error) {
-		if !stopped {
-			stopped = true
-			close(stopCh)
-			<-stopReplyCh
-		}
+
+		// only cancel once
+		once.Do(func() {
+			shutdownCh <- struct{}{}
+		})
+
+		// Because of the internal lock in the MockProvider, we can't
+		// coordiante directly with the calling of Stop, and making the
+		// MockProvider concurrent is disruptive to a lot of existing tests.
+		// Wait here a moment to help make sure the main goroutine gets to the
+		// Stop call before we exit, or the plan may finish before it can be
+		// canceled.
+		time.Sleep(200 * time.Millisecond)
 
 		return &terraform.InstanceState{
 			ID: "foo",
@@ -871,18 +883,6 @@ func TestApply_shutdown(t *testing.T) {
 			},
 		}, nil
 	}
-
-	go func() {
-		<-stopCh
-		shutdownCh <- struct{}{}
-
-		// This is really dirty, but we have no other way to assure that
-		// tf.Stop() has been called. This doesn't assure it either, but
-		// it makes it much more certain.
-		time.Sleep(50 * time.Millisecond)
-
-		close(stopReplyCh)
-	}()
 
 	args := []string{
 		"-state", statePath,
@@ -897,13 +897,15 @@ func TestApply_shutdown(t *testing.T) {
 		t.Fatalf("err: %s", err)
 	}
 
+	select {
+	case <-cancelled:
+	default:
+		t.Fatal("command not cancelled")
+	}
+
 	state := testStateRead(t, statePath)
 	if state == nil {
 		t.Fatal("state should not be nil")
-	}
-
-	if len(state.RootModule().Resources) != 1 {
-		t.Fatalf("bad: %d", len(state.RootModule().Resources))
 	}
 }
 

@@ -67,13 +67,11 @@ func (s *Sync) Contains(t Sync) bool {
 	}
 
 	lr, err := filepath.Rel(s.Local, t.Local)
-
 	if err != nil {
 		return false
 	}
 
 	rr, err := filepath.Rel(s.Remote, t.Remote)
-
 	if err != nil {
 		return false
 	}
@@ -286,7 +284,7 @@ func (s *Sync) syncOutgoingAdds(adds []changes.Change, st Stream) {
 
 	if os.Getenv("CONVOX_DEBUG") != "" {
 		for _, a := range adds {
-			st <- fmt.Sprintf("-> %s", filepath.Join(a.Base, a.Path))
+			st <- fmt.Sprintf("%s -> %s:%s", filepath.Join(a.Base, a.Path), s.Container, filepath.Join(s.Remote, a.Path))
 		}
 	}
 
@@ -424,7 +422,7 @@ func (s *Sync) watchIncoming(st Stream) {
 		}
 
 		if err := scanner.Err(); err != nil {
-			st <- fmt.Sprintf("error: ", err)
+			st <- fmt.Sprintf("error: %s", err)
 		}
 	}()
 

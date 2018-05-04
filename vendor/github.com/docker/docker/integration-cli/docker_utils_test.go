@@ -202,12 +202,6 @@ func buildImage(name string, cmdOperators ...cli.CmdOperator) *icmd.Result {
 	return cli.Docker(cli.Build(name), cmdOperators...)
 }
 
-// Deprecated: use trustedcmd
-func trustedBuild(cmd *icmd.Cmd) func() {
-	trustedCmd(cmd)
-	return nil
-}
-
 // Write `content` to the file at path `dst`, creating it if necessary,
 // as well as any missing directories.
 // The file is truncated if it already exists.
@@ -306,13 +300,6 @@ func setupRegistry(c *check.C, schema1 bool, auth, tokenURL string) *registry.V2
 	return reg
 }
 
-func setupNotary(c *check.C) *testNotary {
-	ts, err := newTestNotary(c)
-	c.Assert(err, check.IsNil)
-
-	return ts
-}
-
 // appendBaseEnv appends the minimum set of environment variables to exec the
 // docker cli binary for testing with correct configuration to the given env
 // list.
@@ -372,7 +359,7 @@ func waitInspectWithArgs(name, expr, expected string, timeout time.Duration, arg
 }
 
 func getInspectBody(c *check.C, version, id string) []byte {
-	cli, err := request.NewEnvClientWithVersion(version)
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithVersion(version))
 	c.Assert(err, check.IsNil)
 	defer cli.Close()
 	_, body, err := cli.ContainerInspectWithRaw(context.Background(), id, false)
@@ -399,7 +386,7 @@ func runSleepingContainerInImage(c *check.C, image string, extraArgs ...string) 
 // minimalBaseImage returns the name of the minimal base image for the current
 // daemon platform.
 func minimalBaseImage() string {
-	return testEnv.MinimalBaseImage()
+	return testEnv.PlatformDefaults.BaseImage
 }
 
 func getGoroutineNumber() (int, error) {

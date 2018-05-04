@@ -1,4 +1,4 @@
-package dockerfile
+package dockerfile // import "github.com/docker/docker/builder/dockerfile"
 
 // This file contains the dispatchers for each command. Note that
 // `nullDispatch` is not actually a command, but support for commands we parse
@@ -20,6 +20,8 @@ import (
 	"github.com/docker/docker/builder"
 	"github.com/docker/docker/builder/dockerfile/instructions"
 	"github.com/docker/docker/builder/dockerfile/parser"
+	"github.com/docker/docker/builder/dockerfile/shell"
+	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/docker/pkg/signal"
@@ -46,7 +48,7 @@ func dispatchEnv(d dispatchRequest, c *instructions.EnvCommand) error {
 		for i, envVar := range runConfig.Env {
 			envParts := strings.SplitN(envVar, "=", 2)
 			compareFrom := envParts[0]
-			if equalEnvKeys(compareFrom, name) {
+			if shell.EqualEnvKeys(compareFrom, name) {
 				runConfig.Env[i] = newVar
 				gotOne = true
 				break
@@ -143,19 +145,24 @@ func (d *dispatchRequest) getImageMount(imageRefOrID string) (*imageMount, error
 		imageRefOrID = stage.Image
 		localOnly = true
 	}
-	return d.builder.imageSources.Get(imageRefOrID, localOnly)
+	return d.builder.imageSources.Get(imageRefOrID, localOnly, d.state.operatingSystem)
 }
 
-// FROM imagename[:tag | @digest] [AS build-stage-name]
+// FROM [--platform=platform] imagename[:tag | @digest] [AS build-stage-name]
 //
 func initializeStage(d dispatchRequest, cmd *instructions.Stage) error {
 	d.builder.imageProber.Reset()
-	image, err := d.getFromImage(d.shlex, cmd.BaseName)
+	if err := system.ValidatePlatform(&cmd.Platform); err != nil {
+		return err
+	}
+	image, err := d.getFromImage(d.shlex, cmd.BaseName, cmd.Platform.OS)
 	if err != nil {
 		return err
 	}
 	state := d.state
-	state.beginStage(cmd.Name, image)
+	if err := state.beginStage(cmd.Name, image); err != nil {
+		return err
+	}
 	if len(state.runConfig.OnBuild) > 0 {
 		triggers := state.runConfig.OnBuild
 		state.runConfig.OnBuild = nil
@@ -194,7 +201,7 @@ func dispatchTriggeredOnBuild(d dispatchRequest, triggers []string) error {
 	return nil
 }
 
-func (d *dispatchRequest) getExpandedImageName(shlex *ShellLex, name string) (string, error) {
+func (d *dispatchRequest) getExpandedImageName(shlex *shell.Lex, name string) (string, error) {
 	substitutionArgs := []string{}
 	for key, value := range d.state.buildArgs.GetAllMeta() {
 		substitutionArgs = append(substitutionArgs, key+"="+value)
@@ -206,20 +213,41 @@ func (d *dispatchRequest) getExpandedImageName(shlex *ShellLex, name string) (st
 	}
 	return name, nil
 }
-func (d *dispatchRequest) getImageOrStage(name string) (builder.Image, error) {
+
+// getOsFromFlagsAndStage calculates the operating system if we need to pull an image.
+// stagePlatform contains the value supplied by optional `--platform=` on
+// a current FROM statement. b.builder.options.Platform contains the operating
+// system part of the optional flag passed in the API call (or CLI flag
+// through `docker build --platform=...`). Precedence is for an explicit
+// platform indication in the FROM statement.
+func (d *dispatchRequest) getOsFromFlagsAndStage(stageOS string) string {
+	switch {
+	case stageOS != "":
+		return stageOS
+	case d.builder.options.Platform != "":
+		// Note this is API "platform", but by this point, as the daemon is not
+		// multi-arch aware yet, it is guaranteed to only hold the OS part here.
+		return d.builder.options.Platform
+	default:
+		return runtime.GOOS
+	}
+}
+
+func (d *dispatchRequest) getImageOrStage(name string, stageOS string) (builder.Image, error) {
 	var localOnly bool
 	if im, ok := d.stages.getByName(name); ok {
 		name = im.Image
 		localOnly = true
 	}
 
+	os := d.getOsFromFlagsAndStage(stageOS)
+
 	// Windows cannot support a container with no base image unless it is LCOW.
 	if name == api.NoBaseImageSpecifier {
 		imageImage := &image.Image{}
 		imageImage.OS = runtime.GOOS
 		if runtime.GOOS == "windows" {
-			optionsOS := system.ParsePlatform(d.builder.options.Platform).OS
-			switch optionsOS {
+			switch os {
 			case "windows", "":
 				return nil, errors.New("Windows does not support FROM scratch")
 			case "linux":
@@ -228,23 +256,23 @@ func (d *dispatchRequest) getImageOrStage(name string) (builder.Image, error) {
 				}
 				imageImage.OS = "linux"
 			default:
-				return nil, errors.Errorf("operating system %q is not supported", optionsOS)
+				return nil, errors.Errorf("operating system %q is not supported", os)
 			}
 		}
 		return builder.Image(imageImage), nil
 	}
-	imageMount, err := d.builder.imageSources.Get(name, localOnly)
+	imageMount, err := d.builder.imageSources.Get(name, localOnly, os)
 	if err != nil {
 		return nil, err
 	}
 	return imageMount.Image(), nil
 }
-func (d *dispatchRequest) getFromImage(shlex *ShellLex, name string) (builder.Image, error) {
+func (d *dispatchRequest) getFromImage(shlex *shell.Lex, name string, stageOS string) (builder.Image, error) {
 	name, err := d.getExpandedImageName(shlex, name)
 	if err != nil {
 		return nil, err
 	}
-	return d.getImageOrStage(name)
+	return d.getImageOrStage(name, stageOS)
 }
 
 func dispatchOnbuild(d dispatchRequest, c *instructions.OnbuildCommand) error {
@@ -260,8 +288,7 @@ func dispatchOnbuild(d dispatchRequest, c *instructions.OnbuildCommand) error {
 func dispatchWorkdir(d dispatchRequest, c *instructions.WorkdirCommand) error {
 	runConfig := d.state.runConfig
 	var err error
-	optionsOS := system.ParsePlatform(d.builder.options.Platform).OS
-	runConfig.WorkingDir, err = normalizeWorkdir(optionsOS, runConfig.WorkingDir, c.Path)
+	runConfig.WorkingDir, err = normalizeWorkdir(d.state.operatingSystem, runConfig.WorkingDir, c.Path)
 	if err != nil {
 		return err
 	}
@@ -277,7 +304,7 @@ func dispatchWorkdir(d dispatchRequest, c *instructions.WorkdirCommand) error {
 	}
 
 	comment := "WORKDIR " + runConfig.WorkingDir
-	runConfigWithCommentCmd := copyRunConfig(runConfig, withCmdCommentString(comment, optionsOS))
+	runConfigWithCommentCmd := copyRunConfig(runConfig, withCmdCommentString(comment, d.state.operatingSystem))
 	containerID, err := d.builder.probeAndCreate(d.state, runConfigWithCommentCmd)
 	if err != nil || containerID == "" {
 		return err
@@ -289,10 +316,10 @@ func dispatchWorkdir(d dispatchRequest, c *instructions.WorkdirCommand) error {
 	return d.builder.commitContainer(d.state, containerID, runConfigWithCommentCmd)
 }
 
-func resolveCmdLine(cmd instructions.ShellDependantCmdLine, runConfig *container.Config, platform string) []string {
+func resolveCmdLine(cmd instructions.ShellDependantCmdLine, runConfig *container.Config, os string) []string {
 	result := cmd.CmdLine
 	if cmd.PrependShell && result != nil {
-		result = append(getShell(runConfig, platform), result...)
+		result = append(getShell(runConfig, os), result...)
 	}
 	return result
 }
@@ -308,10 +335,11 @@ func resolveCmdLine(cmd instructions.ShellDependantCmdLine, runConfig *container
 // RUN [ "echo", "hi" ] # echo hi
 //
 func dispatchRun(d dispatchRequest, c *instructions.RunCommand) error {
-
+	if !system.IsOSSupported(d.state.operatingSystem) {
+		return system.ErrNotSupportedOperatingSystem
+	}
 	stateRunConfig := d.state.runConfig
-	optionsOS := system.ParsePlatform(d.builder.options.Platform).OS
-	cmdFromArgs := resolveCmdLine(c.ShellDependantCmdLine, stateRunConfig, optionsOS)
+	cmdFromArgs := resolveCmdLine(c.ShellDependantCmdLine, stateRunConfig, d.state.operatingSystem)
 	buildArgs := d.state.buildArgs.FilterAllowed(stateRunConfig.Env)
 
 	saveCmd := cmdFromArgs
@@ -343,11 +371,15 @@ func dispatchRun(d dispatchRequest, c *instructions.RunCommand) error {
 	if err := d.builder.containerManager.Run(d.builder.clientCtx, cID, d.builder.Stdout, d.builder.Stderr); err != nil {
 		if err, ok := err.(*statusCodeError); ok {
 			// TODO: change error type, because jsonmessage.JSONError assumes HTTP
+			msg := fmt.Sprintf(
+				"The command '%s' returned a non-zero code: %d",
+				strings.Join(runConfig.Cmd, " "), err.StatusCode())
+			if err.Error() != "" {
+				msg = fmt.Sprintf("%s: %s", msg, err.Error())
+			}
 			return &jsonmessage.JSONError{
-				Message: fmt.Sprintf(
-					"The command '%s' returned a non-zero code: %d",
-					strings.Join(runConfig.Cmd, " "), err.StatusCode()),
-				Code: err.StatusCode(),
+				Message: msg,
+				Code:    err.StatusCode(),
 			}
 		}
 		return err
@@ -388,8 +420,7 @@ func prependEnvOnCmd(buildArgs *buildArgs, buildArgVars []string, cmd strslice.S
 //
 func dispatchCmd(d dispatchRequest, c *instructions.CmdCommand) error {
 	runConfig := d.state.runConfig
-	optionsOS := system.ParsePlatform(d.builder.options.Platform).OS
-	cmd := resolveCmdLine(c.ShellDependantCmdLine, runConfig, optionsOS)
+	cmd := resolveCmdLine(c.ShellDependantCmdLine, runConfig, d.state.operatingSystem)
 	runConfig.Cmd = cmd
 	// set config as already being escaped, this prevents double escaping on windows
 	runConfig.ArgsEscaped = true
@@ -432,8 +463,7 @@ func dispatchHealthcheck(d dispatchRequest, c *instructions.HealthCheckCommand) 
 //
 func dispatchEntrypoint(d dispatchRequest, c *instructions.EntrypointCommand) error {
 	runConfig := d.state.runConfig
-	optionsOS := system.ParsePlatform(d.builder.options.Platform).OS
-	cmd := resolveCmdLine(c.ShellDependantCmdLine, runConfig, optionsOS)
+	cmd := resolveCmdLine(c.ShellDependantCmdLine, runConfig, d.state.operatingSystem)
 	runConfig.Entrypoint = cmd
 	if !d.state.cmdSet {
 		runConfig.Cmd = nil
@@ -510,7 +540,7 @@ func dispatchStopSignal(d dispatchRequest, c *instructions.StopSignalCommand) er
 
 	_, err := signal.ParseSignal(c.Signal)
 	if err != nil {
-		return validationError{err}
+		return errdefs.InvalidParameter(err)
 	}
 	d.state.runConfig.StopSignal = c.Signal
 	return d.builder.commit(d.state, fmt.Sprintf("STOPSIGNAL %v", c.Signal))

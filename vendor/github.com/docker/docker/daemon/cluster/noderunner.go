@@ -1,4 +1,4 @@
-package cluster
+package cluster // import "github.com/docker/docker/daemon/cluster"
 
 import (
 	"fmt"
@@ -120,12 +120,18 @@ func (n *nodeRunner) start(conf nodeStartConfig) error {
 		JoinAddr:           joinAddr,
 		StateDir:           n.cluster.root,
 		JoinToken:          conf.joinToken,
-		Executor:           container.NewExecutor(n.cluster.config.Backend, n.cluster.config.PluginBackend),
-		HeartbeatTick:      1,
-		ElectionTick:       3,
-		UnlockKey:          conf.lockKey,
-		AutoLockManagers:   conf.autolock,
-		PluginGetter:       n.cluster.config.Backend.PluginGetter(),
+		Executor: container.NewExecutor(
+			n.cluster.config.Backend,
+			n.cluster.config.PluginBackend,
+			n.cluster.config.ImageBackend),
+		HeartbeatTick: 1,
+		// Recommended value in etcd/raft is 10 x (HeartbeatTick).
+		// Lower values were seen to have caused instability because of
+		// frequent leader elections when running on flakey networks.
+		ElectionTick:     10,
+		UnlockKey:        conf.lockKey,
+		AutoLockManagers: conf.autolock,
+		PluginGetter:     n.cluster.config.Backend.PluginGetter(),
 	}
 	if conf.availability != "" {
 		avail, ok := swarmapi.NodeSpec_Availability_value[strings.ToUpper(string(conf.availability))]

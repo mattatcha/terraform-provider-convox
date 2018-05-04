@@ -1,11 +1,15 @@
 package aws
 
 import (
+	"fmt"
 	"math"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/convox/logger"
+	"github.com/convox/rack/options"
+	"github.com/convox/rack/structs"
 )
 
 var (
@@ -50,58 +54,54 @@ func (p *AWSProvider) autoscaleRack() {
 		return
 	}
 
-	// start with the current count
-	desired := 0
-
-	// calculate instances required to statisfy cpu reservations plus one for breathing room
-	if c := int(math.Ceil(float64(capacity.ProcessCPU)/float64(capacity.InstanceCPU))) + 1; c > desired {
-		log = log.Replace("reason", "cpu")
-		desired = c
+	// extra capacity for autoscale
+	extra := 1
+	if v := os.Getenv("AUTOSCALE_EXTRA"); v != "" {
+		i, err := strconv.Atoi(v)
+		if err != nil {
+			log.Error(err)
+			return
+		}
+		extra = i
 	}
+	log = log.Replace("extra", fmt.Sprintf("%d", extra))
 
-	// calculate instances required to statisfy memory reservations plus one for breathing room
-	if c := int(math.Ceil(float64(capacity.ProcessMemory)/float64(capacity.InstanceMemory))) + 1; c > desired {
-		log = log.Replace("reason", "memory")
-		desired = c
-	}
+	// need minimum 3 instances
+	desired := 3
 
-	// instance count cant be less than 2
-	if desired < 2 {
-		log = log.Replace("reason", "minimum")
-		desired = 2
-	}
-
-	// instance count must be at least maxconcurrency+1
-	if c := int(capacity.ProcessWidth) + 1; c > desired {
+	// instance count must be at least max concurrency plus extra
+	if c := int(capacity.ProcessWidth) + extra; c > desired {
 		log = log.Replace("reason", "width")
 		desired = c
 	}
 
-	// if no change then exit
-	if system.Count == desired {
-		return
+	// calculate instances required to statisfy cpu reservations plus extra
+	if c := int(math.Ceil(float64(capacity.ProcessCPU)/float64(capacity.InstanceCPU))) + extra; c > desired {
+		log = log.Replace("reason", "cpu")
+		desired = c
 	}
 
-	oldCount := system.Count
-
-	// ok to start multiple instances in one pass
-	// when shutting down go one at a time but only if current status is "running"
-	if desired < system.Count {
-		if system.Status == "running" {
-			system.Count--
-		}
-	} else {
-		system.Count = desired
+	// calculate instances required to statisfy memory reservations plus extra
+	if c := int(math.Ceil(float64(capacity.ProcessMemory)/float64(capacity.InstanceMemory))) + extra; c > desired {
+		log = log.Replace("reason", "memory")
+		desired = c
 	}
 
-	log.Logf("change=%d", (system.Count - oldCount))
+	target := desired
+
+	// only stop one instance at a time
+	if target < system.Count {
+		target = system.Count - 1
+	}
+
+	log.Logf("desired=%d target=%d change=%d", desired, target, (target - system.Count))
+
 	// nothing changed, return
-	if system.Count == oldCount {
+	if target == system.Count {
 		return
 	}
 
-	err = p.SystemSave(*system)
-	if err != nil {
+	if err := p.SystemUpdate(structs.SystemUpdateOptions{InstanceCount: options.Int(target)}); err != nil {
 		log.Error(err)
 		return
 	}

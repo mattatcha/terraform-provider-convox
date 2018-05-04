@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/cli/config"
 	"github.com/docker/docker/integration-cli/checker"
 	"github.com/docker/docker/integration-cli/cli"
 	"github.com/docker/docker/integration-cli/cli/build/fakestorage"
@@ -85,7 +84,7 @@ type DockerSuite struct {
 }
 
 func (s *DockerSuite) OnTimeout(c *check.C) {
-	if !testEnv.IsLocalDaemon() {
+	if testEnv.IsRemoteDaemon() {
 		return
 	}
 	path := filepath.Join(os.Getenv("DEST"), "docker.pid")
@@ -129,7 +128,7 @@ func (s *DockerRegistrySuite) SetUpTest(c *check.C) {
 	testRequires(c, DaemonIsLinux, registry.Hosting, SameHostDaemon)
 	s.reg = setupRegistry(c, false, "", "")
 	s.d = daemon.New(c, dockerBinary, dockerdBinary, daemon.Config{
-		Experimental: testEnv.ExperimentalDaemon(),
+		Experimental: testEnv.DaemonInfo.ExperimentalBuild,
 	})
 }
 
@@ -163,7 +162,7 @@ func (s *DockerSchema1RegistrySuite) SetUpTest(c *check.C) {
 	testRequires(c, DaemonIsLinux, registry.Hosting, NotArm64, SameHostDaemon)
 	s.reg = setupRegistry(c, true, "", "")
 	s.d = daemon.New(c, dockerBinary, dockerdBinary, daemon.Config{
-		Experimental: testEnv.ExperimentalDaemon(),
+		Experimental: testEnv.DaemonInfo.ExperimentalBuild,
 	})
 }
 
@@ -197,7 +196,7 @@ func (s *DockerRegistryAuthHtpasswdSuite) SetUpTest(c *check.C) {
 	testRequires(c, DaemonIsLinux, registry.Hosting, SameHostDaemon)
 	s.reg = setupRegistry(c, false, "htpasswd", "")
 	s.d = daemon.New(c, dockerBinary, dockerdBinary, daemon.Config{
-		Experimental: testEnv.ExperimentalDaemon(),
+		Experimental: testEnv.DaemonInfo.ExperimentalBuild,
 	})
 }
 
@@ -232,7 +231,7 @@ func (s *DockerRegistryAuthTokenSuite) OnTimeout(c *check.C) {
 func (s *DockerRegistryAuthTokenSuite) SetUpTest(c *check.C) {
 	testRequires(c, DaemonIsLinux, registry.Hosting, SameHostDaemon)
 	s.d = daemon.New(c, dockerBinary, dockerdBinary, daemon.Config{
-		Experimental: testEnv.ExperimentalDaemon(),
+		Experimental: testEnv.DaemonInfo.ExperimentalBuild,
 	})
 }
 
@@ -273,7 +272,7 @@ func (s *DockerDaemonSuite) OnTimeout(c *check.C) {
 func (s *DockerDaemonSuite) SetUpTest(c *check.C) {
 	testRequires(c, DaemonIsLinux, SameHostDaemon)
 	s.d = daemon.New(c, dockerBinary, dockerdBinary, daemon.Config{
-		Experimental: testEnv.ExperimentalDaemon(),
+		Experimental: testEnv.DaemonInfo.ExperimentalBuild,
 	})
 }
 
@@ -331,7 +330,7 @@ func (s *DockerSwarmSuite) SetUpTest(c *check.C) {
 func (s *DockerSwarmSuite) AddDaemon(c *check.C, joinSwarm, manager bool) *daemon.Swarm {
 	d := &daemon.Swarm{
 		Daemon: daemon.New(c, dockerBinary, dockerdBinary, daemon.Config{
-			Experimental: testEnv.ExperimentalDaemon(),
+			Experimental: testEnv.DaemonInfo.ExperimentalBuild,
 		}),
 		Port: defaultSwarmPort + s.portIndex,
 	}
@@ -384,74 +383,6 @@ func (s *DockerSwarmSuite) TearDownTest(c *check.C) {
 
 	s.portIndex = 0
 	s.ds.TearDownTest(c)
-}
-
-func init() {
-	check.Suite(&DockerTrustSuite{
-		ds: &DockerSuite{},
-	})
-}
-
-type DockerTrustSuite struct {
-	ds  *DockerSuite
-	reg *registry.V2
-	not *testNotary
-}
-
-func (s *DockerTrustSuite) OnTimeout(c *check.C) {
-	s.ds.OnTimeout(c)
-}
-
-func (s *DockerTrustSuite) SetUpTest(c *check.C) {
-	testRequires(c, registry.Hosting, NotaryServerHosting)
-	s.reg = setupRegistry(c, false, "", "")
-	s.not = setupNotary(c)
-}
-
-func (s *DockerTrustSuite) TearDownTest(c *check.C) {
-	if s.reg != nil {
-		s.reg.Close()
-	}
-	if s.not != nil {
-		s.not.Close()
-	}
-
-	// Remove trusted keys and metadata after test
-	os.RemoveAll(filepath.Join(config.Dir(), "trust"))
-	s.ds.TearDownTest(c)
-}
-
-func init() {
-	ds := &DockerSuite{}
-	check.Suite(&DockerTrustedSwarmSuite{
-		trustSuite: DockerTrustSuite{
-			ds: ds,
-		},
-		swarmSuite: DockerSwarmSuite{
-			ds: ds,
-		},
-	})
-}
-
-type DockerTrustedSwarmSuite struct {
-	swarmSuite DockerSwarmSuite
-	trustSuite DockerTrustSuite
-	reg        *registry.V2
-	not        *testNotary
-}
-
-func (s *DockerTrustedSwarmSuite) SetUpTest(c *check.C) {
-	s.swarmSuite.SetUpTest(c)
-	s.trustSuite.SetUpTest(c)
-}
-
-func (s *DockerTrustedSwarmSuite) TearDownTest(c *check.C) {
-	s.trustSuite.TearDownTest(c)
-	s.swarmSuite.TearDownTest(c)
-}
-
-func (s *DockerTrustedSwarmSuite) OnTimeout(c *check.C) {
-	s.swarmSuite.OnTimeout(c)
 }
 
 func init() {

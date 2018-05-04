@@ -1,4 +1,4 @@
-package instructions
+package instructions // import "github.com/docker/docker/builder/dockerfile/instructions"
 
 import (
 	"errors"
@@ -7,9 +7,10 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/strslice"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-// KeyValuePair represent an arbitrary named value (useful in slice insted of map[string] string to preserve ordering)
+// KeyValuePair represent an arbitrary named value (useful in slice instead of map[string] string to preserve ordering)
 type KeyValuePair struct {
 	Key   string
 	Value string
@@ -195,7 +196,7 @@ func (c *WorkdirCommand) Expand(expander SingleWordExpander) error {
 	return nil
 }
 
-// ShellDependantCmdLine represents a cmdline optionaly prepended with the shell
+// ShellDependantCmdLine represents a cmdline optionally prepended with the shell
 type ShellDependantCmdLine struct {
 	CmdLine      strslice.StrSlice
 	PrependShell bool
@@ -361,6 +362,7 @@ type Stage struct {
 	Commands   []Command
 	BaseName   string
 	SourceCode string
+	Platform   specs.Platform
 }
 
 // AddCommand to the stage

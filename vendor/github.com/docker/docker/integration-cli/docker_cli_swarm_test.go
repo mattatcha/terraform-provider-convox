@@ -4,7 +4,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -25,6 +24,7 @@ import (
 	"github.com/docker/libnetwork/driverapi"
 	"github.com/docker/libnetwork/ipamapi"
 	remoteipam "github.com/docker/libnetwork/ipams/remote/api"
+	"github.com/docker/swarmkit/ca/keyutils"
 	"github.com/go-check/check"
 	"github.com/gotestyourself/gotestyourself/fs"
 	"github.com/gotestyourself/gotestyourself/icmd"
@@ -345,13 +345,13 @@ func (s *DockerSwarmSuite) TestSwarmContainerEndpointOptions(c *check.C) {
 	c.Assert(err, checker.IsNil, check.Commentf(out))
 	c.Assert(strings.TrimSpace(out), checker.Not(checker.Equals), "")
 
-	_, err = d.Cmd("run", "-d", "--net=foo", "--name=first", "--net-alias=first-alias", "busybox", "top")
+	_, err = d.Cmd("run", "-d", "--net=foo", "--name=first", "--net-alias=first-alias", "busybox:glibc", "top")
 	c.Assert(err, checker.IsNil, check.Commentf(out))
 
-	_, err = d.Cmd("run", "-d", "--net=foo", "--name=second", "busybox", "top")
+	_, err = d.Cmd("run", "-d", "--net=foo", "--name=second", "busybox:glibc", "top")
 	c.Assert(err, checker.IsNil, check.Commentf(out))
 
-	_, err = d.Cmd("run", "-d", "--net=foo", "--net-alias=third-alias", "busybox", "top")
+	_, err = d.Cmd("run", "-d", "--net=foo", "--net-alias=third-alias", "busybox:glibc", "top")
 	c.Assert(err, checker.IsNil, check.Commentf(out))
 
 	// ping first container and its alias, also ping third and anonymous container by its alias
@@ -849,7 +849,7 @@ func (s *DockerSwarmSuite) TestSwarmServiceTTY(c *check.C) {
 	waitAndAssert(c, defaultReconciliationTimeout, d.CheckActiveContainerCount, checker.Equals, 1)
 
 	// We need to get the container id.
-	out, err = d.Cmd("ps", "-a", "-q", "--no-trunc")
+	out, err = d.Cmd("ps", "-q", "--no-trunc")
 	c.Assert(err, checker.IsNil)
 	id := strings.TrimSpace(out)
 
@@ -872,7 +872,7 @@ func (s *DockerSwarmSuite) TestSwarmServiceTTY(c *check.C) {
 	waitAndAssert(c, defaultReconciliationTimeout, d.CheckActiveContainerCount, checker.Equals, 1)
 
 	// We need to get the container id.
-	out, err = d.Cmd("ps", "-a", "-q", "--no-trunc")
+	out, err = d.Cmd("ps", "-q", "--no-trunc")
 	c.Assert(err, checker.IsNil)
 	id = strings.TrimSpace(out)
 
@@ -1007,7 +1007,7 @@ func checkKeyIsEncrypted(d *daemon.Swarm) func(*check.C) (interface{}, check.Com
 			return fmt.Errorf("invalid PEM-encoded private key"), nil
 		}
 
-		return x509.IsEncryptedPEMBlock(keyBlock), nil
+		return keyutils.IsEncryptedPEMBlock(keyBlock), nil
 	}
 }
 
@@ -1558,78 +1558,6 @@ func (s *DockerSwarmSuite) TestSwarmNetworkIPAMOptions(c *check.C) {
 	c.Assert(err, checker.IsNil, check.Commentf(out))
 	c.Assert(strings.TrimSpace(out), checker.Contains, "foo:bar")
 	c.Assert(strings.TrimSpace(out), checker.Contains, "com.docker.network.ipam.serial:true")
-}
-
-func (s *DockerTrustedSwarmSuite) TestTrustedServiceCreate(c *check.C) {
-	d := s.swarmSuite.AddDaemon(c, true, true)
-
-	// Attempt creating a service from an image that is known to notary.
-	repoName := s.trustSuite.setupTrustedImage(c, "trusted-pull")
-
-	name := "trusted"
-	cli.Docker(cli.Args("-D", "service", "create", "--detach", "--no-resolve-image", "--name", name, repoName, "top"), trustedCmd, cli.Daemon(d.Daemon)).Assert(c, icmd.Expected{
-		Err: "resolved image tag to",
-	})
-
-	out, err := d.Cmd("service", "inspect", "--pretty", name)
-	c.Assert(err, checker.IsNil, check.Commentf(out))
-	c.Assert(out, checker.Contains, repoName+"@", check.Commentf(out))
-
-	// Try trusted service create on an untrusted tag.
-
-	repoName = fmt.Sprintf("%v/untrustedservicecreate/createtest:latest", privateRegistryURL)
-	// tag the image and upload it to the private registry
-	cli.DockerCmd(c, "tag", "busybox", repoName)
-	cli.DockerCmd(c, "push", repoName)
-	cli.DockerCmd(c, "rmi", repoName)
-
-	name = "untrusted"
-	cli.Docker(cli.Args("service", "create", "--detach", "--no-resolve-image", "--name", name, repoName, "top"), trustedCmd, cli.Daemon(d.Daemon)).Assert(c, icmd.Expected{
-		ExitCode: 1,
-		Err:      "Error: remote trust data does not exist",
-	})
-
-	out, err = d.Cmd("service", "inspect", "--pretty", name)
-	c.Assert(err, checker.NotNil, check.Commentf(out))
-}
-
-func (s *DockerTrustedSwarmSuite) TestTrustedServiceUpdate(c *check.C) {
-	d := s.swarmSuite.AddDaemon(c, true, true)
-
-	// Attempt creating a service from an image that is known to notary.
-	repoName := s.trustSuite.setupTrustedImage(c, "trusted-pull")
-
-	name := "myservice"
-
-	// Create a service without content trust
-	cli.Docker(cli.Args("service", "create", "--detach", "--no-resolve-image", "--name", name, repoName, "top"), cli.Daemon(d.Daemon)).Assert(c, icmd.Success)
-
-	result := cli.Docker(cli.Args("service", "inspect", "--pretty", name), cli.Daemon(d.Daemon))
-	c.Assert(result.Error, checker.IsNil, check.Commentf(result.Combined()))
-	// Daemon won't insert the digest because this is disabled by
-	// DOCKER_SERVICE_PREFER_OFFLINE_IMAGE.
-	c.Assert(result.Combined(), check.Not(checker.Contains), repoName+"@", check.Commentf(result.Combined()))
-
-	cli.Docker(cli.Args("-D", "service", "update", "--detach", "--no-resolve-image", "--image", repoName, name), trustedCmd, cli.Daemon(d.Daemon)).Assert(c, icmd.Expected{
-		Err: "resolved image tag to",
-	})
-
-	cli.Docker(cli.Args("service", "inspect", "--pretty", name), cli.Daemon(d.Daemon)).Assert(c, icmd.Expected{
-		Out: repoName + "@",
-	})
-
-	// Try trusted service update on an untrusted tag.
-
-	repoName = fmt.Sprintf("%v/untrustedservicecreate/createtest:latest", privateRegistryURL)
-	// tag the image and upload it to the private registry
-	cli.DockerCmd(c, "tag", "busybox", repoName)
-	cli.DockerCmd(c, "push", repoName)
-	cli.DockerCmd(c, "rmi", repoName)
-
-	cli.Docker(cli.Args("service", "update", "--detach", "--no-resolve-image", "--image", repoName, name), trustedCmd, cli.Daemon(d.Daemon)).Assert(c, icmd.Expected{
-		ExitCode: 1,
-		Err:      "Error: remote trust data does not exist",
-	})
 }
 
 // Test case for issue #27866, which did not allow NW name that is the prefix of a swarm NW ID.

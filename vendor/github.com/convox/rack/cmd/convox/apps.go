@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/convox/rack/cmd/convox/helpers"
 	"github.com/convox/rack/cmd/convox/stdcli"
 	"gopkg.in/urfave/cli.v1"
 )
@@ -219,7 +220,7 @@ func cmdAppInfo(c *cli.Context) error {
 		ps[i] = f.Name
 
 		for _, port := range f.Ports {
-			endpoints = append(endpoints, fmt.Sprintf("%s:%d (%s)", f.Balancer, port, f.Name))
+			endpoints = append(endpoints, fmt.Sprintf("%s:%d (%s)", helpers.Coalesce(f.Hostname, f.Balancer), port, f.Name))
 		}
 	}
 
@@ -229,10 +230,16 @@ func cmdAppInfo(c *cli.Context) error {
 
 	info.Add("Name", a.Name)
 	info.Add("Status", a.Status)
-	info.Add("Release", stdcli.Default(a.Release, "(none)"))
 	info.Add("Generation", a.Generation)
-	info.Add("Processes", stdcli.Default(strings.Join(ps, " "), "(none)"))
-	info.Add("Endpoints", strings.Join(endpoints, "\n            "))
+	info.Add("Release", a.Release)
+
+	if len(ps) > 0 {
+		info.Add("Processes", strings.Join(ps, " "))
+	}
+
+	if len(endpoints) > 0 {
+		info.Add("Endpoints", strings.Join(endpoints, "\n            "))
+	}
 
 	info.Print()
 

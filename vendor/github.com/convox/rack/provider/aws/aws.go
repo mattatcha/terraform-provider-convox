@@ -44,10 +44,10 @@ type AWSProvider struct {
 	Cluster             string
 	CustomTopic         string
 	Development         bool
-	DockerImageAPI      string
 	DynamoBuilds        string
 	DynamoReleases      string
 	EncryptionKey       string
+	Fargate             bool
 	Internal            bool
 	LogBucket           string
 	NotificationHost    string
@@ -76,10 +76,10 @@ func FromEnv() *AWSProvider {
 		Cluster:             os.Getenv("CLUSTER"),
 		CustomTopic:         os.Getenv("CUSTOM_TOPIC"),
 		Development:         os.Getenv("DEVELOPMENT") == "true",
-		DockerImageAPI:      os.Getenv("DOCKER_IMAGE_API"),
 		DynamoBuilds:        os.Getenv("DYNAMO_BUILDS"),
 		DynamoReleases:      os.Getenv("DYNAMO_RELEASES"),
 		EncryptionKey:       os.Getenv("ENCRYPTION_KEY"),
+		Fargate:             os.Getenv("FARGATE") == "Yes",
 		Internal:            os.Getenv("INTERNAL") == "Yes",
 		LogBucket:           os.Getenv("LOG_BUCKET"),
 		NotificationHost:    os.Getenv("NOTIFICATION_HOST"),
@@ -104,8 +104,8 @@ func init() {
 }
 
 func (p *AWSProvider) Initialize(opts structs.ProviderOptions) error {
-	if opts.LogOutput != nil {
-		Logger = logger.NewWriter("ns=provider.aws", opts.LogOutput)
+	if opts.Logs != nil {
+		Logger = logger.NewWriter("ns=provider.aws", opts.Logs)
 	}
 
 	return nil

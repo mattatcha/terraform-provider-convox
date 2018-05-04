@@ -39,7 +39,7 @@ func (m *Manifest) Build(prefix string, tag string, opts BuildOptions) error {
 
 	for _, s := range m.Services {
 		hash := s.BuildHash()
-		to := fmt.Sprintf("%s/%s:%s", prefix, s.Name, tag)
+		to := fmt.Sprintf("convox/%s/%s:%s", prefix, s.Name, tag)
 
 		if s.Image != "" {
 			pulls[s.Image] = true
@@ -147,13 +147,13 @@ func (m *Manifest) BuildDockerfile(root, service string) ([]byte, error) {
 		return nil, nil
 	}
 
-	path, err := filepath.Abs(filepath.Join(root, s.Build.Path, "Dockerfile"))
+	path, err := filepath.Abs(filepath.Join(root, s.Build.Path, s.Build.Manifest))
 	if err != nil {
 		return nil, err
 	}
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return nil, fmt.Errorf("no such file: %s", filepath.Join(s.Build.Path, "Dockerfile"))
+		return nil, fmt.Errorf("no such file: %s", filepath.Join(s.Build.Path, s.Build.Manifest))
 	}
 
 	return ioutil.ReadFile(path)
@@ -166,6 +166,11 @@ func (m *Manifest) BuildSources(root, service string) ([]BuildSource, error) {
 	}
 	if data == nil {
 		return []BuildSource{}, nil
+	}
+
+	svc, err := m.Service(service)
+	if err != nil {
+		return nil, err
 	}
 
 	bs := []BuildSource{}
@@ -193,14 +198,14 @@ func (m *Manifest) BuildSources(root, service string) ([]BuildSource, error) {
 				case "http", "https":
 					// do nothing
 				default:
-					local := parts[1]
+					local := filepath.Join(svc.Build.Path, parts[1])
 					remote := replaceEnv(parts[2], env)
 
-					if remote == "." || strings.HasSuffix(remote, "/") {
-						remote = filepath.Join(remote, filepath.Base(local))
-					}
+					// if remote == "." || strings.HasSuffix(remote, "/") {
+					//   remote = filepath.Join(remote, filepath.Base(local))
+					// }
 
-					if wd != "" {
+					if wd != "" && !filepath.IsAbs(remote) {
 						remote = filepath.Join(wd, remote)
 					}
 
@@ -231,6 +236,13 @@ func (m *Manifest) BuildSources(root, service string) ([]BuildSource, error) {
 						env[parts[0]] = parts[1]
 					}
 				}
+
+				data, err = exec.Command("docker", "inspect", parts[1], "--format", "{{.Config.WorkingDir}}").CombinedOutput()
+				if err != nil {
+					return nil, err
+				}
+
+				wd = strings.TrimSpace(string(data))
 			}
 		case "WORKDIR":
 			if len(parts) > 1 {
@@ -245,7 +257,20 @@ func (m *Manifest) BuildSources(root, service string) ([]BuildSource, error) {
 			return nil, err
 		}
 
+		stat, err := os.Stat(abs)
+		if err != nil {
+			return nil, err
+		}
+
+		if stat.IsDir() && !strings.HasSuffix(abs, "/") {
+			abs = abs + "/"
+		}
+
 		bs[i].Local = abs
+
+		if bs[i].Remote == "." {
+			bs[i].Remote = wd
+		}
 	}
 
 	bss := []BuildSource{}
@@ -255,6 +280,11 @@ func (m *Manifest) BuildSources(root, service string) ([]BuildSource, error) {
 
 		for j := i + 1; j < len(bs); j++ {
 			if strings.HasPrefix(bs[i].Local, bs[j].Local) {
+				if bs[i].Remote == bs[j].Remote {
+					contained = true
+					break
+				}
+
 				rl, err := filepath.Rel(bs[j].Local, bs[i].Local)
 				if err != nil {
 					return nil, err
@@ -277,8 +307,6 @@ func (m *Manifest) BuildSources(root, service string) ([]BuildSource, error) {
 		}
 	}
 
-	// return nil, fmt.Errorf("stop")
-
 	return bss, nil
 }
 
@@ -296,29 +324,17 @@ func build(b ServiceBuild, tag string, opts BuildOptions) error {
 		return fmt.Errorf("must have path to build")
 	}
 
-	args := []string{"build"}
-
-	args = append(args, "-t", tag)
-
 	path, err := filepath.Abs(filepath.Join(opts.Root, b.Path))
 	if err != nil {
 		return err
 	}
 
-	df := filepath.Join(path, "Dockerfile")
+	df := filepath.Join(path, b.Manifest)
 
-	if opts.Development {
-		data, err := ioutil.ReadFile(df)
-		if err != nil {
-			return err
-		}
+	args := []string{"build"}
 
-		dev := bytes.SplitN(data, []byte("## convox:production"), 2)
-
-		if err := ioutil.WriteFile(df, dev[0], 0644); err != nil {
-			return err
-		}
-	}
+	args = append(args, "-t", tag)
+	args = append(args, "-f", df)
 
 	ba, err := buildArgs(df, opts)
 	if err != nil {
