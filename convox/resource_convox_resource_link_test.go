@@ -54,7 +54,7 @@ var _ = Describe("ResourceConvoxResourceLink", func() {
 				calledResourceName = ""
 				calledAppName = ""
 
-				convoxClient.On("ResourceLink").Run(func(args mock.Arguments) {
+				convoxClient.On("ResourceLink", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 					calledResourceName = args[0].(string)
 					calledAppName = args[1].(string)
 				})
@@ -90,7 +90,8 @@ var _ = Describe("ResourceConvoxResourceLink", func() {
 			BeforeEach(func() {
 				calledResourceName = ""
 				calledAppName = ""
-				convoxClient.On("ResourceUnlink").Run(func(args mock.Arguments) {
+
+				convoxClient.On("ResourceUnlink", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 					calledResourceName = args[0].(string)
 					calledAppName = args[1].(string)
 				})

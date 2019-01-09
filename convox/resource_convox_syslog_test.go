@@ -19,7 +19,7 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 	var resourceData *schema.ResourceData
 
 	BeforeEach(func() {
-		convoxClient.On("ResourceGet").Return(&structs.Resource{
+		convoxClient.On("ResourceGet", mock.Anything).Return(&structs.Resource{
 			Status: "running",
 		}, nil)
 
@@ -53,16 +53,14 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 			BeforeEach(func() {
 				createdKind = ""
 
-				convoxClient.On("ResourceCreate").Run(func(args mock.Arguments) {
-					createdKind = args[0].(string)
-					createdOptions = args[1].(structs.ResourceCreateOptions)
-				})
-
-				convoxClient.On("ResourceCreate").Return(&structs.Resource{
+				convoxClient.On("ResourceCreate", mock.Anything, mock.Anything).Return(&structs.Resource{
 					Name:   "test",
 					Status: "running",
 					Url:    "tcp://1.1.1.1:1111",
-				}, nil)
+				}, nil).Run(func(args mock.Arguments) {
+					createdKind = args[0].(string)
+					createdOptions = args[1].(structs.ResourceCreateOptions)
+				})
 
 				Expect(cut(resourceData, resourceData)).To(BeNil())
 			})
@@ -109,9 +107,7 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 					Name:   "test",
 					Status: "running",
 					Url:    "tcp://192.168.1.23:4567",
-				}, nil)
-
-				convoxClient.On("ResourceGet").Run(func(args mock.Arguments) {
+				}, nil).Run(func(args mock.Arguments) {
 					requestedName = args[0].(string)
 				})
 
@@ -150,9 +146,7 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 					Name:   "test",
 					Status: "running",
 					Url:    "tcp://192.168.1.23:4567",
-				}, nil)
-
-				convoxClient.On("ResourceUpdate").Run(func(args mock.Arguments) {
+				}, nil).Run(func(args mock.Arguments) {
 					requestedName = args[0].(string)
 					requestedOptions = args[1].(structs.ResourceUpdateOptions)
 				})
@@ -190,7 +184,7 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 
 			BeforeEach(func() {
 				requestedName = ""
-				convoxClient.On("ResourceDelete").Run(func(args mock.Arguments) {
+				convoxClient.On("ResourceDelete", mock.Anything).Run(func(args mock.Arguments) {
 					requestedName = args[0].(string)
 				})
 
