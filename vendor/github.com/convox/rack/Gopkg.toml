@@ -1,9 +1,0 @@
-[prune]
-  non-go = true
-  go-tests = true
-  unused-packages = true
-
-[[override]]
-  name = "gopkg.in/yaml.v2"
-  source = "github.com/ddollar/yaml"
-  branch = "merge-map-slice"

@@ -1,3 +1,0 @@
-ignore:
-  - "pkg/mock/**/*"
-  - "vendor/**/*"

@@ -1,4 +1,0 @@
-services:
-  web:
-    image: httpd
-    port: 80
