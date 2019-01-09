@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/convox/rack/pkg/structs"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
 )
@@ -103,7 +104,7 @@ func ResourceConvoxResourceLinkDeleteFactory(clientUnpacker ClientUnpacker) sche
 	}
 }
 
-func waitForRunning(c Client, resourceName string) error {
+func waitForRunning(c structs.Provider, resourceName string) error {
 	stateConf := &resource.StateChangeConf{
 		Pending: []string{"updating"},
 		Target:  []string{"running"},

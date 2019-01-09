@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -58,13 +59,13 @@ func Provider() terraform.ResourceProvider {
 func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	host := getHost(d)
 	pass := getPassword(d, host)
-	c := sdk.New(host, pass, clientVersion)
-	if host == DefaultHost {
-		// c.Auth() only works for DefaultHost?
-		if _, err := c.Auth(); err != nil {
-			return nil, fmt.Errorf("Error authenticating with convox host (%s): %s, %s", host, err, pass)
-		}
+	fmt.Print(pass)
+	c, err := sdk.New(host)
+	if err != nil {
+		return nil, err
 	}
+	info := url.User(pass)
+	c.Endpoint.User = info
 
 	return c, nil
 }

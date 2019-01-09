@@ -7,30 +7,14 @@ import (
 	"strings"
 
 	"github.com/convox/logger"
-	"github.com/segmentio/analytics-go"
 	"github.com/stvp/rollbar"
 )
 
 var regexpEmail = regexp.MustCompile(`^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,4}$`)
-var segment *analytics.Client
 
 func init() {
 	rollbar.Token = os.Getenv("ROLLBAR_TOKEN")
 	rollbar.Environment = os.Getenv("CLIENT_ID")
-
-	segment = analytics.New(os.Getenv("SEGMENT_WRITE_KEY"))
-	segment.Size = 1
-
-	clientId := os.Getenv("CLIENT_ID")
-
-	if regexpEmail.MatchString(clientId) && clientId != "ci@convox.com" {
-		segment.Identify(&analytics.Identify{
-			UserId: RackId(),
-			Traits: map[string]interface{}{
-				"email": clientId,
-			},
-		})
-	}
 }
 
 func Error(log *logger.Logger, err error) {
@@ -52,21 +36,6 @@ func Error(log *logger.Logger, err error) {
 }
 
 func TrackEvent(event string, params map[string]interface{}) {
-	if params == nil {
-		params = map[string]interface{}{}
-	}
-
-	params["client_id"] = os.Getenv("CLIENT_ID")
-	params["rack"] = os.Getenv("RACK")
-	params["release"] = os.Getenv("RELEASE")
-
-	userId := RackId()
-
-	segment.Track(&analytics.Track{
-		Event:      event,
-		UserId:     userId,
-		Properties: params,
-	})
 }
 
 // Convenience function to track success in a controller handler

@@ -69,7 +69,7 @@ func formURLString(d *schema.ResourceData) string {
 	return fmt.Sprintf("%s://%s:%d", d.Get("scheme"), d.Get("hostname"), d.Get("port"))
 }
 
-func readResourceStateFunc(c Client, resourceName string) resource.StateRefreshFunc {
+func readResourceStateFunc(c structs.Provider, resourceName string) resource.StateRefreshFunc {
 	return func() (interface{}, string, error) {
 		resource, err := c.ResourceGet(resourceName)
 		if err != nil {
