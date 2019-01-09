@@ -50,7 +50,7 @@ func ResourceConvoxResourceLinkCreateFactory(clientUnpacker ClientUnpacker) sche
 		resourceName := d.Get("resource_name").(string)
 		app := d.Get("app_name").(string)
 
-		_, err = c.CreateLink(app, resourceName)
+		_, err = c.ResourceLink(resourceName, app)
 		if err != nil {
 			if strings.Contains(err.Error(), "UPDATE_IN_PROGRESS") {
 				if err := waitForRunning(c, resourceName); err != nil {
@@ -89,7 +89,7 @@ func ResourceConvoxResourceLinkDeleteFactory(clientUnpacker ClientUnpacker) sche
 		resourceName := d.Get("resource_name").(string)
 		app := d.Get("app_name").(string)
 
-		_, err = c.DeleteLink(app, resourceName)
+		_, err = c.ResourceUnlink(resourceName, app)
 		if err != nil {
 			return fmt.Errorf("Error calling DeleteLink(%s, %s): %s", app, resourceName, err.Error())
 		}

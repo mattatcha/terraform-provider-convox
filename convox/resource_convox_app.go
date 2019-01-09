@@ -5,7 +5,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/convox/rack/pkg/helpers"
 	"github.com/convox/rack/pkg/structs"
+
 	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
@@ -117,7 +119,7 @@ func ResourceConvoxAppReadFactory(clientUnpacker ClientUnpacker) schema.ReadFunc
 			return errwrap.Wrapf("Error unpacking Convox client in App ReadFunc: {{err}}", err)
 		}
 
-		app, err := c.GetApp(d.Get("name").(string))
+		app, err := c.AppGet(d.Get("name").(string))
 		if err != nil {
 			return err
 		}
@@ -137,7 +139,7 @@ func ResourceConvoxAppReadFactory(clientUnpacker ClientUnpacker) schema.ReadFunc
 			return errwrap.Wrapf("Error while setting params: {{err}}", err)
 		}
 
-		env, err := c.GetEnvironment(app.Name)
+		env, err := helpers.AppEnvironment(c, app.Name)
 		if err != nil {
 			return fmt.Errorf("Error calling GetEnvironment(%s): %s", app.Name, err.Error())
 		}
@@ -193,7 +195,7 @@ func ResourceConvoxAppDeleteFactory(clientUnpacker ClientUnpacker) schema.Delete
 		if err != nil {
 			return errwrap.Wrapf("Error unpacking Convox client in App DeleteFunc: {{err}}", err)
 		}
-		_, err = c.DeleteApp(d.Id())
+		err = c.AppDelete(d.Id())
 		return err
 	}
 }

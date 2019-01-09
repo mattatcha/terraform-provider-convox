@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/convox/rack/pkg/structs"
 	"github.com/convox/rack/sdk"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
@@ -95,21 +96,21 @@ func configDefaultFunc() schema.SchemaDefaultFunc {
 }
 
 // UnpackRackClient casts the meta as a convox Client and specifies the rack from schema
-func UnpackRackClient(d ValueGetter, meta interface{}) (Client, error) {
+func UnpackRackClient(d ValueGetter, meta interface{}) (structs.Provider, error) {
 	if meta == nil {
 		return nil, fmt.Errorf("meta is nil")
 	}
 
-	c := meta.(*sdk.Client)
-	if c == nil {
-		return nil, fmt.Errorf("Could not convert meta to rack Client: %#v", meta)
-	}
+	//c := meta.(*sdk.Client)
+	//if c == nil {
+	//return nil, fmt.Errorf("Could not convert meta to rack Client: %#v", meta)
+	//}
 
-	if v, ok := d.GetOk("rack"); ok {
-		c.Rack = v.(string)
-	}
+	//if v, ok := d.GetOk("rack"); ok {
+	//c.Rack = v.(string)
+	//}
 
-	return NewRateLimitRespectingClient(c), nil
+	return nil, nil //TODO: this wont work obviously...
 }
 
 func getHost(d *schema.ResourceData) string {
