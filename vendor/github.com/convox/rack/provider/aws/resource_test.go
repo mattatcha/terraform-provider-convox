@@ -3,36 +3,17 @@ package aws_test
 import (
 	"testing"
 
-	"github.com/convox/rack/structs"
-	"github.com/convox/rack/test/awsutil"
+	"github.com/convox/rack/pkg/structs"
+	"github.com/convox/rack/pkg/test/awsutil"
 	"github.com/stretchr/testify/assert"
 )
-
-func TestResourceWebhookURL(t *testing.T) {
-	provider := StubAwsProvider(
-		cycleDescribeStacksNotFound("convox-mywebhook"),
-		cycleResourceCreateWebhook,
-		cycleResourceCreateNotificationPublish,
-	)
-	defer provider.Close()
-
-	params := map[string]string{
-		"url": "https://www.example.com",
-	}
-
-	url := "http://notifications.example.org/sns?endpoint=https%3A%2F%2Fwww.example.com"
-	s, err := provider.ResourceCreate("mywebhook", "webhook", structs.ResourceCreateOptions{Parameters: params})
-
-	if assert.NoError(t, err) {
-		assert.Equal(t, url, s.Parameters["Url"])
-	}
-}
 
 func TestResourceList(t *testing.T) {
 	provider := StubAwsProvider(
 		cycleServiceDescribeStacksList,
 		cycleResourceDescribeStacks,
 		cycleAppDescribeStacks,
+		cycleDescribeAppStackResources,
 	)
 	defer provider.Close()
 
@@ -40,7 +21,7 @@ func TestResourceList(t *testing.T) {
 		structs.Resource{
 			Name:       "syslog",
 			Status:     "running",
-			Type:       "",
+			Type:       "syslog",
 			Parameters: map[string]string{},
 		},
 	}
@@ -57,12 +38,14 @@ func TestResourceGet(t *testing.T) {
 		cycleResourceDescribeStacks,
 		cycleResourceDescribeStacks,
 		cycleAppDescribeStacks,
+		cycleDescribeAppStackResources,
 	)
 	defer provider.Close()
 
 	expected := &structs.Resource{
 		Name:       "syslog",
 		Status:     "running",
+		Type:       "syslog",
 		Parameters: map[string]string{},
 		Apps:       structs.Apps{structs.App{Generation: "1", Name: "httpd", Release: "RVFETUHHKKD", Status: "running", Outputs: map[string]string{"Kinesis": "convox-httpd-Kinesis-1MAP0GJ6RITJF", "LogGroup": "convox-httpd-LogGroup-L4V203L35WRM", "RegistryId": "132866487567", "RegistryRepository": "convox-httpd-hqvvfosgxt", "Settings": "convox-httpd-settings-139bidzalmbtu", "WebPort80Balancer": "80", "WebPort80BalancerName": "httpd-web-7E5UPCM", "BalancerWebHost": "httpd-web-7E5UPCM-1241527783.us-east-1.elb.amazonaws.com"}, Parameters: map[string]string{"WebCpu": "256", "WebMemory": "256", "WebPort80Secure": "No", "Environment": "https://convox-httpd-settings-139bidzalmbtu.s3.amazonaws.com/releases/RVFETUHHKKD/env", "WebPort80Certificate": "", "WebPort80ProxyProtocol": "No", "Key": "arn:aws:kms:us-east-1:132866487567:key/d9f38426-9017-4931-84f8-604ad1524920", "Repository": "", "WebPort80Host": "56694", "VPC": "vpc-f8006b9c", "WebDesiredCount": "1", "Cluster": "convox-Cluster-1E4XJ0PQWNAYS", "Release": "RVFETUHHKKD", "Private": "Yes", "WebPort80Balancer": "80", "SubnetsPrivate": "subnet-d4e85cfe,subnet-103d5a66,subnet-57952a0f", "Subnets": "subnet-13de3139,subnet-b5578fc3,subnet-21c13379", "Version": "20160330143438-command-exec-form"}, Tags: map[string]string{"Rack": "convox", "Name": "httpd", "Type": "app", "System": "convox"}}},
 	}
@@ -102,6 +85,10 @@ var cycleResourceDescribeStacks = awsutil.Cycle{
 						<StackStatus>UPDATE_COMPLETE</StackStatus>
 						<DisableRollback>false</DisableRollback>
 						<Tags>
+							<member>
+								<Value>syslog</Value>
+								<Key>Resource</Key>
+							</member>
 							<member>
 								<Value>resource</Value>
 								<Key>Type</Key>
@@ -164,6 +151,10 @@ var cycleServiceDescribeStacksList = awsutil.Cycle{
 						<StackStatus>UPDATE_COMPLETE</StackStatus>
 						<DisableRollback>false</DisableRollback>
 						<Tags>
+							<member>
+								<Value>syslog</Value>
+								<Key>Resource</Key>
+							</member>
 							<member>
 								<Value>service</Value>
 								<Key>Type</Key>

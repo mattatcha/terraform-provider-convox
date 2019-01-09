@@ -6,8 +6,9 @@ import (
 	"os"
 
 	"github.com/convox/logger"
+	"github.com/convox/rack/pkg/structs"
+	"github.com/convox/rack/pkg/test/awsutil"
 	"github.com/convox/rack/provider/aws"
-	"github.com/convox/rack/test/awsutil"
 )
 
 func init() {
@@ -15,7 +16,7 @@ func init() {
 }
 
 type AwsStub struct {
-	*aws.AWSProvider
+	*aws.Provider
 	server *httptest.Server
 }
 
@@ -33,21 +34,29 @@ func StubAwsProvider(cycles ...awsutil.Cycle) *AwsStub {
 	os.Setenv("AWS_ACCESS_KEY_ID", "test-access")
 	os.Setenv("AWS_SECRET_ACCESS_KEY", "test-secret")
 
-	p := &aws.AWSProvider{
-		Region:           "us-test-1",
-		Endpoint:         s.URL,
-		BuildCluster:     "cluster-test",
-		Cluster:          "cluster-test",
-		Development:      true,
-		DynamoBuilds:     "convox-builds",
-		DynamoReleases:   "convox-releases",
-		NotificationHost: "notifications.example.org",
-		Password:         "password",
-		Rack:             "convox",
-		RegistryHost:     "registry.example.org",
-		SettingsBucket:   "convox-settings",
-		SkipCache:        true,
+	p := &aws.Provider{
+		Region:         "us-test-1",
+		Endpoint:       s.URL,
+		BuildCluster:   "cluster-test",
+		Cluster:        "cluster-test",
+		Development:    true,
+		DynamoBuilds:   "convox-builds",
+		DynamoReleases: "convox-releases",
+		Password:       "password",
+		Rack:           "convox",
+		SettingsBucket: "convox-settings",
+		SkipCache:      true,
 	}
 
 	return &AwsStub{p, s}
+}
+
+func testProvider(fn func(p *aws.Provider)) {
+	p := &aws.Provider{
+		Region: "us-test-1",
+	}
+
+	p.Initialize(structs.ProviderOptions{})
+
+	fn(p)
 }

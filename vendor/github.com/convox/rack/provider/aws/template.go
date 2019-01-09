@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"hash/crc32"
 	"net"
-	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -15,9 +13,9 @@ import (
 
 	"html/template"
 
-	"github.com/convox/rack/manifest"
-	"github.com/convox/rack/manifest1"
-	"github.com/convox/rack/structs"
+	"github.com/convox/rack/pkg/manifest"
+	"github.com/convox/rack/pkg/manifest1"
+	"github.com/convox/rack/pkg/structs"
 )
 
 func formationHelpers() template.FuncMap {
@@ -32,18 +30,37 @@ func formationHelpers() template.FuncMap {
 			}
 			return domain
 		},
+		"certificate": func(certs structs.Certificates, domains []string) (string, error) {
+			for _, c := range certs {
+				found := true
+				for _, d := range domains {
+					m, err := c.Match(d)
+					if err != nil {
+						return "", err
+					}
+					if !m {
+						found = false
+						break
+					}
+				}
+				if found {
+					return c.Arn, nil
+				}
+			}
+			return "", nil
+		},
 		"dec": func(i int) int {
 			return i - 1
 		},
 		"join": func(ss []string, j string) string {
 			return strings.Join(ss, j)
 		},
-		"priority": func(app, domain string) uint32 {
+		"priority": func(app, service, domain string, index int) uint32 {
 			tier := uint32(1)
 			if strings.HasPrefix(domain, "*.") {
 				tier = 25000
 			}
-			return (crc32.ChecksumIEEE([]byte(fmt.Sprintf("%s-%s", app, domain))) % 25000) + tier
+			return (crc32.ChecksumIEEE([]byte(fmt.Sprintf("%s-%s-%s", app, service, domain)))+uint32(index)+2)%25000 + tier
 		},
 		"router": func(service string, m *manifest.Manifest) (string, error) {
 			s, err := m.Service(service)
@@ -69,6 +86,19 @@ func formationHelpers() template.FuncMap {
 			sort.Strings(ss)
 			return strings.Join(ss, ",")
 		},
+		"statistic": func(s string) (string, error) {
+			switch strings.ToLower(s) {
+			case "avg":
+				return "Average", nil
+			case "max":
+				return "Maximum", nil
+			case "min":
+				return "Minimum", nil
+			case "sum":
+				return "Sum", nil
+			}
+			return "", fmt.Errorf("unknown metric statistic: %s", s)
+		},
 		"upcase": func(s string) string {
 			return strings.ToUpper(s)
 		},
@@ -76,24 +106,10 @@ func formationHelpers() template.FuncMap {
 			return upperName(s)
 		},
 		"volumeFrom": func(app, s string) string {
-			parts := strings.SplitN(s, ":", 2)
-
-			switch v := parts[0]; v {
-			case "/var/run/docker.sock":
-				return v
-			default:
-				return path.Join("/volumes", app, v)
-			}
+			return volumeFrom(app, s)
 		},
 		"volumeTo": func(s string) string {
-			parts := strings.SplitN(s, ":", 2)
-			switch len(parts) {
-			case 1:
-				return s
-			case 2:
-				return parts[1]
-			}
-			return fmt.Sprintf("invalid volume %q", s)
+			return volumeTo(s)
 		},
 		// generation 1
 		"coalesce": func(ss ...string) string {
@@ -103,9 +119,6 @@ func formationHelpers() template.FuncMap {
 				}
 			}
 			return ""
-		},
-		"env": func(s string) string {
-			return os.Getenv(s)
 		},
 		"itoa": func(i int) string {
 			return strconv.Itoa(i)

@@ -5,10 +5,10 @@ import (
 	"io"
 	"os"
 	"testing"
-	"time"
 
-	"github.com/convox/rack/structs"
-	"github.com/convox/rack/test/awsutil"
+	"github.com/convox/rack/pkg/options"
+	"github.com/convox/rack/pkg/structs"
+	"github.com/convox/rack/pkg/test/awsutil"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -31,6 +31,7 @@ func TestAppCancel(t *testing.T) {
 func TestAppGet(t *testing.T) {
 	provider := StubAwsProvider(
 		cycleAppDescribeStacks,
+		cycleDescribeAppStackResources,
 	)
 	defer provider.Close()
 
@@ -92,9 +93,8 @@ func TestAppLogs(t *testing.T) {
 	buf := &bytes.Buffer{}
 
 	r, err := provider.AppLogs("httpd", structs.LogsOptions{
-		Follow: false,
-		Filter: "test",
-		Since:  time.Unix(1472946223, 0),
+		Follow: options.Bool(false),
+		Filter: options.String("test"),
 	})
 
 	io.Copy(buf, r)
@@ -280,8 +280,7 @@ var cycleLogFilterLogEvents1 = awsutil.Cycle{
 		Body: `{
 			"filterPattern": "test",
 			"interleaved": true,
-			"logGroupName": "convox-httpd-LogGroup-L4V203L35WRM",
-			"startTime": 1.472946223e+12
+			"logGroupName": "convox-httpd-LogGroup-L4V203L35WRM"
 		}`,
 	},
 	Response: awsutil.Response{
@@ -337,8 +336,7 @@ var cycleLogFilterLogEvents2 = awsutil.Cycle{
 			"filterPattern": "test",
 			"interleaved": true,
 			"logGroupName": "convox-httpd-LogGroup-L4V203L35WRM",
-			"nextToken": "ZNUEPl7FcQuXbIH4Swk9D9eFu2XBg-ijZIZlvzz4ea9zZRjw-MMtQtvcoMdmq4T29K7Q6Y1e_KvyfpcT_f_tUw",
-			"startTime": 1472946223000
+			"nextToken": "ZNUEPl7FcQuXbIH4Swk9D9eFu2XBg-ijZIZlvzz4ea9zZRjw-MMtQtvcoMdmq4T29K7Q6Y1e_KvyfpcT_f_tUw"
 		}`,
 	},
 	Response: awsutil.Response{

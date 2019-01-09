@@ -1,7 +1,7 @@
 package convox_test
 
 import (
-	"github.com/convox/rack/client"
+	"github.com/convox/rack/pkg/structs"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
 	"github.com/mattatcha/terraform-provider-convox/convox"
@@ -19,9 +19,9 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 
 	BeforeEach(func() {
 		convoxClient.ResetNoop()
-		convoxClient.GetResourceFunc = func(name string) (*client.Resource, error) {
+		convoxClient.GetResourceFunc = func(name string) (*structs.Resource, error) {
 			// for the wait for status
-			return &client.Resource{
+			return &structs.Resource{
 				Status: "running",
 			}, nil
 		}
@@ -55,10 +55,10 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 			BeforeEach(func() {
 				createdKind = ""
 				createdOptions = make(map[string]string)
-				convoxClient.CreateResourceFunc = func(kind string, options map[string]string) (*client.Resource, error) {
+				convoxClient.CreateResourceFunc = func(kind string, options map[string]string) (*structs.Resource, error) {
 					createdKind = kind
 					createdOptions = options
-					return &client.Resource{
+					return &structs.Resource{
 						Name:   "test",
 						Status: "running",
 						Exports: map[string]string{
@@ -108,9 +108,9 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 			var requestedName string
 
 			BeforeEach(func() {
-				convoxClient.GetResourceFunc = func(name string) (*client.Resource, error) {
+				convoxClient.GetResourceFunc = func(name string) (*structs.Resource, error) {
 					requestedName = name
-					return &client.Resource{
+					return &structs.Resource{
 						Name:   "test",
 						Status: "running",
 						Exports: map[string]string{
@@ -150,10 +150,10 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 			BeforeEach(func() {
 				requestedName = ""
 				requestedOptions = nil
-				convoxClient.UpdateResourceFunc = func(name string, options map[string]string) (*client.Resource, error) {
+				convoxClient.UpdateResourceFunc = func(name string, options map[string]string) (*structs.Resource, error) {
 					requestedName = name
 					requestedOptions = options
-					return &client.Resource{
+					return &structs.Resource{
 						Name:   "test",
 						Status: "running",
 						Exports: map[string]string{
@@ -195,9 +195,9 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 
 			BeforeEach(func() {
 				requestedName = ""
-				convoxClient.DeleteResourceFunc = func(name string) (*client.Resource, error) {
+				convoxClient.DeleteResourceFunc = func(name string) (*structs.Resource, error) {
 					requestedName = name
-					return &client.Resource{
+					return &structs.Resource{
 						Name:   "test",
 						Status: "deleting",
 						Exports: map[string]string{

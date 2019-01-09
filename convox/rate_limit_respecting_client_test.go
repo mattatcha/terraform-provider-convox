@@ -3,7 +3,7 @@ package convox_test
 import (
 	"fmt"
 
-	"github.com/convox/rack/client"
+	"github.com/convox/rack/pkg/structs"
 	"github.com/mattatcha/terraform-provider-convox/convox"
 
 	. "github.com/onsi/ginkgo"
@@ -29,7 +29,7 @@ var _ = Describe("RateLimitRespectingClient", func() {
 		BeforeEach(func() {
 			convoxClient.ResetNoop()
 			calls = 0
-			convoxClient.GetResourceFunc = func(name string) (*client.Resource, error) {
+			convoxClient.GetResourceFunc = func(name string) (*structs.Resource, error) {
 				calls++
 				if calls == 1 {
 					return nil, fmt.Errorf("Throttling: Rate exceeded")

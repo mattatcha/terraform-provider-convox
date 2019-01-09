@@ -1,8 +1,7 @@
 package aws
 
-func (p *AWSProvider) Workers() error {
-	go p.workerAgent()
-	go p.workerAutoscale()
+func (p *Provider) Workers() error {
+	go p.workerCleanup()
 	go p.workerEvents()
 	go p.workerHeartbeat()
 	go p.workerMonitor()

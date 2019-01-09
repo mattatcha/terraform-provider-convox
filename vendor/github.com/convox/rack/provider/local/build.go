@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/convox/rack/options"
-	"github.com/convox/rack/structs"
+	"github.com/convox/rack/pkg/options"
+	"github.com/convox/rack/pkg/structs"
 	"github.com/pkg/errors"
 )
 
@@ -20,7 +20,7 @@ const (
 
 var buildUpdateLock sync.Mutex
 
-func (p *Provider) BuildCreate(app, method, url string, opts structs.BuildCreateOptions) (*structs.Build, error) {
+func (p *Provider) BuildCreate(app, url string, opts structs.BuildCreateOptions) (*structs.Build, error) {
 	log := p.logger("BuildCreate").Append("app=%q url=%q", app, url)
 
 	a, err := p.AppGet(app)
@@ -41,53 +41,51 @@ func (p *Provider) BuildCreate(app, method, url string, opts structs.BuildCreate
 		return nil, errors.WithStack(log.Error(err))
 	}
 
-	sys, err := p.SystemGet()
-	if err != nil {
-		return nil, errors.WithStack(log.Error(err))
-	}
-
 	buildUpdateLock.Lock()
 	defer buildUpdateLock.Unlock()
 
 	cache := true
-
-	if opts.Cache != nil {
-		cache = *opts.Cache
+	if opts.NoCache != nil && *opts.NoCache {
+		cache = false
 	}
 
-	pid, err := p.ProcessStart(app, structs.ProcessRunOptions{
-		Command: options.String(fmt.Sprintf("build -method %s -cache %t", method, cache)),
-		Environment: map[string]string{
-			"BUILD_APP":        app,
-			"BUILD_AUTH":       string(auth),
-			"BUILD_GENERATION": "2",
-			"BUILD_ID":         b.Id,
-			"BUILD_URL":        url,
-			"PROVIDER":         "local",
-		},
-		Name:    options.String(fmt.Sprintf("%s-build-%s", app, b.Id)),
-		Image:   options.String(sys.Image),
-		Release: options.String(a.Release),
-		Service: options.String("build"),
-		Volumes: map[string]string{
-			p.Volume:               "/var/convox",
-			"/var/run/docker.sock": "/var/run/docker.sock",
-		},
-	})
-	if err != nil {
-		return nil, errors.WithStack(log.Error(err))
-	}
+	if !p.Test {
+		pid, err := p.processRun(app, "build", processStartOptions{
+			Command: fmt.Sprintf("build -method tgz -cache %t", cache),
+			Cpu:     1024,
+			Environment: map[string]string{
+				"BUILD_APP":         app,
+				"BUILD_AUTH":        string(auth),
+				"BUILD_DEVELOPMENT": fmt.Sprintf("%t", cb(opts.Development, false)),
+				"BUILD_GENERATION":  "2",
+				"BUILD_ID":          b.Id,
+				"BUILD_MANIFEST":    cs(opts.Manifest, "convox.yml"),
+				"BUILD_RACK":        p.Rack,
+				"BUILD_URL":         url,
+				"PROVIDER":          "local",
+			},
+			Image:   p.Image,
+			Release: a.Release,
+			Volumes: map[string]string{
+				p.Volume:               "/var/convox",
+				"/var/run/docker.sock": "/var/run/docker.sock",
+			},
+		})
+		if err != nil {
+			return nil, errors.WithStack(log.Error(err))
+		}
 
-	b, err = p.BuildGet(app, b.Id)
-	if err != nil {
-		return nil, errors.WithStack(log.Error(err))
-	}
+		b, err = p.BuildGet(app, b.Id)
+		if err != nil {
+			return nil, errors.WithStack(log.Error(err))
+		}
 
-	b.Process = pid
-	b.Status = "running"
+		b.Process = pid
+		b.Status = "running"
 
-	if err := p.storageStore(fmt.Sprintf("apps/%s/builds/%s", app, b.Id), b); err != nil {
-		return nil, errors.WithStack(log.Error(err))
+		if err := p.storageStore(fmt.Sprintf("apps/%s/builds/%s", app, b.Id), b); err != nil {
+			return nil, errors.WithStack(log.Error(err))
+		}
 	}
 
 	return b, log.Successf("id=%s", b.Id)
@@ -120,6 +118,10 @@ func (p *Provider) BuildImport(app string, r io.Reader) (*structs.Build, error) 
 func (p *Provider) BuildList(app string, opts structs.BuildListOptions) (structs.Builds, error) {
 	log := p.logger("BuildList").Append("app=%q", app)
 
+	if opts.Limit == nil {
+		opts.Limit = options.Int(10)
+	}
+
 	ids, err := p.storageList(fmt.Sprintf("apps/%s/builds", app))
 	if err != nil {
 		return nil, errors.WithStack(log.Error(err))
@@ -138,8 +140,8 @@ func (p *Provider) BuildList(app string, opts structs.BuildListOptions) (structs
 
 	sort.Slice(builds, func(i, j int) bool { return builds[i].Started.After(builds[j].Started) })
 
-	if opts.Count != nil && len(builds) > *opts.Count {
-		builds = builds[0:(*opts.Count)]
+	if opts.Limit != nil && len(builds) > *opts.Limit {
+		builds = builds[0:(*opts.Limit)]
 	}
 
 	return builds, log.Success()
@@ -153,13 +155,11 @@ func (p *Provider) BuildLogs(app, id string, opts structs.LogsOptions) (io.ReadC
 		return nil, log.Error(err)
 	}
 
-	fmt.Printf("build = %+v\n", build)
-
 	switch build.Status {
 	case "created", "running":
 		fmt.Println("a")
 		log.Success()
-		return p.ProcessLogs(app, build.Process, structs.LogsOptions{Follow: true, Prefix: false})
+		return p.ProcessLogs(app, build.Process, opts)
 	default:
 		fmt.Println("b")
 		log.Success()

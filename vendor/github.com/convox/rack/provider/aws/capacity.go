@@ -6,11 +6,11 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ecs"
-	"github.com/convox/rack/structs"
+	"github.com/convox/rack/pkg/structs"
 )
 
 // CapacityGet returns individual server and total rack resources
-func (p *AWSProvider) CapacityGet() (*structs.Capacity, error) {
+func (p *Provider) CapacityGet() (*structs.Capacity, error) {
 	log := Logger.At("CapacityGet").Start()
 
 	capacity := &structs.Capacity{}
@@ -48,6 +48,10 @@ func (p *AWSProvider) CapacityGet() (*structs.Capacity, error) {
 
 	for _, service := range services {
 		servicePortWidth := map[int64]int64{}
+
+		if service.LaunchType != nil && *service.LaunchType != "EC2" {
+			continue
+		}
 
 		if len(service.LoadBalancers) > 0 {
 			for _, deployment := range service.Deployments {
@@ -138,7 +142,7 @@ func (p *AWSProvider) CapacityGet() (*structs.Capacity, error) {
 
 type ECSServices []*ecs.Service
 
-func (p *AWSProvider) clusterServices() (ECSServices, error) {
+func (p *Provider) clusterServices() (ECSServices, error) {
 	services := ECSServices{}
 
 	lreq := &ecs.ListServicesInput{

@@ -2,25 +2,24 @@ package aws
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/convox/logger"
 )
 
 var (
-	spotInstancesEnabled = (os.Getenv("SPOT_INSTANCES") == "true")
-	spotTick             = 60 * time.Second
+	spotTick = 60 * time.Second
 )
 
 // Main worker function
-func (p *AWSProvider) workerSpotReplace() {
+func (p *Provider) workerSpotReplace() {
 	log := logger.New("ns=workers.spotreplace").At("spotReplace")
 
-	if !spotInstancesEnabled {
+	if !p.SpotInstances {
 		return
 	}
 
@@ -34,7 +33,7 @@ func (p *AWSProvider) workerSpotReplace() {
 	}
 }
 
-func (p *AWSProvider) spotReplace() error {
+func (p *Provider) spotReplace() error {
 	log := logger.New("ns=workers.spotreplace").At("spotReplace")
 
 	system, err := p.SystemGet()
@@ -51,7 +50,7 @@ func (p *AWSProvider) spotReplace() error {
 		return nil
 	}
 
-	ics, err := p.stackParameter(os.Getenv("RACK"), "InstanceCount")
+	ics, err := p.stackParameter(p.Rack, "InstanceCount")
 	if err != nil {
 		return err
 	}
@@ -61,17 +60,14 @@ func (p *AWSProvider) spotReplace() error {
 		return err
 	}
 
-	odmin, err := strconv.Atoi(os.Getenv("ON_DEMAND_MIN_COUNT"))
-	if err != nil {
-		return err
-	}
+	odmin := p.OnDemandMinCount
 
 	odc, err := p.asgResourceInstanceCount("Instances")
 	if err != nil {
 		return err
 	}
 
-	spc, err := p.asgResourceInstanceCount("SpotInstances")
+	spc, err := p.asgResourceInstanceCountRunning("SpotInstances")
 	if err != nil {
 		return err
 	}
@@ -79,7 +75,6 @@ func (p *AWSProvider) spotReplace() error {
 	log.Logf("instanceCount=%d onDemandMin=%d onDemandCount=%d spotCount=%d", ic, odmin, odc, spc)
 
 	spotDesired := ic - odmin
-	onDemandDesired := ic - spc
 
 	if spc != spotDesired {
 		log.Logf("stack=SpotInstances setDesiredCount=%d", spotDesired)
@@ -88,6 +83,8 @@ func (p *AWSProvider) spotReplace() error {
 			return err
 		}
 	}
+
+	onDemandDesired := ic - spc
 
 	if odc != onDemandDesired {
 		log.Logf("stack=Instances setDesiredCount=%d", onDemandDesired)
@@ -100,7 +97,7 @@ func (p *AWSProvider) spotReplace() error {
 	return nil
 }
 
-func (p *AWSProvider) asgResourceInstanceCount(resource string) (int, error) {
+func (p *Provider) asgResourceInstanceCount(resource string) (int, error) {
 	asg, err := p.stackResource(p.Rack, resource)
 	if err != nil {
 		return 0, err
@@ -113,21 +110,44 @@ func (p *AWSProvider) asgResourceInstanceCount(resource string) (int, error) {
 		return 0, err
 	}
 	if len(res.AutoScalingGroups) < 1 {
-		return 0, fmt.Errorf("no such autoscaling resource: %s", resource)
+		return 0, fmt.Errorf("resource not found: %s", resource)
+	}
+
+	return int(*res.AutoScalingGroups[0].DesiredCapacity), nil
+}
+
+func (p *Provider) asgResourceInstanceCountRunning(resource string) (int, error) {
+	asg, err := p.stackResource(p.Rack, resource)
+	if err != nil {
+		return 0, err
+	}
+
+	res, err := p.ec2().DescribeInstances(&ec2.DescribeInstancesInput{
+		Filters: []*ec2.Filter{
+			&ec2.Filter{
+				Name:   aws.String("instance-state-name"),
+				Values: []*string{aws.String("running")},
+			},
+			&ec2.Filter{
+				Name:   aws.String("tag:aws:autoscaling:groupName"),
+				Values: []*string{asg.PhysicalResourceId},
+			},
+		},
+	})
+	if err != nil {
+		return 0, err
 	}
 
 	count := 0
 
-	for _, ii := range res.AutoScalingGroups[0].Instances {
-		if *ii.LifecycleState == "InService" && *ii.HealthStatus == "Healthy" {
-			count++
-		}
+	for _, r := range res.Reservations {
+		count += len(r.Instances)
 	}
 
 	return count, nil
 }
 
-func (p *AWSProvider) setAsgResourceDesiredCount(resource string, count int) error {
+func (p *Provider) setAsgResourceDesiredCount(resource string, count int) error {
 	asg, err := p.stackResource(p.Rack, resource)
 	if err != nil {
 		return err
@@ -143,21 +163,3 @@ func (p *AWSProvider) setAsgResourceDesiredCount(resource string, count int) err
 
 	return nil
 }
-
-// func stackParameter(stack, param string) (string, error) {
-//   res, err := models.DescribeStack(stack)
-//   if err != nil {
-//     return "", err
-//   }
-//   if len(res.Stacks) < 1 {
-//     return "", fmt.Errorf("no such stack: %s", stack)
-//   }
-
-//   for _, p := range res.Stacks[0].Parameters {
-//     if *p.ParameterKey == param {
-//       return *p.ParameterValue, nil
-//     }
-//   }
-
-//   return "", fmt.Errorf("no such parameter %s for stack: %s", param, stack)
-// }

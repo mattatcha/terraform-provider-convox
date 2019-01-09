@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/convox/rack/client"
+	"github.com/convox/rack/pkg/structs"
 	"github.com/jpillora/backoff"
 )
 
@@ -45,11 +45,11 @@ func (r *rateLimitRespectingClient) retry(err error, attempts int) bool {
 	return false
 }
 
-func (r *rateLimitRespectingClient) CreateApp(name, generation string) (*client.App, error) {
+func (r *rateLimitRespectingClient) AppCreate(name string, opts structs.AppCreateOptions) (*structs.App, error) {
 	count := 0
 	for {
 		count++
-		rez, err := r.wrapped.CreateApp(name, generation)
+		rez, err := r.wrapped.AppCreate(name, opts)
 
 		if r.retry(err, count) {
 			continue
@@ -59,11 +59,11 @@ func (r *rateLimitRespectingClient) CreateApp(name, generation string) (*client.
 	}
 }
 
-func (r *rateLimitRespectingClient) GetApp(name string) (*client.App, error) {
+func (r *rateLimitRespectingClient) AppGet(name string) (*structs.App, error) {
 	count := 0
 	for {
 		count++
-		rez, err := r.wrapped.GetApp(name)
+		rez, err := r.wrapped.AppGet(name)
 
 		if r.retry(err, count) {
 			continue
@@ -73,21 +73,21 @@ func (r *rateLimitRespectingClient) GetApp(name string) (*client.App, error) {
 	}
 }
 
-func (r *rateLimitRespectingClient) DeleteApp(name string) (*client.App, error) {
+func (r *rateLimitRespectingClient) AppDelete(name string) error {
 	count := 0
 	for {
 		count++
-		rez, err := r.wrapped.DeleteApp(name)
+		err := r.wrapped.AppDelete(name)
 
 		if r.retry(err, count) {
 			continue
 		}
 
-		return rez, err
+		return err
 	}
 }
 
-func (r *rateLimitRespectingClient) ListFormation(app string) (client.Formation, error) {
+func (r *rateLimitRespectingClient) ListFormation(app string) (structs.Formation, error) {
 	count := 0
 	for {
 		count++
@@ -101,7 +101,7 @@ func (r *rateLimitRespectingClient) ListFormation(app string) (client.Formation,
 	}
 }
 
-func (r *rateLimitRespectingClient) ListParameters(app string) (client.Parameters, error) {
+func (r *rateLimitRespectingClient) ListParameters(app string) (map[string]string, error) {
 	count := 0
 	for {
 		count++
@@ -129,7 +129,7 @@ func (r *rateLimitRespectingClient) SetParameters(app string, params map[string]
 	}
 }
 
-func (r *rateLimitRespectingClient) GetEnvironment(app string) (client.Environment, error) {
+func (r *rateLimitRespectingClient) GetEnvironment(app string) (structs.Environment, error) {
 	count := 0
 	for {
 		count++
@@ -143,7 +143,7 @@ func (r *rateLimitRespectingClient) GetEnvironment(app string) (client.Environme
 	}
 }
 
-func (r *rateLimitRespectingClient) SetEnvironment(app string, body io.Reader) (client.Environment, string, error) {
+func (r *rateLimitRespectingClient) SetEnvironment(app string, body io.Reader) (structs.Environment, string, error) {
 	count := 0
 	for {
 		count++
@@ -157,11 +157,11 @@ func (r *rateLimitRespectingClient) SetEnvironment(app string, body io.Reader) (
 	}
 }
 
-func (r *rateLimitRespectingClient) GetResource(name string) (*client.Resource, error) {
+func (r *rateLimitRespectingClient) ResourceGet(name string) (*structs.Resource, error) {
 	count := 0
 	for {
 		count++
-		rez, err := r.wrapped.GetResource(name)
+		rez, err := r.wrapped.ResourceGet(name)
 
 		if r.retry(err, count) {
 			continue
@@ -171,11 +171,11 @@ func (r *rateLimitRespectingClient) GetResource(name string) (*client.Resource, 
 	}
 }
 
-func (r *rateLimitRespectingClient) CreateResource(kind string, options map[string]string) (*client.Resource, error) {
+func (r *rateLimitRespectingClient) ResourceCreate(kind string, options structs.ResourceCreateOptions) (*structs.Resource, error) {
 	count := 0
 	for {
 		count++
-		rez, err := r.wrapped.CreateResource(kind, options)
+		rez, err := r.wrapped.ResourceCreate(kind, options)
 
 		if r.retry(err, count) {
 			continue
@@ -185,11 +185,11 @@ func (r *rateLimitRespectingClient) CreateResource(kind string, options map[stri
 	}
 }
 
-func (r *rateLimitRespectingClient) UpdateResource(name string, options map[string]string) (*client.Resource, error) {
+func (r *rateLimitRespectingClient) ResourceUpdate(name string, options structs.ResourceUpdateOptions) (*structs.Resource, error) {
 	count := 0
 	for {
 		count++
-		rez, err := r.wrapped.UpdateResource(name, options)
+		rez, err := r.wrapped.ResourceUpdate(name, options)
 
 		if r.retry(err, count) {
 			continue
@@ -199,11 +199,25 @@ func (r *rateLimitRespectingClient) UpdateResource(name string, options map[stri
 	}
 }
 
-func (r *rateLimitRespectingClient) DeleteResource(name string) (*client.Resource, error) {
+func (r *rateLimitRespectingClient) ResourceDelete(name string) error {
 	count := 0
 	for {
 		count++
-		rez, err := r.wrapped.DeleteResource(name)
+		err := r.wrapped.ResourceDelete(name)
+
+		if r.retry(err, count) {
+			continue
+		}
+
+		return err
+	}
+}
+
+func (r *rateLimitRespectingClient) ResourceLink(resourceName, app string) (*structs.Resource, error) {
+	count := 0
+	for {
+		count++
+		rez, err := r.wrapped.ResourceLink(resourceName, app)
 
 		if r.retry(err, count) {
 			continue
@@ -213,25 +227,11 @@ func (r *rateLimitRespectingClient) DeleteResource(name string) (*client.Resourc
 	}
 }
 
-func (r *rateLimitRespectingClient) CreateLink(app string, resourceName string) (*client.Resource, error) {
+func (r *rateLimitRespectingClient) ResourceUnlink(resourceName, app string) (*structs.Resource, error) {
 	count := 0
 	for {
 		count++
-		rez, err := r.wrapped.CreateLink(app, resourceName)
-
-		if r.retry(err, count) {
-			continue
-		}
-
-		return rez, err
-	}
-}
-
-func (r *rateLimitRespectingClient) DeleteLink(app string, resourceName string) (*client.Resource, error) {
-	count := 0
-	for {
-		count++
-		rez, err := r.wrapped.DeleteLink(app, resourceName)
+		rez, err := r.wrapped.ResourceUnlink(resourceName, app)
 
 		if r.retry(err, count) {
 			continue

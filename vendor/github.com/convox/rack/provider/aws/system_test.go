@@ -1,14 +1,20 @@
 package aws_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/convox/rack/options"
+	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/convox/rack/pkg/options"
+	"github.com/convox/rack/pkg/structs"
+	"github.com/convox/rack/pkg/test/awsutil"
 	"github.com/convox/rack/provider/aws"
-	"github.com/convox/rack/structs"
-	"github.com/convox/rack/test/awsutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	awssdk "github.com/aws/aws-sdk-go/aws"
+	mockaws "github.com/convox/rack/pkg/mock/aws"
 )
 
 func TestSystemGet(t *testing.T) {
@@ -27,6 +33,7 @@ func TestSystemGet(t *testing.T) {
 	assert.EqualValues(t, &structs.System{
 		Count:      3,
 		Name:       "convox",
+		Provider:   "aws",
 		Region:     "us-test-1",
 		Status:     "running",
 		Type:       "t2.small",
@@ -50,6 +57,7 @@ func TestSystemGetConverging(t *testing.T) {
 	assert.EqualValues(t, &structs.System{
 		Count:      3,
 		Name:       "convox",
+		Provider:   "aws",
 		Region:     "us-test-1",
 		Status:     "converging",
 		Type:       "t2.small",
@@ -68,8 +76,81 @@ func TestSystemGetBadStack(t *testing.T) {
 	r, err := provider.SystemGet()
 
 	assert.Nil(t, r)
-	assert.True(t, aws.ErrorNotFound(err))
-	assert.Equal(t, "convox not found", err.Error())
+	assert.EqualError(t, err, "convox not found")
+}
+
+func TestSystemMetrics(t *testing.T) {
+	testProvider(func(p *aws.Provider) {
+		m := &mockaws.CloudWatchAPI{}
+
+		p.AsgSpot = "asg-spot"
+		p.AsgStandard = "asg-standard"
+		p.Cluster = "cluster1"
+
+		metrics := []struct {
+			Name       string
+			Namespace  string
+			Dimensions []string
+		}{
+			{Namespace: "AWS/ECS", Name: "CPUReservation", Dimensions: []string{"ClusterName:cluster1"}},
+			{Namespace: "AWS/ECS", Name: "MemoryReservation", Dimensions: []string{"ClusterName:cluster1"}},
+			{Namespace: "AWS/ECS", Name: "CPUUtilization", Dimensions: []string{"ClusterName:cluster1"}},
+			{Namespace: "AWS/ECS", Name: "MemoryUtilization", Dimensions: []string{"ClusterName:cluster1"}},
+			{Namespace: "AWS/EC2", Name: "CPUUtilization", Dimensions: []string{"AutoScalingGroupName:asg-spot"}},
+			{Namespace: "AWS/EC2", Name: "CPUUtilization", Dimensions: []string{"AutoScalingGroupName:asg-standard"}},
+		}
+
+		for _, metric := range metrics {
+			input := &cloudwatch.GetMetricStatisticsInput{
+				EndTime:    awssdk.Time(time.Date(2018, 10, 1, 3, 4, 5, 0, time.UTC)),
+				MetricName: awssdk.String(metric.Name),
+				Namespace:  awssdk.String(metric.Namespace),
+				Period:     awssdk.Int64(300),
+				StartTime:  awssdk.Time(time.Date(2018, 9, 1, 2, 3, 4, 0, time.UTC)),
+				Statistics: []*string{awssdk.String("Average"), awssdk.String("Minimum"), awssdk.String("Maximum")},
+			}
+
+			for _, d := range metric.Dimensions {
+				parts := strings.Split(d, ":")
+				input.Dimensions = append(input.Dimensions, &cloudwatch.Dimension{Name: awssdk.String(parts[0]), Value: awssdk.String(parts[1])})
+			}
+
+			output := &cloudwatch.GetMetricStatisticsOutput{
+				Datapoints: []*cloudwatch.Datapoint{
+					{
+						Timestamp: awssdk.Time(time.Date(2018, 9, 1, 2, 3, 4, 0, time.UTC)),
+						Average:   awssdk.Float64(2.12345),
+						Minimum:   awssdk.Float64(1.12345),
+						Maximum:   awssdk.Float64(3.12345),
+					},
+				},
+			}
+
+			m.On("GetMetricStatistics", input).Return(output, nil)
+		}
+
+		p.CloudWatch = m
+
+		opts := structs.MetricsOptions{
+			Start:  options.Time(time.Date(2018, 9, 1, 2, 3, 4, 0, time.UTC)),
+			End:    options.Time(time.Date(2018, 10, 1, 3, 4, 5, 0, time.UTC)),
+			Period: options.Int64(300),
+		}
+
+		m1, err := p.SystemMetrics(opts)
+		require.NoError(t, err)
+
+		m2 := structs.Metrics{
+			{Name: "cluster:cpu:reservation", Values: structs.MetricValues{{Time: time.Date(2018, 9, 1, 2, 3, 4, 0, time.UTC), Average: 2.12, Maximum: 3.12, Minimum: 1.12}}},
+			{Name: "cluster:cpu:utilization", Values: structs.MetricValues{{Time: time.Date(2018, 9, 1, 2, 3, 4, 0, time.UTC), Average: 2.12, Maximum: 3.12, Minimum: 1.12}}},
+			{Name: "cluster:mem:reservation", Values: structs.MetricValues{{Time: time.Date(2018, 9, 1, 2, 3, 4, 0, time.UTC), Average: 2.12, Maximum: 3.12, Minimum: 1.12}}},
+			{Name: "cluster:mem:utilization", Values: structs.MetricValues{{Time: time.Date(2018, 9, 1, 2, 3, 4, 0, time.UTC), Average: 2.12, Maximum: 3.12, Minimum: 1.12}}},
+			{Name: "instances:standard:cpu", Values: structs.MetricValues{{Time: time.Date(2018, 9, 1, 2, 3, 4, 0, time.UTC), Average: 2.12, Maximum: 3.12, Minimum: 1.12}}},
+			{Name: "instances:spot:cpu", Values: structs.MetricValues{{Time: time.Date(2018, 9, 1, 2, 3, 4, 0, time.UTC), Average: 2.12, Maximum: 3.12, Minimum: 1.12}}},
+		}
+
+		require.Equal(t, m2, m1)
+	})
 }
 
 func TestSystemReleases(t *testing.T) {
@@ -100,15 +181,17 @@ func TestSystemUpdate(t *testing.T) {
 	provider := StubAwsProvider(
 		cycleSystemReleasePutItem,
 		cycleSystemDescribeStacks,
+		cycleSystemListStackResources,
+		cycleSystemTemplatePut,
 		cycleSystemUpdateStack,
 		cycleSystemUpdateNotificationPublish,
 	)
 	defer provider.Close()
 
 	err := provider.SystemUpdate(structs.SystemUpdateOptions{
-		InstanceCount: options.Int(5),
-		InstanceType:  options.String("t2.small"),
-		Version:       options.String("20171214220445"),
+		Count:   options.Int(5),
+		Type:    options.String("t2.small"),
+		Version: options.String("20171214220445"),
 	})
 
 	assert.NoError(t, err)
@@ -118,15 +201,17 @@ func TestSystemUpdateNewParameter(t *testing.T) {
 	provider := StubAwsProvider(
 		cycleSystemReleasePutItem,
 		cycleSystemDescribeStacksMissingParameters,
+		cycleSystemListStackResources,
+		cycleSystemTemplatePut,
 		cycleSystemUpdateStackNewParameter,
 		cycleSystemUpdateNotificationPublish,
 	)
 	defer provider.Close()
 
 	err := provider.SystemUpdate(structs.SystemUpdateOptions{
-		InstanceCount: options.Int(5),
-		InstanceType:  options.String("t2.small"),
-		Version:       options.String("20171214220445"),
+		Count:   options.Int(5),
+		Type:    options.String("t2.small"),
+		Version: options.String("20171214220445"),
 	})
 
 	assert.NoError(t, err)
@@ -135,6 +220,7 @@ func TestSystemUpdateNewParameter(t *testing.T) {
 func TestSystemProcessesList(t *testing.T) {
 	provider := StubAwsProvider(
 		cycleSystemListStackResources,
+		cycleSystemDescribeStacks,
 		cycleSystemListTasks,
 		cycleSystemDescribeTasks,
 		cycleSystemDescribeTaskDefinition,
@@ -153,7 +239,7 @@ func TestSystemProcessesList(t *testing.T) {
 func TestSystemProcessesListAll(t *testing.T) {
 	provider := StubAwsProvider(
 		cycleSystemListTasksAll,
-		cycleSystemDescribeTasks,
+		cycleSystemDescribeTasksAll,
 		cycleSystemDescribeTaskDefinition,
 		cycleSystemDescribeContainerInstances,
 		cycleSystemDescribeRackInstances,
@@ -406,7 +492,7 @@ var cycleSystemUpdateNotificationPublish = awsutil.Cycle{
 var cycleSystemUpdateStack = awsutil.Cycle{
 	Request: awsutil.Request{
 		RequestURI: "/",
-		Body:       `Action=UpdateStack&Capabilities.member.1=CAPABILITY_IAM&NotificationARNs.member.1=&Parameters.member.1.ParameterKey=Ami&Parameters.member.1.UsePreviousValue=true&Parameters.member.10.ParameterKey=InstanceCount&Parameters.member.10.ParameterValue=5&Parameters.member.11.ParameterKey=InstanceRunCommand&Parameters.member.11.UsePreviousValue=true&Parameters.member.12.ParameterKey=InstanceType&Parameters.member.12.ParameterValue=t2.small&Parameters.member.13.ParameterKey=InstanceUpdateBatchSize&Parameters.member.13.UsePreviousValue=true&Parameters.member.14.ParameterKey=Internal&Parameters.member.14.UsePreviousValue=true&Parameters.member.15.ParameterKey=Key&Parameters.member.15.UsePreviousValue=true&Parameters.member.16.ParameterKey=Password&Parameters.member.16.UsePreviousValue=true&Parameters.member.17.ParameterKey=Private&Parameters.member.17.UsePreviousValue=true&Parameters.member.18.ParameterKey=PrivateApi&Parameters.member.18.UsePreviousValue=true&Parameters.member.19.ParameterKey=Subnet0CIDR&Parameters.member.19.UsePreviousValue=true&Parameters.member.2.ParameterKey=ApiMemory&Parameters.member.2.UsePreviousValue=true&Parameters.member.20.ParameterKey=Subnet1CIDR&Parameters.member.20.UsePreviousValue=true&Parameters.member.21.ParameterKey=Subnet2CIDR&Parameters.member.21.UsePreviousValue=true&Parameters.member.22.ParameterKey=SubnetPrivate0CIDR&Parameters.member.22.UsePreviousValue=true&Parameters.member.23.ParameterKey=SubnetPrivate1CIDR&Parameters.member.23.UsePreviousValue=true&Parameters.member.24.ParameterKey=SubnetPrivate2CIDR&Parameters.member.24.UsePreviousValue=true&Parameters.member.25.ParameterKey=SwapSize&Parameters.member.25.UsePreviousValue=true&Parameters.member.26.ParameterKey=Tenancy&Parameters.member.26.UsePreviousValue=true&Parameters.member.27.ParameterKey=VPCCIDR&Parameters.member.27.UsePreviousValue=true&Parameters.member.28.ParameterKey=Version&Parameters.member.28.ParameterValue=20171214220445&Parameters.member.29.ParameterKey=VolumeSize&Parameters.member.29.UsePreviousValue=true&Parameters.member.3.ParameterKey=Autoscale&Parameters.member.3.UsePreviousValue=true&Parameters.member.4.ParameterKey=ClientId&Parameters.member.4.UsePreviousValue=true&Parameters.member.5.ParameterKey=ContainerDisk&Parameters.member.5.UsePreviousValue=true&Parameters.member.6.ParameterKey=Development&Parameters.member.6.UsePreviousValue=true&Parameters.member.7.ParameterKey=Encryption&Parameters.member.7.UsePreviousValue=true&Parameters.member.8.ParameterKey=ExistingVpc&Parameters.member.8.UsePreviousValue=true&Parameters.member.9.ParameterKey=InstanceBootCommand&Parameters.member.9.UsePreviousValue=true&StackName=convox&TemplateURL=https%3A%2F%2Fconvox.s3.amazonaws.com%2Frelease%2F20171214220445%2Frack.json&Version=2010-05-15`,
+		Body:       `Action=UpdateStack&Capabilities.member.1=CAPABILITY_IAM&NotificationARNs.member.1=&Parameters.member.1.ParameterKey=Ami&Parameters.member.1.UsePreviousValue=true&Parameters.member.10.ParameterKey=InstanceCount&Parameters.member.10.ParameterValue=5&Parameters.member.11.ParameterKey=InstanceRunCommand&Parameters.member.11.UsePreviousValue=true&Parameters.member.12.ParameterKey=InstanceType&Parameters.member.12.ParameterValue=t2.small&Parameters.member.13.ParameterKey=InstanceUpdateBatchSize&Parameters.member.13.UsePreviousValue=true&Parameters.member.14.ParameterKey=Internal&Parameters.member.14.UsePreviousValue=true&Parameters.member.15.ParameterKey=Key&Parameters.member.15.UsePreviousValue=true&Parameters.member.16.ParameterKey=Password&Parameters.member.16.UsePreviousValue=true&Parameters.member.17.ParameterKey=Private&Parameters.member.17.UsePreviousValue=true&Parameters.member.18.ParameterKey=PrivateApi&Parameters.member.18.UsePreviousValue=true&Parameters.member.19.ParameterKey=Subnet0CIDR&Parameters.member.19.UsePreviousValue=true&Parameters.member.2.ParameterKey=ApiMemory&Parameters.member.2.UsePreviousValue=true&Parameters.member.20.ParameterKey=Subnet1CIDR&Parameters.member.20.UsePreviousValue=true&Parameters.member.21.ParameterKey=Subnet2CIDR&Parameters.member.21.UsePreviousValue=true&Parameters.member.22.ParameterKey=SubnetPrivate0CIDR&Parameters.member.22.UsePreviousValue=true&Parameters.member.23.ParameterKey=SubnetPrivate1CIDR&Parameters.member.23.UsePreviousValue=true&Parameters.member.24.ParameterKey=SubnetPrivate2CIDR&Parameters.member.24.UsePreviousValue=true&Parameters.member.25.ParameterKey=SwapSize&Parameters.member.25.UsePreviousValue=true&Parameters.member.26.ParameterKey=Tenancy&Parameters.member.26.UsePreviousValue=true&Parameters.member.27.ParameterKey=VPCCIDR&Parameters.member.27.UsePreviousValue=true&Parameters.member.28.ParameterKey=Version&Parameters.member.28.ParameterValue=20171214220445&Parameters.member.29.ParameterKey=VolumeSize&Parameters.member.29.UsePreviousValue=true&Parameters.member.3.ParameterKey=Autoscale&Parameters.member.3.UsePreviousValue=true&Parameters.member.4.ParameterKey=ClientId&Parameters.member.4.UsePreviousValue=true&Parameters.member.5.ParameterKey=ContainerDisk&Parameters.member.5.UsePreviousValue=true&Parameters.member.6.ParameterKey=Development&Parameters.member.6.UsePreviousValue=true&Parameters.member.7.ParameterKey=Encryption&Parameters.member.7.UsePreviousValue=true&Parameters.member.8.ParameterKey=ExistingVpc&Parameters.member.8.UsePreviousValue=true&Parameters.member.9.ParameterKey=InstanceBootCommand&Parameters.member.9.UsePreviousValue=true&StackName=convox&Tags.member.1.Key=System&Tags.member.1.Value=convox&Tags.member.2.Key=Type&Tags.member.2.Value=rack&TemplateURL=https%3A%2F%2Fs3.us-test-1.amazonaws.com%2Fconvox-settings%2Ftest-key&Version=2010-05-15`,
 	},
 	Response: awsutil.Response{
 		StatusCode: 200,
@@ -426,7 +512,7 @@ var cycleSystemUpdateStack = awsutil.Cycle{
 var cycleSystemUpdateStackNewParameter = awsutil.Cycle{
 	Request: awsutil.Request{
 		RequestURI: "/",
-		Body:       `Action=UpdateStack&Capabilities.member.1=CAPABILITY_IAM&NotificationARNs.member.1=&Parameters.member.1.ParameterKey=Ami&Parameters.member.1.UsePreviousValue=true&Parameters.member.2.ParameterKey=InstanceCount&Parameters.member.2.ParameterValue=5&Parameters.member.3.ParameterKey=InstanceType&Parameters.member.3.ParameterValue=t2.small&Parameters.member.4.ParameterKey=Version&Parameters.member.4.ParameterValue=20171214220445&StackName=convox&TemplateURL=https%3A%2F%2Fconvox.s3.amazonaws.com%2Frelease%2F20171214220445%2Frack.json&Version=2010-05-15`,
+		Body:       `Action=UpdateStack&Capabilities.member.1=CAPABILITY_IAM&NotificationARNs.member.1=&Parameters.member.1.ParameterKey=Ami&Parameters.member.1.UsePreviousValue=true&Parameters.member.2.ParameterKey=InstanceCount&Parameters.member.2.ParameterValue=5&Parameters.member.3.ParameterKey=InstanceType&Parameters.member.3.ParameterValue=t2.small&Parameters.member.4.ParameterKey=Version&Parameters.member.4.ParameterValue=20171214220445&StackName=convox&Tags.member.1.Key=System&Tags.member.1.Value=convox&Tags.member.2.Key=Type&Tags.member.2.Value=rack&TemplateURL=https%3A%2F%2Fs3.us-test-1.amazonaws.com%2Fconvox-settings%2Ftest-key&Version=2010-05-15`,
 	},
 	Response: awsutil.Response{
 		StatusCode: 200,
@@ -738,6 +824,17 @@ func cycleDescribeStacksNotFound(name string) awsutil.Cycle {
 	}
 }
 
+var cycleSystemTemplatePut = awsutil.Cycle{
+	Request: awsutil.Request{
+		Method:     "PUT",
+		RequestURI: "/convox-httpd-settings-139bidzalmbtu/releases/R23456/env",
+		Body:       "ignore",
+	},
+	Response: awsutil.Response{
+		StatusCode: 200,
+	},
+}
+
 var cycleSystemListStackResources = awsutil.Cycle{
 	Request: awsutil.Request{
 		RequestURI: "/",
@@ -767,6 +864,15 @@ var cycleSystemListStackResources = awsutil.Cycle{
 							<LogicalResourceId>EncryptionKey</LogicalResourceId>
 							<Timestamp>2016-10-22T02:53:23.817Z</Timestamp>
 							<ResourceType>AWS::AutoScaling::AutoScalingGroup</ResourceType>
+						</member>
+						<member>
+							<PhysicalResourceId>settings-bucket</PhysicalResourceId>
+							<ResourceStatus>UPDATE_COMPLETE</ResourceStatus>
+							<StackId>arn:aws:cloudformation:us-east-1:990037048036:stack/convox/b8423690-917d-1fe6-8737-50dseaf92cd2</StackId>
+							<StackName>convox</StackName>
+							<LogicalResourceId>Settings</LogicalResourceId>
+							<Timestamp>2016-10-22T02:53:23.817Z</Timestamp>
+							<ResourceType>AWS::S3::Bucket</ResourceType>
 						</member>
 					</StackResourceSummaries>
 				</ListStackResourcesResult>
@@ -831,6 +937,7 @@ var cycleSystemListTasks = awsutil.Cycle{
 		StatusCode: 200,
 		Body: `{
 			"taskArns": [
+				"arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0846",
 				"arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0845"
 			]
 		}`,
@@ -856,6 +963,47 @@ var cycleSystemListTasksAll = awsutil.Cycle{
 }
 
 var cycleSystemDescribeTasks = awsutil.Cycle{
+	Request: awsutil.Request{
+		RequestURI: "/",
+		Operation:  "AmazonEC2ContainerServiceV20141113.DescribeTasks",
+		Body: `{
+			"cluster": "cluster-test",
+			"tasks": [
+				"arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0846",
+				"arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0845"
+			]
+		}`,
+	},
+	Response: awsutil.Response{
+		StatusCode: 200,
+		Body: `{
+			"failures": [],
+			"tasks": [
+				{
+					"taskArn": "arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0845",
+					"overrides": {
+						"containerOverrides": [
+							{
+								"command": ["sh", "-c", "foo"]
+							}
+						]
+					},
+					"lastStatus": "RUNNING",
+					"taskDefinitionArn": "arn:aws:ecs:us-east-1:778743527532:task-definition/convox:34",
+					"containerInstanceArn": "arn:aws:ecs:us-east-1:778743527532:container-instance/e126c67d-fa95-4b09-8b4a-3723932cd2aa",
+					"containers": [
+						{
+							"name": "web",
+							"containerArn": "arn:aws:ecs:us-east-1:778743527532:container/3ab3b8c5-aa5c-4b54-89f8-5f1193aff5f9"
+						}
+					]
+				}
+			]
+		}`,
+	},
+}
+
+var cycleSystemDescribeTasksAll = awsutil.Cycle{
 	Request: awsutil.Request{
 		RequestURI: "/",
 		Operation:  "AmazonEC2ContainerServiceV20141113.DescribeTasks",
@@ -1063,5 +1211,24 @@ var cycleSystemDockerListContainers2 = awsutil.Cycle{
 				"Ports": [{"PrivatePort": 2222, "PublicPort": 3333, "Type": "tcp"}]
 			}
 		]`,
+	},
+}
+
+var cycleSystemListTasksByStack = awsutil.Cycle{
+	Request: awsutil.Request{
+		RequestURI: "/",
+		Operation:  "AmazonEC2ContainerServiceV20141113.ListTasks",
+		Body: `{
+			"cluster": "cluster-test",
+			"serviceName": "service-web"
+		}`,
+	},
+	Response: awsutil.Response{
+		StatusCode: 200,
+		Body: `{
+			"taskArns": [
+				"arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0846"
+			]
+		}`,
 	},
 }

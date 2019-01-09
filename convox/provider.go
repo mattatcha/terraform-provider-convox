@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/convox/rack/client"
+	"github.com/convox/rack/sdk"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
 	homedir "github.com/mitchellh/go-homedir"
@@ -17,7 +17,7 @@ import (
 const (
 	// DefaultHost is the default value for which Convox rack host to connect to
 	DefaultHost   = "console.convox.com"
-	clientVersion = "20170509022518"
+	clientVersion = "20190103234204"
 )
 
 // Provider returns a terraform.ResourceProvider.
@@ -57,7 +57,7 @@ func Provider() terraform.ResourceProvider {
 func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	host := getHost(d)
 	pass := getPassword(d, host)
-	c := client.New(host, pass, clientVersion)
+	c := sdk.New(host, pass, clientVersion)
 	if host == DefaultHost {
 		// c.Auth() only works for DefaultHost?
 		if _, err := c.Auth(); err != nil {
@@ -100,7 +100,7 @@ func UnpackRackClient(d ValueGetter, meta interface{}) (Client, error) {
 		return nil, fmt.Errorf("meta is nil")
 	}
 
-	c := meta.(*client.Client)
+	c := meta.(*sdk.Client)
 	if c == nil {
 		return nil, fmt.Errorf("Could not convert meta to rack Client: %#v", meta)
 	}

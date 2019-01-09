@@ -15,8 +15,9 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ecs"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/convox/rack/crypt"
-	"github.com/convox/rack/structs"
+	"github.com/convox/rack/pkg/crypt"
+	"github.com/convox/rack/pkg/structs"
+	shellquote "github.com/kballard/go-shellquote"
 )
 
 // Parses as [host]:[container]/[protocol?], where [protocol] is optional
@@ -203,6 +204,19 @@ func ECSTaskDefinitionCreate(req Request) (string, map[string]string, error) {
 			}
 		}
 
+		if ep, ok := task["Entrypoint"].(string); ok {
+			parts, err := shellquote.Split(ep)
+			if err != nil {
+				return "invalid", nil, err
+			}
+
+			r.ContainerDefinitions[i].EntryPoint = make([]*string, len(parts))
+
+			for j, p := range parts {
+				r.ContainerDefinitions[i].EntryPoint[j] = aws.String(p)
+			}
+		}
+
 		// set Task environment from CF Tasks[].Environment key/values
 		// These key/values are read from the app manifest environment hash
 		if oenv, ok := task["Environment"].(map[string]interface{}); ok {
@@ -263,6 +277,20 @@ func ECSTaskDefinitionCreate(req Request) (string, map[string]string, error) {
 					"convox.release": aws.String(release),
 				}
 			}
+		}
+
+		// set build metadata
+		if v, ok := req.ResourceProperties["Build"].(string); ok {
+			r.ContainerDefinitions[i].Environment = append(r.ContainerDefinitions[i].Environment, &ecs.KeyValuePair{
+				Name:  aws.String("BUILD"),
+				Value: aws.String(v),
+			})
+		}
+		if v, ok := req.ResourceProperties["BuildDescription"].(string); ok {
+			r.ContainerDefinitions[i].Environment = append(r.ContainerDefinitions[i].Environment, &ecs.KeyValuePair{
+				Name:  aws.String("BUILD_DESCRIPTION"),
+				Value: aws.String(v),
+			})
 		}
 
 		// set links

@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/convox/rack/provider/local"
-	"github.com/convox/rack/structs"
+	"github.com/convox/rack/pkg/structs"
 )
 
 func testProvider() (*local.Provider, error) {
@@ -15,9 +15,8 @@ func testProvider() (*local.Provider, error) {
 	}
 
 	p := &local.Provider{
-		Root:   tmp,
-		Router: "none",
-		Test:   true,
+		Root: tmp,
+		Test: true,
 	}
 
 	if err := p.Initialize(structs.ProviderOptions{}); err != nil {

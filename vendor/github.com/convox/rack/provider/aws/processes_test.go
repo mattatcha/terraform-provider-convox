@@ -5,9 +5,9 @@ import (
 	"io"
 	"testing"
 
-	"github.com/convox/rack/options"
-	"github.com/convox/rack/structs"
-	"github.com/convox/rack/test/awsutil"
+	"github.com/convox/rack/pkg/options"
+	"github.com/convox/rack/pkg/structs"
+	"github.com/convox/rack/pkg/test/awsutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,9 +16,15 @@ type streamTester struct {
 	io.Writer
 }
 
+func (st streamTester) Close() error {
+	return nil
+}
+
 func TestProcessExec(t *testing.T) {
 	provider := StubAwsProvider(
 		cycleProcessListStackResources,
+		cycleProcessDescribeStacks,
+		cycleProcessListTasksByStack,
 		cycleProcessListTasksByService1,
 		cycleProcessListTasksByService2,
 		cycleProcessListTasksByStarted,
@@ -33,12 +39,21 @@ func TestProcessExec(t *testing.T) {
 		cycleProcessDescribeTasks,
 		cycleProcessDescribeContainerInstances,
 		cycleProcessDescribeInstances,
+		cycleProcessListTasksRunning,
+		cycleProcessListTasksStopped,
+		cycleProcessDescribeTasks,
+		cycleProcessDescribeContainerInstances,
+		cycleProcessDescribeInstances,
+		cycleProcessListTasksRunning,
+		cycleProcessListTasksStopped,
 		cycleProcessDescribeStacks,
+		cycleProcessDescribeStackResources,
 	)
 	defer provider.Close()
 
 	d := stubDocker(
 		cycleProcessDockerListContainers1,
+		cycleProcessDockerInspect,
 		cycleProcessDockerCreateExec,
 		cycleProcessDockerStartExec,
 		cycleProcessDockerResizeExec,
@@ -49,9 +64,8 @@ func TestProcessExec(t *testing.T) {
 	in := &bytes.Buffer{}
 	out := &bytes.Buffer{}
 
-	code, err := provider.ProcessExec("myapp", "5850760f0845", "ls -la", structs.ProcessExecOptions{
+	code, err := provider.ProcessExec("myapp", "5850760f0845", "ls -la", streamTester{in, out}, structs.ProcessExecOptions{
 		Height: options.Int(10),
-		Stream: streamTester{in, out},
 		Width:  options.Int(20),
 	})
 
@@ -63,6 +77,8 @@ func TestProcessExec(t *testing.T) {
 func TestProcessList(t *testing.T) {
 	provider := StubAwsProvider(
 		cycleProcessListStackResources,
+		cycleProcessDescribeStacks,
+		cycleProcessListTasksByStack,
 		cycleProcessListTasksByService1,
 		cycleProcessListTasksByService2,
 		cycleProcessListTasksByStarted,
@@ -90,6 +106,7 @@ func TestProcessList(t *testing.T) {
 			Ports:    []string{},
 			Cpu:      0,
 			Memory:   0,
+			Status:   "running",
 		},
 		structs.Process{
 			Id:       "5850760f0846",
@@ -103,6 +120,7 @@ func TestProcessList(t *testing.T) {
 			Ports:    []string{},
 			Cpu:      0,
 			Memory:   0,
+			Status:   "pending",
 		},
 	}
 
@@ -113,6 +131,8 @@ func TestProcessList(t *testing.T) {
 func TestProcessListEmpty(t *testing.T) {
 	provider := StubAwsProvider(
 		cycleProcessListStackResources,
+		cycleProcessDescribeStacks,
+		cycleProcessListTasksByStackEmpty,
 		cycleProcessListTasksByService1Empty,
 		cycleProcessListTasksByService2Empty,
 		cycleProcessListTasksByStartedEmpty,
@@ -129,6 +149,8 @@ func TestProcessListEmpty(t *testing.T) {
 func TestProcessListWithBuildCluster(t *testing.T) {
 	provider := StubAwsProvider(
 		cycleProcessListStackResources,
+		cycleProcessDescribeStacks,
+		cycleProcessListTasksByStack,
 		cycleProcessListTasksByService1,
 		cycleProcessListTasksByService2,
 		cycleProcessListTasksByStarted,
@@ -162,6 +184,7 @@ func TestProcessListWithBuildCluster(t *testing.T) {
 			Ports:    []string{},
 			Cpu:      0,
 			Memory:   0,
+			Status:   "running",
 		},
 		structs.Process{
 			Id:       "5850760f0846",
@@ -175,6 +198,7 @@ func TestProcessListWithBuildCluster(t *testing.T) {
 			Ports:    []string{},
 			Cpu:      0,
 			Memory:   0,
+			Status:   "running",
 		},
 		structs.Process{
 			Id:       "5850760f0848",
@@ -188,75 +212,12 @@ func TestProcessListWithBuildCluster(t *testing.T) {
 			Ports:    []string{},
 			Cpu:      0,
 			Memory:   0,
+			Status:   "running",
 		},
 	}
 
 	assert.NoError(t, err)
 	assert.EqualValues(t, ps, s)
-}
-
-func TestProcessRunAttached(t *testing.T) {
-	provider := StubAwsProvider(
-		cycleProcessReleaseGetItem,
-		cycleProcessDescribeStacks,
-		cycleProcessDescribeStacks,
-		cycleProcessReleaseGetItem,
-		cycleProcessReleaseListStackResources,
-		cycleProcessReleaseEnvironmentGet,
-		cycleSystemListStackResources,
-		cycleProcessListStackResources,
-		cycleProcessDescribeServices,
-		cycleProcessDescribeTaskDefinition1,
-		cycleProcessListStackResources,
-		cycleProcessRegisterTaskDefinitionAttached,
-		cycleProcessReleaseUpdateItem,
-		cycleProcessRunTaskAttached,
-		cycleProcessDescribeTasks,
-		cycleProcessListStackResources,
-		cycleProcessListTasksByService1,
-		cycleProcessListTasksByService2,
-		cycleProcessListTasksByStarted,
-		cycleProcessDescribeTasksAll,
-		cycleProcessDescribeTaskDefinition1,
-		cycleProcessDescribeContainerInstances,
-		cycleProcessDescribeTaskDefinition1,
-		cycleProcessDescribeContainerInstances,
-		cycleProcessDescribeRackInstances,
-		cycleProcessListTasksRunning,
-		cycleProcessListTasksStopped,
-		cycleProcessDescribeTasks,
-		cycleProcessDescribeContainerInstances,
-		cycleProcessDescribeInstances,
-		cycleProcessStopTaskReason,
-		cycleProcessDescribeTasksStopped,
-	)
-	defer provider.Close()
-
-	d := stubDocker(
-		cycleProcessDockerListContainers1,
-		cycleProcessDockerInspect,
-		cycleProcessDockerCreateExec,
-		cycleProcessDockerStartExec,
-		cycleProcessDockerResizeExec,
-		cycleProcessDockerInspectExec,
-	)
-	defer d.Close()
-
-	in := &bytes.Buffer{}
-	out := &bytes.Buffer{}
-
-	pid, err := provider.ProcessRun("myapp", structs.ProcessRunOptions{
-		Command: options.String("ls -la"),
-		Release: options.String("RVFETUHHKKD"),
-		Service: options.String("web"),
-		Stream:  streamTester{in, out},
-		Height:  options.Int(10),
-		Width:   options.Int(20),
-	})
-
-	assert.NoError(t, err)
-	assert.Equal(t, "5850760f0845", pid)
-	assert.Equal(t, []byte("foo"), out.Bytes())
 }
 
 func TestProcessRunDetached(t *testing.T) {
@@ -268,6 +229,7 @@ func TestProcessRunDetached(t *testing.T) {
 		cycleProcessReleaseListStackResources,
 		cycleProcessReleaseEnvironmentGet,
 		cycleSystemListStackResources,
+		cycleProcessBuildGetItem,
 		cycleProcessListStackResources,
 		cycleProcessDescribeServices,
 		cycleProcessDescribeTaskDefinition1,
@@ -276,17 +238,28 @@ func TestProcessRunDetached(t *testing.T) {
 		cycleProcessRegisterTaskDefinitionDetached,
 		cycleProcessReleaseUpdateItem,
 		cycleProcessRunTaskDetached,
+		cycleProcessListStackResources,
+		cycleProcessDescribeStacks,
+		cycleProcessListTasksByStack,
+		cycleProcessListTasksByService1,
+		cycleProcessListTasksByService2,
+		cycleProcessListTasksByStarted,
+		cycleProcessDescribeTasks,
+		cycleProcessDescribeTaskDefinition1,
+		cycleProcessDescribeContainerInstances,
+		cycleProcessDescribeRackInstances,
 	)
 	defer provider.Close()
 
-	pid, err := provider.ProcessRun("myapp", structs.ProcessRunOptions{
+	psa, err := provider.ProcessRun("myapp", "web", structs.ProcessRunOptions{
 		Command: options.String("ls test"),
 		Release: options.String("RVFETUHHKKD"),
-		Service: options.String("web"),
 	})
 
+	pse := &structs.Process{Id: "5850760f0845", App: "", Command: "ls -la 'name space'", Cpu: 0, Host: "10.0.1.244", Image: "778743527532.dkr.ecr.us-east-1.amazonaws.com/convox-myapp-nkdecwppkq:web.BMPBJLITPZT", Instance: "i-5bc45dc2", Memory: 0, Name: "web", Ports: []string{}, Release: "R1234", Status: "running"}
+
 	assert.NoError(t, err)
-	assert.Equal(t, "0f51f03ff369", pid)
+	assert.Equal(t, pse, psa)
 }
 
 func TestProcessStop(t *testing.T) {
@@ -461,6 +434,10 @@ var cycleProcessDescribeStacks = awsutil.Cycle{
 								<member>
 									<OutputKey>RegistryRepository</OutputKey>
 									<OutputValue>convox-myapp-nkdecwppkq</OutputValue>
+								</member>
+								<member>
+									<OutputKey>ServiceWebService</OutputKey>
+									<OutputValue>service-web</OutputValue>
 								</member>
 							</Outputs>
 							<Capabilities>
@@ -700,6 +677,7 @@ var cycleProcessDescribeTasksAll = awsutil.Cycle{
 			"cluster": "cluster-test",
 			"tasks": [
 				"arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0846",
+				"arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0846",
 				"arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0847",
 				"arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0845"
 			]
@@ -716,6 +694,7 @@ var cycleProcessDescribeTasksAll = awsutil.Cycle{
 						"containerOverrides": []
 					},
 					"taskDefinitionArn": "arn:aws:ecs:us-east-1:778743527532:task-definition/convox-myapp-web:34",
+					"lastStatus": "PENDING",
 					"containerInstanceArn": "arn:aws:ecs:us-east-1:778743527532:container-instance/e126c67d-fa95-4b09-8b4a-3723932cd2aa",
 					"containers": [
 						{
@@ -734,6 +713,7 @@ var cycleProcessDescribeTasksAll = awsutil.Cycle{
 						]
 					},
 					"taskDefinitionArn": "arn:aws:ecs:us-east-1:778743527532:task-definition/convox-myapp-web:34",
+					"lastStatus": "RUNNING",
 					"containerInstanceArn": "arn:aws:ecs:us-east-1:778743527532:container-instance/e126c67d-fa95-4b09-8b4a-3723932cd2aa",
 					"containers": [
 						{
@@ -755,6 +735,7 @@ var cycleProcessDescribeTasksAllWithBuildCluster = awsutil.Cycle{
 			"cluster": "cluster-test",
 			"tasks": [
 				"arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0846",
+				"arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0846",
 				"arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0847",
 				"arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0845",
 				"arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0848"
@@ -772,6 +753,7 @@ var cycleProcessDescribeTasksAllWithBuildCluster = awsutil.Cycle{
 						"containerOverrides": []
 					},
 					"taskDefinitionArn": "arn:aws:ecs:us-east-1:778743527532:task-definition/convox-myapp-web:34",
+					"lastStatus": "RUNNING",
 					"containerInstanceArn": "arn:aws:ecs:us-east-1:778743527532:container-instance/e126c67d-fa95-4b09-8b4a-3723932cd2aa",
 					"containers": [
 						{
@@ -790,6 +772,7 @@ var cycleProcessDescribeTasksAllWithBuildCluster = awsutil.Cycle{
 						]
 					},
 					"taskDefinitionArn": "arn:aws:ecs:us-east-1:778743527532:task-definition/convox-myapp-web:34",
+					"lastStatus": "RUNNING",
 					"containerInstanceArn": "arn:aws:ecs:us-east-1:778743527532:container-instance/e126c67d-fa95-4b09-8b4a-3723932cd2aa",
 					"containers": [
 						{
@@ -810,6 +793,7 @@ var cycleProcessDescribeTasksAllOnBuildCluster = awsutil.Cycle{
 		Body: `{
 			"cluster": "cluster-build",
 			"tasks": [
+				"arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0846",
 				"arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0846",
 				"arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0847",
 				"arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0845",
@@ -832,6 +816,7 @@ var cycleProcessDescribeTasksAllOnBuildCluster = awsutil.Cycle{
 						]
 					},
 					"taskDefinitionArn": "arn:aws:ecs:us-east-1:778743527532:task-definition/convox-myapp-web:34",
+					"lastStatus": "RUNNING",
 					"containerInstanceArn": "arn:aws:ecs:us-east-1:778743527532:container-instance/e126c67d-fa95-4b09-8b4a-3723932cd2aa",
 					"containers": [
 						{
@@ -1102,6 +1087,42 @@ var cycleProcessListTasksByStartedEmpty = awsutil.Cycle{
 	},
 }
 
+var cycleProcessListTasksByStack = awsutil.Cycle{
+	Request: awsutil.Request{
+		RequestURI: "/",
+		Operation:  "AmazonEC2ContainerServiceV20141113.ListTasks",
+		Body: `{
+			"cluster": "cluster-test",
+			"serviceName": "service-web"
+		}`,
+	},
+	Response: awsutil.Response{
+		StatusCode: 200,
+		Body: `{
+			"taskArns": [
+				"arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0846"
+			]
+		}`,
+	},
+}
+
+var cycleProcessListTasksByStackEmpty = awsutil.Cycle{
+	Request: awsutil.Request{
+		RequestURI: "/",
+		Operation:  "AmazonEC2ContainerServiceV20141113.ListTasks",
+		Body: `{
+			"cluster": "cluster-test",
+			"serviceName": "service-web"
+		}`,
+	},
+	Response: awsutil.Response{
+		StatusCode: 200,
+		Body: `{
+			"taskArns": []
+		}`,
+	},
+}
+
 var cycleProcessListTasksBuildCluster = awsutil.Cycle{
 	Request: awsutil.Request{
 		RequestURI: "/",
@@ -1139,6 +1160,14 @@ var cycleProcessRegisterTaskDefinitionAttached = awsutil.Cycle{
 						{
 							"name": "AWS_REGION",
 							"value": "us-test-1"
+						},
+						{
+							"name": "BUILD",
+							"value": "BHINCLZYYVN"
+						},
+						{
+							"name": "BUILD_DESCRIPTION",
+							"value": "test desc"
 						},
 						{
 							"name": "LOG_GROUP",
@@ -1190,7 +1219,8 @@ var cycleProcessRegisterTaskDefinitionDetached = awsutil.Cycle{
 			"containerDefinitions": [
 				{
 					"dockerLabels": {
-						"convox.process.type": "oneoff"
+						"convox.process.type": "oneoff",
+						"convox.release": "RVFETUHHKKD"
 					},
 					"environment": [
 						{
@@ -1200,6 +1230,14 @@ var cycleProcessRegisterTaskDefinitionDetached = awsutil.Cycle{
 						{
 							"name": "AWS_REGION",
 							"value": "us-test-1"
+						},
+						{
+							"name": "BUILD",
+							"value": "BHINCLZYYVN"
+						},
+						{
+							"name": "BUILD_DESCRIPTION",
+							"value": "test desc"
 						},
 						{
 							"name": "LOG_GROUP",
@@ -1335,7 +1373,7 @@ var cycleProcessRunTaskDetached = awsutil.Cycle{
 							"taskArn": "arn:aws:ecs:us-east-1:012345678910:task/d8c67b3c-ac87-4ffe-a847-4785bc3a8b55"
 						}
 					],
-					"taskArn": "arn:aws:ecs:us-east-1:778743527532:task/014b7e61-cc23-47e8-9dc6-0f51f03ff369"
+					"taskArn": "arn:aws:ecs:us-east-1:778743527532:task/50b8de99-f94f-4ecd-a98f-5850760f0845"
 				}
 			]
 		}`,
@@ -1378,6 +1416,18 @@ var cycleProcessStopTaskReason = awsutil.Cycle{
 				"taskArn": "arn:aws:ecs:us-east-1:778743527532:task/014b7e61-cc23-47e8-9dc6-0f51f03ff369"
 			}
 		}`,
+	},
+}
+
+var cycleProcessBuildGetItem = awsutil.Cycle{
+	Request: awsutil.Request{
+		RequestURI: "/",
+		Operation:  "DynamoDB_20120810.GetItem",
+		Body:       `{"ConsistentRead":true,"Key":{"id":{"S":"BHINCLZYYVN"}},"TableName":"convox-builds"}`,
+	},
+	Response: awsutil.Response{
+		StatusCode: 200,
+		Body:       `{"Item":{"id":{"S":"BHINCLZYYVN"},"description":{"S":"test desc"}}}`,
 	},
 }
 
@@ -1490,7 +1540,7 @@ var cycleProcessReleaseUpdateItem = awsutil.Cycle{
 var cycleProcessDockerListContainers1 = awsutil.Cycle{
 	Request: awsutil.Request{
 		Method:     "GET",
-		RequestURI: "/containers/json?all=1&filters=%7B%22label%22%3A%5B%22com.amazonaws.ecs.task-arn%3Darn%3Aaws%3Aecs%3Aus-east-1%3A778743527532%3Atask%2F50b8de99-f94f-4ecd-a98f-5850760f0845%22%5D%7D",
+		RequestURI: "/containers/json?all=1&filters=%7B%22label%22%3A%5B%22com.amazonaws.ecs.task-arn%3Darn%3Aaws%3Aecs%3Aus-east-1%3A778743527532%3Atask%2F50b8de99-f94f-4ecd-a98f-5850760f0845%22%2C%22convox.release%22%5D%7D",
 		Body:       ``,
 	},
 	Response: awsutil.Response{
@@ -1567,6 +1617,7 @@ var cycleProcessDockerInspect = awsutil.Cycle{
 	Response: awsutil.Response{
 		StatusCode: 200,
 		Body: `{
+			"Id": "8dfafdbc3a40",
 			"Config": {
 				"Cmd": [
 						"ls",

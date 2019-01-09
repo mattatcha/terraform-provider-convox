@@ -1,7 +1,7 @@
 package convox_test
 
 import (
-	"github.com/convox/rack/client"
+	"github.com/convox/rack/pkg/structs"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
 	"github.com/mattatcha/terraform-provider-convox/convox"
@@ -20,9 +20,9 @@ var _ = Describe("ResourceConvoxResourceLink", func() {
 
 	BeforeEach(func() {
 		convoxClient.ResetNoop()
-		convoxClient.GetResourceFunc = func(name string) (*client.Resource, error) {
+		convoxClient.GetResourceFunc = func(name string) (*structs.Resource, error) {
 			// for the wait for status
-			return &client.Resource{
+			return &structs.Resource{
 				Status: "running",
 			}, nil
 		}
@@ -55,7 +55,7 @@ var _ = Describe("ResourceConvoxResourceLink", func() {
 			BeforeEach(func() {
 				calledResourceName = ""
 				calledAppName = ""
-				convoxClient.CreateLinkFunc = func(app string, resource string) (*client.Resource, error) {
+				convoxClient.CreateLinkFunc = func(app string, resource string) (*structs.Resource, error) {
 					calledResourceName = resource
 					calledAppName = app
 
@@ -93,7 +93,7 @@ var _ = Describe("ResourceConvoxResourceLink", func() {
 			BeforeEach(func() {
 				calledResourceName = ""
 				calledAppName = ""
-				convoxClient.DeleteLinkFunc = func(app string, resource string) (*client.Resource, error) {
+				convoxClient.DeleteLinkFunc = func(app string, resource string) (*structs.Resource, error) {
 					calledResourceName = resource
 					calledAppName = app
 

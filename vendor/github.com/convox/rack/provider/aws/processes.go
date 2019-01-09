@@ -3,9 +3,10 @@ package aws
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math"
-	"os"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,11 +17,10 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ecs"
-	"github.com/convox/rack/cache"
-	"github.com/convox/rack/manifest"
-	"github.com/convox/rack/manifest1"
-	"github.com/convox/rack/options"
-	"github.com/convox/rack/structs"
+	"github.com/convox/rack/pkg/cache"
+	"github.com/convox/rack/pkg/manifest"
+	"github.com/convox/rack/pkg/manifest1"
+	"github.com/convox/rack/pkg/structs"
 	"github.com/fsouza/go-dockerclient"
 	shellquote "github.com/kballard/go-shellquote"
 )
@@ -29,7 +29,7 @@ import (
 const StatusCodePrefix = "F1E49A85-0AD7-4AEF-A618-C249C6E6568D:"
 
 // ProcessExec runs a command in an existing Process
-func (p *AWSProvider) ProcessExec(app, pid, command string, opts structs.ProcessExecOptions) (int, error) {
+func (p *Provider) ProcessExec(app, pid, command string, rw io.ReadWriter, opts structs.ProcessExecOptions) (int, error) {
 	log := Logger.At("ProcessExec").Namespace("app=%q pid=%q command=%q", app, pid, command).Start()
 
 	pss, err := p.ProcessList(app, structs.ProcessListOptions{})
@@ -49,56 +49,21 @@ func (p *AWSProvider) ProcessExec(app, pid, command string, opts structs.Process
 		return -1, errorNotFound(fmt.Sprintf("process id not found for %s", app))
 	}
 
-	arn, err := p.taskArnFromPid(pid)
+	dc, err := p.dockerClientFromPid(pid)
 	if err != nil {
-		return -1, log.Error(err)
+		return -1, err
 	}
 
-	task, err := p.describeTask(arn)
+	c, err := p.dockerContainerFromPid(pid)
 	if err != nil {
-		return -1, log.Error(err)
-	}
-	if len(task.Containers) < 1 {
-		return -1, log.Errorf("no running container for process: %s", pid)
-	}
-
-	cires, err := p.describeContainerInstances(&ecs.DescribeContainerInstancesInput{
-		Cluster:            aws.String(p.Cluster),
-		ContainerInstances: []*string{task.ContainerInstanceArn},
-	})
-	if err != nil {
-		return -1, log.Error(err)
-	}
-	if len(cires.ContainerInstances) < 1 {
-		return -1, log.Errorf("could not find instance for process: %s", pid)
-	}
-
-	dc, err := p.dockerInstance(*cires.ContainerInstances[0].Ec2InstanceId)
-	if err != nil {
-		return -1, log.Error(err)
-	}
-
-	cs, err := dc.ListContainers(docker.ListContainersOptions{
-		All: true,
-		Filters: map[string][]string{
-			"label": {fmt.Sprintf("com.amazonaws.ecs.task-arn=%s", arn)},
-		},
-	})
-	if err != nil {
-		return -1, log.Error(err)
-	}
-	if len(cs) != 1 {
-		return -1, log.Errorf("could not find container for task: %s", arn)
+		return -1, err
 	}
 
 	cmd := []string{"sh", "-c", command}
 
-	if opts.Entrypoint != nil && *opts.Entrypoint {
-		c, err := dc.InspectContainer(cs[0].ID)
-		if err != nil {
-			return -1, err
-		}
+	tty := cb(opts.Tty, true)
 
+	if opts.Entrypoint != nil && *opts.Entrypoint {
 		cmd = append(c.Config.Entrypoint, cmd...)
 	} else {
 		a, err := p.AppGet(app)
@@ -115,9 +80,9 @@ func (p *AWSProvider) ProcessExec(app, pid, command string, opts structs.Process
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
-		Tty:          true,
+		Tty:          tty,
 		Cmd:          cmd,
-		Container:    cs[0].ID,
+		Container:    c.ID,
 	})
 	if err != nil {
 		return -1, log.Error(err)
@@ -135,10 +100,10 @@ func (p *AWSProvider) ProcessExec(app, pid, command string, opts structs.Process
 
 	err = dc.StartExec(eres.ID, docker.StartExecOptions{
 		Detach:       false,
-		Tty:          true,
-		InputStream:  ioutil.NopCloser(opts.Stream),
-		OutputStream: opts.Stream,
-		ErrorStream:  opts.Stream,
+		Tty:          tty,
+		InputStream:  ioutil.NopCloser(rw),
+		OutputStream: rw,
+		ErrorStream:  rw,
 		RawTerminal:  true,
 		Success:      success,
 	})
@@ -156,7 +121,7 @@ func (p *AWSProvider) ProcessExec(app, pid, command string, opts structs.Process
 }
 
 // ProcessGet returns the specified process for an app
-func (p *AWSProvider) ProcessGet(app, pid string) (*structs.Process, error) {
+func (p *Provider) ProcessGet(app, pid string) (*structs.Process, error) {
 	log := Logger.At("ProcessGet").Namespace("app=%q pid=%s", app, pid).Start()
 
 	tasks, err := p.appTaskARNs(app)
@@ -177,11 +142,11 @@ func (p *AWSProvider) ProcessGet(app, pid string) (*structs.Process, error) {
 		}
 	}
 
-	return nil, log.Error(errorNotFound(fmt.Sprintf("no such process: %s", pid)))
+	return nil, log.Error(errorNotFound(fmt.Sprintf("process not found: %s", pid)))
 }
 
 // ProcessList returns a list of processes for an app
-func (p *AWSProvider) ProcessList(app string, opts structs.ProcessListOptions) (structs.Processes, error) {
+func (p *Provider) ProcessList(app string, opts structs.ProcessListOptions) (structs.Processes, error) {
 	log := Logger.At("ProcessList").Namespace("app=%q", app).Start()
 
 	tasks, err := p.appTaskARNs(app)
@@ -213,7 +178,7 @@ func (p *AWSProvider) ProcessList(app string, opts structs.ProcessListOptions) (
 	return ps, nil
 }
 
-func (p *AWSProvider) stackTasks(stack string) ([]string, error) {
+func (p *Provider) stackTasks(stack string) ([]string, error) {
 	log := Logger.At("stackTasks").Namespace("stack=%q", stack).Start()
 
 	srs, err := p.listStackResources(stack)
@@ -223,6 +188,17 @@ func (p *AWSProvider) stackTasks(stack string) ([]string, error) {
 	}
 
 	services := []string{}
+
+	s, err := p.describeStack(stack)
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range stackOutputs(s) {
+		if strings.HasPrefix(k, "Service") && strings.HasSuffix(k, "Service") {
+			services = append(services, v)
+		}
+	}
 
 	for _, sr := range srs {
 		switch *sr.ResourceType {
@@ -257,10 +233,10 @@ func (p *AWSProvider) stackTasks(stack string) ([]string, error) {
 
 // appTaskARNs retuns a list of ECS Task (aka process) ARNs that correspond to an app
 // This includes one-off processes, build tasks, etc.
-func (p *AWSProvider) appTaskARNs(app string) ([]string, error) {
+func (p *Provider) appTaskARNs(app string) ([]string, error) {
 	tasks, err := p.stackTasks(fmt.Sprintf("%s-%s", p.Rack, app))
 	if ae, ok := err.(awserr.Error); ok && ae.Code() == "ValidationError" {
-		return nil, errorNotFound(fmt.Sprintf("no such app: %s", app))
+		return nil, errorNotFound(fmt.Sprintf("app not found: %s", app))
 	}
 	if err != nil {
 		return nil, err
@@ -299,7 +275,7 @@ func (p *AWSProvider) appTaskARNs(app string) ([]string, error) {
 
 const describeTasksPageSize = 100
 
-func (p *AWSProvider) taskProcesses(tasks []string) (structs.Processes, error) {
+func (p *Provider) taskProcesses(tasks []string) (structs.Processes, error) {
 	log := Logger.At("taskProcesses").Namespace("tasks=%q", tasks).Start()
 
 	pss := structs.Processes{}
@@ -396,20 +372,12 @@ func (p *AWSProvider) taskProcesses(tasks []string) (structs.Processes, error) {
 }
 
 // ProcessRun runs a new Process
-func (p *AWSProvider) ProcessRun(app string, opts structs.ProcessRunOptions) (string, error) {
-	log := Logger.At("ProcessRun").Namespace("app=%q service=%q", app, opts.Service).Start()
+func (p *Provider) ProcessRun(app, service string, opts structs.ProcessRunOptions) (*structs.Process, error) {
+	log := Logger.At("ProcessRun").Namespace("app=%q service=%q", app, service).Start()
 
-	if opts.Service == nil {
-		return "", fmt.Errorf("must specify a service")
-	}
-
-	if opts.Stream != nil {
-		return p.processRunAttached(app, opts)
-	}
-
-	td, err := p.taskDefinitionForRun(app, opts)
+	td, err := p.taskDefinitionForRun(app, service, opts)
 	if err != nil {
-		return "", log.Error(err)
+		return nil, log.Error(err)
 	}
 
 	req := &ecs.RunTaskInput{
@@ -423,7 +391,7 @@ func (p *AWSProvider) ProcessRun(app string, opts structs.ProcessRunOptions) (st
 		req.Overrides = &ecs.TaskOverride{
 			ContainerOverrides: []*ecs.ContainerOverride{
 				{
-					Name: aws.String(*opts.Service),
+					Name: aws.String(service),
 					Command: []*string{
 						aws.String("sh"),
 						aws.String("-c"),
@@ -436,14 +404,26 @@ func (p *AWSProvider) ProcessRun(app string, opts structs.ProcessRunOptions) (st
 
 	task, err := p.runTask(req)
 	if err != nil {
-		return "", log.Error(err)
+		return nil, log.Error(err)
 	}
 
-	return arnToPid(*task.TaskArn), log.Success()
+	pid := arnToPid(*task.TaskArn)
+
+	var ps *structs.Process
+
+	err = retry(5, 1*time.Second, func() error {
+		ps, err = p.ProcessGet(app, pid)
+		return err
+	})
+	if err != nil {
+		return nil, log.Error(err)
+	}
+
+	return ps, log.Success()
 }
 
 // ProcessStop stops a Process
-func (p *AWSProvider) ProcessStop(app, pid string) error {
+func (p *Provider) ProcessStop(app, pid string) error {
 	log := Logger.At("ProcessStop").Namespace("app=%q pid=%q", app, pid).Start()
 
 	arn, err := p.taskArnFromPid(pid)
@@ -500,7 +480,7 @@ func commandString(cs []string) string {
 	return strings.Join(cmd, " ")
 }
 
-func (p *AWSProvider) containerDefinitionForTask(arn string) (*ecs.ContainerDefinition, error) {
+func (p *Provider) containerDefinitionForTask(arn string) (*ecs.ContainerDefinition, error) {
 	cd, ok := cache.Get("containerDefinitionForTask", arn).(*ecs.ContainerDefinition)
 	if ok {
 		return cd, nil
@@ -525,7 +505,7 @@ func (p *AWSProvider) containerDefinitionForTask(arn string) (*ecs.ContainerDefi
 	return res.TaskDefinition.ContainerDefinitions[0], nil
 }
 
-func (p *AWSProvider) containerInstance(id string) (*ecs.ContainerInstance, error) {
+func (p *Provider) containerInstance(id string) (*ecs.ContainerInstance, error) {
 	ci, ok := cache.Get("containerInstance", id).(*ecs.ContainerInstance)
 	if ok {
 		return ci, nil
@@ -538,17 +518,15 @@ func (p *AWSProvider) containerInstance(id string) (*ecs.ContainerInstance, erro
 	if err != nil {
 		return nil, err
 	}
-	// check the build cluster too
-	for _, f := range res.Failures {
-		if f.Reason != nil && *f.Reason == "MISSING" && p.BuildCluster != p.Cluster {
-			res, err = p.describeContainerInstances(&ecs.DescribeContainerInstancesInput{
-				Cluster:            aws.String(p.BuildCluster),
-				ContainerInstances: []*string{aws.String(id)},
-			})
-			if err != nil {
-				return nil, err
-			}
-			break
+
+	// if there were failures, try the build cluster
+	if len(res.Failures) > 0 {
+		res, err = p.describeContainerInstances(&ecs.DescribeContainerInstancesInput{
+			Cluster:            aws.String(p.BuildCluster),
+			ContainerInstances: []*string{aws.String(id)},
+		})
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -565,7 +543,7 @@ func (p *AWSProvider) containerInstance(id string) (*ecs.ContainerInstance, erro
 	return res.ContainerInstances[0], nil
 }
 
-func (p *AWSProvider) describeInstance(id string) (*ec2.Instance, error) {
+func (p *Provider) describeInstance(id string) (*ec2.Instance, error) {
 	instance, ok := cache.Get("describeInstance", id).(*ec2.Instance)
 	if ok {
 		return instance, nil
@@ -590,11 +568,15 @@ func (p *AWSProvider) describeInstance(id string) (*ec2.Instance, error) {
 	return res.Reservations[0].Instances[0], nil
 }
 
-func (p *AWSProvider) describeTask(arn string) (*ecs.Task, error) {
+func (p *Provider) describeTaskInner(arn string) (*ecs.Task, error) {
 	res, err := p.describeTasks(&ecs.DescribeTasksInput{
 		Cluster: aws.String(p.Cluster),
 		Tasks:   []*string{aws.String(arn)},
 	})
+	if err != nil {
+		return nil, err
+	}
+
 	// check the build cluster too
 	for _, f := range res.Failures {
 		if f.Reason != nil && *f.Reason == "MISSING" && p.BuildCluster != p.Cluster {
@@ -605,28 +587,38 @@ func (p *AWSProvider) describeTask(arn string) (*ecs.Task, error) {
 			break
 		}
 	}
+
 	if err != nil {
 		return nil, err
 	}
+
 	if len(res.Tasks) != 1 {
 		return nil, fmt.Errorf("could not fetch process status")
 	}
+
 	return res.Tasks[0], nil
 }
 
-func (p *AWSProvider) fetchProcess(task *ecs.Task, psch chan structs.Process, errch chan error) {
+func (p *Provider) describeTask(arn string) (*ecs.Task, error) {
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		task, err := p.describeTaskInner(arn)
+		if err != nil {
+			time.Sleep((1 << uint(attempt)) * time.Second)
+		} else {
+			return task, nil
+		}
+	}
+	return nil, err
+}
+
+func (p *Provider) fetchProcess(task *ecs.Task, psch chan structs.Process, errch chan error) {
 	if len(task.Containers) < 1 {
 		errch <- fmt.Errorf("invalid task: %s", *task.TaskDefinitionArn)
 		return
 	}
 
 	cd, err := p.containerDefinitionForTask(*task.TaskDefinitionArn)
-	if err != nil {
-		errch <- err
-		return
-	}
-
-	ci, err := p.containerInstance(*task.ContainerInstanceArn)
 	if err != nil {
 		errch <- err
 		return
@@ -656,13 +648,23 @@ func (p *AWSProvider) fetchProcess(task *ecs.Task, psch chan structs.Process, er
 	}
 
 	ps := structs.Process{
-		Id:       arnToPid(*task.TaskArn),
-		Name:     *container.Name,
-		App:      coalesces(labels["convox.app"], env["APP"]),
-		Release:  coalesces(labels["convox.release"], env["RELEASE"]),
-		Image:    *cd.Image,
-		Instance: *ci.Ec2InstanceId,
-		Ports:    ports,
+		Id:      arnToPid(*task.TaskArn),
+		Name:    *container.Name,
+		App:     coalesces(labels["convox.app"], env["APP"]),
+		Release: coalesces(labels["convox.release"], env["RELEASE"]),
+		Image:   *cd.Image,
+		Ports:   ports,
+		Status:  taskStatus(*task.LastStatus),
+	}
+
+	if task.ContainerInstanceArn != nil {
+		ci, err := p.containerInstance(*task.ContainerInstanceArn)
+		if err != nil {
+			errch <- err
+			return
+		}
+
+		ps.Instance = *ci.Ec2InstanceId
 	}
 
 	// guard for nil
@@ -730,13 +732,7 @@ func (p *AWSProvider) fetchProcess(task *ecs.Task, psch chan structs.Process, er
 	psch <- ps
 }
 
-func (p *AWSProvider) generateTaskDefinition1(app string, opts structs.ProcessRunOptions) (*ecs.RegisterTaskDefinitionInput, error) {
-	if opts.Service == nil {
-		return nil, fmt.Errorf("must specify a service")
-	}
-
-	service := *opts.Service
-
+func (p *Provider) generateTaskDefinition1(app, service string, opts structs.ProcessRunOptions) (*ecs.RegisterTaskDefinitionInput, error) {
 	a, err := p.AppGet(app)
 	if err != nil {
 		return nil, err
@@ -752,6 +748,11 @@ func (p *AWSProvider) generateTaskDefinition1(app string, opts structs.ProcessRu
 		return nil, err
 	}
 
+	b, err := p.BuildGet(app, r.Build)
+	if err != nil {
+		return nil, err
+	}
+
 	m, err := manifest1.Load([]byte(r.Manifest))
 	if err != nil {
 		return nil, err
@@ -759,7 +760,7 @@ func (p *AWSProvider) generateTaskDefinition1(app string, opts structs.ProcessRu
 
 	s, ok := m.Services[service]
 	if !ok {
-		return nil, fmt.Errorf("no such service: %s", service)
+		return nil, fmt.Errorf("service not found: %s", service)
 	}
 
 	srs, err := p.listStackResources(fmt.Sprintf("%s-%s", p.Rack, app))
@@ -817,6 +818,7 @@ func (p *AWSProvider) generateTaskDefinition1(app string, opts structs.ProcessRu
 	cd := &ecs.ContainerDefinition{
 		DockerLabels: map[string]*string{
 			"convox.process.type": aws.String("oneoff"),
+			"convox.release":      aws.String(release),
 		},
 		Essential:         aws.Bool(true),
 		Image:             aws.String(fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s.%s", a.Outputs["RegistryId"], p.Region, a.Outputs["RegistryRepository"], service, r.Build)),
@@ -837,12 +839,14 @@ func (p *AWSProvider) generateTaskDefinition1(app string, opts structs.ProcessRu
 	env := map[string]string{}
 
 	base := map[string]string{
-		"APP":        app,
-		"AWS_REGION": p.Region,
-		"LOG_GROUP":  a.Outputs["LogGroup"],
-		"PROCESS":    service,
-		"RACK":       p.Rack,
-		"RELEASE":    release,
+		"APP":               app,
+		"AWS_REGION":        p.Region,
+		"BUILD":             b.Id,
+		"BUILD_DESCRIPTION": b.Description,
+		"LOG_GROUP":         a.Outputs["LogGroup"],
+		"PROCESS":           service,
+		"RACK":              p.Rack,
+		"RELEASE":           release,
 	}
 
 	for k, v := range base {
@@ -936,13 +940,7 @@ func (p *AWSProvider) generateTaskDefinition1(app string, opts structs.ProcessRu
 	return req, nil
 }
 
-func (p *AWSProvider) generateTaskDefinition2(app string, opts structs.ProcessRunOptions) (*ecs.RegisterTaskDefinitionInput, error) {
-	if opts.Service == nil {
-		return nil, fmt.Errorf("must specify a service")
-	}
-
-	service := *opts.Service
-
+func (p *Provider) generateTaskDefinition2(app, service string, opts structs.ProcessRunOptions) (*ecs.RegisterTaskDefinitionInput, error) {
 	release, err := p.resolveRelease(app, cs(opts.Release, ""))
 	if err != nil {
 		return nil, err
@@ -953,13 +951,18 @@ func (p *AWSProvider) generateTaskDefinition2(app string, opts structs.ProcessRu
 		return nil, err
 	}
 
+	b, err := p.BuildGet(app, r.Build)
+	if err != nil {
+		return nil, err
+	}
+
 	env := structs.Environment{}
 
 	if err := env.Load([]byte(r.Env)); err != nil {
 		return nil, err
 	}
 
-	m, err := manifest.Load([]byte(r.Manifest), manifest.Environment(env))
+	m, err := manifest.Load([]byte(r.Manifest), env)
 	if err != nil {
 		return nil, err
 	}
@@ -969,36 +972,12 @@ func (p *AWSProvider) generateTaskDefinition2(app string, opts structs.ProcessRu
 		return nil, err
 	}
 
-	sarn, err := p.appResource(app, fmt.Sprintf("Service%sService", upperName(service)))
-	if err != nil {
-		return nil, err
+	labels := map[string]*string{
+		"convox.app":          aws.String(r.App),
+		"convox.generation":   aws.String("2"),
+		"convox.process.type": aws.String("oneoff"),
+		"convox.release":      aws.String(r.Id),
 	}
-
-	sres, err := p.describeServices(&ecs.DescribeServicesInput{
-		Cluster:  aws.String(p.Cluster),
-		Services: []*string{aws.String(sarn)},
-	})
-	if err != nil {
-		return nil, err
-	}
-	if len(sres.Services) != 1 {
-		return nil, fmt.Errorf("could not find service: %s", service)
-	}
-
-	tres, err := p.describeTaskDefinition(&ecs.DescribeTaskDefinitionInput{
-		TaskDefinition: sres.Services[0].TaskDefinition,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if len(tres.TaskDefinition.ContainerDefinitions) < 1 {
-		return nil, fmt.Errorf("could not find container definition for service: %s", service)
-	}
-
-	ocd := tres.TaskDefinition.ContainerDefinitions[0]
-
-	labels := ocd.DockerLabels
-	labels["convox.process.type"] = aws.String("oneoff")
 
 	aid, err := p.accountId()
 	if err != nil {
@@ -1015,18 +994,74 @@ func (p *AWSProvider) generateTaskDefinition2(app string, opts structs.ProcessRu
 		return nil, err
 	}
 
-	senv := s.EnvironmentDefaults()
-
-	for _, e := range ocd.Environment {
-		senv[*e.Name] = *e.Value
+	rs, err := p.describeStack(p.Rack)
+	if err != nil {
+		return nil, err
 	}
 
+	ros := stackOutputs(rs)
+
+	as, err := p.describeStack(p.rackStack(r.App))
+	if err != nil {
+		return nil, err
+	}
+
+	aps := stackParameters(as)
+	aos := stackOutputs(as)
+
+	senv := s.EnvironmentDefaults()
+
+	for _, l := range s.Links {
+		ls, err := m.Service(l)
+		if err != nil {
+			return nil, err
+		}
+
+		host := ros["RouterHost"]
+
+		if ls.Internal {
+			host = ros["RouterInternalHost"]
+		}
+
+		senv[fmt.Sprintf("%s_URL", strings.ToUpper(l))] = fmt.Sprintf("https://%s-%s.%s", r.App, l, host)
+	}
+
+	senv["AWS_REGION"] = p.Region
+	senv["APP"] = r.App
+	senv["BUILD"] = b.Id
+	senv["BUILD_DESCRIPTION"] = b.Description
+	senv["CONVOX_ENV_KEY"] = p.EncryptionKey
 	senv["CONVOX_ENV_URL"] = fmt.Sprintf("s3://%s/releases/%s/env", settings, release)
+	senv["CONVOX_ENV_VARS"] = s.EnvironmentKeys()
+	senv["RACK"] = p.Rack
+	senv["RELEASE"] = r.Id
+	senv["SERVICE"] = service
+
+	if aps["RackUrl"] == "Yes" {
+		senv["RACK_URL"] = fmt.Sprintf("https://convox:%s@rack.%s.convox", url.QueryEscape(p.Password), p.Rack)
+	}
 
 	cenv := []*ecs.KeyValuePair{}
 
 	for k, v := range senv {
 		cenv = append(cenv, &ecs.KeyValuePair{Name: aws.String(k), Value: aws.String(v)})
+	}
+
+	mps := []*ecs.MountPoint{}
+	vs := []*ecs.Volume{}
+
+	for i, v := range s.Volumes {
+		mps = append(mps, &ecs.MountPoint{
+			SourceVolume:  aws.String(fmt.Sprintf("volume-%d", i)),
+			ContainerPath: aws.String(volumeTo(v)),
+		})
+
+		vs = append(vs, &ecs.Volume{
+			Name: aws.String(fmt.Sprintf("volume-%d", i)),
+			Host: &ecs.HostVolumeProperties{
+				SourcePath: aws.String(volumeFrom(r.App, v)),
+			},
+		})
 	}
 
 	cd := &ecs.ContainerDefinition{
@@ -1035,7 +1070,7 @@ func (p *AWSProvider) generateTaskDefinition2(app string, opts structs.ProcessRu
 		Essential:         aws.Bool(true),
 		Image:             aws.String(fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s.%s", aid, p.Region, reg, service, r.Build)),
 		MemoryReservation: aws.Int64(512),
-		MountPoints:       tres.TaskDefinition.ContainerDefinitions[0].MountPoints,
+		MountPoints:       mps,
 		Name:              aws.String(service),
 		Privileged:        aws.Bool(s.Privileged),
 	}
@@ -1047,86 +1082,90 @@ func (p *AWSProvider) generateTaskDefinition2(app string, opts structs.ProcessRu
 	req := &ecs.RegisterTaskDefinitionInput{
 		ContainerDefinitions: []*ecs.ContainerDefinition{cd},
 		Family:               aws.String(fmt.Sprintf("%s-%s-%s", p.Rack, app, service)),
-		TaskRoleArn:          tres.TaskDefinition.TaskRoleArn,
-		Volumes:              tres.TaskDefinition.Volumes,
+		TaskRoleArn:          aws.String(aos["ServiceRole"]),
+		Volumes:              vs,
 	}
 
 	return req, nil
 }
 
-func (p *AWSProvider) processRunAttached(app string, opts structs.ProcessRunOptions) (string, error) {
-	if opts.Service == nil {
-		return "", fmt.Errorf("must specify a service")
-	}
+// func (p *Provider) processRunAttached(app string, rw io.ReadWriter, opts structs.ProcessRunOptions) (*structs.Process, error) {
+//   if opts.Service == nil {
+//     return nil, fmt.Errorf("must specify a service")
+//   }
 
-	td, err := p.taskDefinitionForRun(app, opts)
-	if err != nil {
-		return "", err
-	}
+//   td, err := p.taskDefinitionForRun(app, rw, opts)
+//   if err != nil {
+//     return nil, err
+//   }
 
-	timeout := "3600"
+//   timeout := "3600"
 
-	if opts.Timeout != nil {
-		timeout = strconv.Itoa(*opts.Timeout)
-	}
+//   if opts.Timeout != nil {
+//     timeout = strconv.Itoa(*opts.Timeout)
+//   }
 
-	req := &ecs.RunTaskInput{
-		Cluster:        aws.String(p.Cluster),
-		Count:          aws.Int64(1),
-		StartedBy:      aws.String(fmt.Sprintf("convox.%s", app)),
-		TaskDefinition: aws.String(td),
-	}
+//   req := &ecs.RunTaskInput{
+//     Cluster:        aws.String(p.Cluster),
+//     Count:          aws.Int64(1),
+//     StartedBy:      aws.String(fmt.Sprintf("convox.%s", app)),
+//     TaskDefinition: aws.String(td),
+//   }
 
-	if opts.Command != nil {
-		req.Overrides = &ecs.TaskOverride{
-			ContainerOverrides: []*ecs.ContainerOverride{
-				{
-					Name: aws.String(*opts.Service),
-					Command: []*string{
-						aws.String("sleep"),
-						aws.String(timeout),
-					},
-					Environment: []*ecs.KeyValuePair{
-						&ecs.KeyValuePair{Name: aws.String("COMMAND"), Value: aws.String(*opts.Command)},
-					},
-				},
-			},
-		}
-	}
+//   if opts.Command != nil {
+//     req.Overrides = &ecs.TaskOverride{
+//       ContainerOverrides: []*ecs.ContainerOverride{
+//         {
+//           Name: aws.String(*opts.Service),
+//           Command: []*string{
+//             aws.String("sleep"),
+//             aws.String(timeout),
+//           },
+//           Environment: []*ecs.KeyValuePair{
+//             &ecs.KeyValuePair{Name: aws.String("COMMAND"), Value: aws.String(*opts.Command)},
+//           },
+//         },
+//       },
+//     }
+//   }
 
-	task, err := p.runTask(req)
-	if err != nil {
-		return "", err
-	}
+//   task, err := p.runTask(req)
+//   if err != nil {
+//     return nil, err
+//   }
 
-	status, err := p.waitForTask(*task.TaskArn)
-	if err != nil {
-		return "", err
-	}
-	if status != "RUNNING" {
-		return "", fmt.Errorf("error starting container")
-	}
+//   status, err := p.waitForTask(*task.TaskArn)
+//   if err != nil {
+//     return nil, err
+//   }
+//   if status != "RUNNING" {
+//     return nil, fmt.Errorf("error starting container")
+//   }
 
-	pid := arnToPid(*task.TaskArn)
+//   pid := arnToPid(*task.TaskArn)
 
-	if opts.Command != nil {
-		code, err := p.ProcessExec(app, pid, *opts.Command, structs.ProcessExecOptions{
-			Entrypoint: options.Bool(true),
-			Height:     opts.Height,
-			Stream:     opts.Stream,
-			Width:      opts.Width,
-		})
-		if err != nil && !strings.Contains(err.Error(), "use of closed network") {
-			return "", err
-		}
+//   if opts.Command != nil {
+//     code, err := p.ProcessExec(app, pid, *opts.Command, rw, structs.ProcessExecOptions{
+//       Entrypoint: options.Bool(true),
+//       Height:     opts.Height,
+//       Width:      opts.Width,
+//     })
+//     if err != nil && !strings.Contains(err.Error(), "use of closed network") {
+//       return nil, err
+//     }
 
-		p.stopTask(*task.TaskArn, fmt.Sprintf("exit:%d", code))
-	}
+//     p.stopTask(*task.TaskArn, fmt.Sprintf("exit:%d", code))
+//   }
 
-	return pid, nil
-}
+//   ps, err := p.ProcessGet(app, pid)
+//   if err != nil {
+//     return nil, err
+//   }
 
-func (p *AWSProvider) ProcessWait(app, pid string) (int, error) {
+//   return ps, nil
+// }
+
+func (p *Provider) ProcessWait(app, pid string) (int, error) {
 	arn, err := p.taskArnFromPid(pid)
 	if err != nil {
 		return -1, err
@@ -1156,12 +1195,12 @@ func (p *AWSProvider) ProcessWait(app, pid string) (int, error) {
 	return int(*task.Containers[0].ExitCode), nil
 }
 
-func (p *AWSProvider) rackInstances() (map[string]ec2.Instance, error) {
+func (p *Provider) rackInstances() (map[string]ec2.Instance, error) {
 	req := &ec2.DescribeInstancesInput{
 		Filters: []*ec2.Filter{
 			&ec2.Filter{
 				Name:   aws.String("tag:Rack"),
-				Values: []*string{aws.String(os.Getenv("RACK"))},
+				Values: []*string{aws.String(p.Rack)},
 			},
 		},
 	}
@@ -1183,7 +1222,7 @@ func (p *AWSProvider) rackInstances() (map[string]ec2.Instance, error) {
 	return instances, nil
 }
 
-func (p *AWSProvider) resolveRelease(app, release string) (string, error) {
+func (p *Provider) resolveRelease(app, release string) (string, error) {
 	if release != "" {
 		return release, nil
 	}
@@ -1199,7 +1238,7 @@ func (p *AWSProvider) resolveRelease(app, release string) (string, error) {
 	return a.Release, nil
 }
 
-func (p *AWSProvider) runTask(req *ecs.RunTaskInput) (*ecs.Task, error) {
+func (p *Provider) runTask(req *ecs.RunTaskInput) (*ecs.Task, error) {
 	res, err := p.ecs().RunTask(req)
 	switch {
 	case err != nil:
@@ -1219,7 +1258,7 @@ func (p *AWSProvider) runTask(req *ecs.RunTaskInput) (*ecs.Task, error) {
 	return res.Tasks[0], nil
 }
 
-func (p *AWSProvider) stopTask(arn string, reason string) error {
+func (p *Provider) stopTask(arn string, reason string) error {
 	_, err := p.ecs().StopTask(&ecs.StopTaskInput{
 		Cluster: aws.String(p.Cluster),
 		Reason:  aws.String(reason),
@@ -1245,7 +1284,7 @@ func (p *AWSProvider) stopTask(arn string, reason string) error {
 	return nil
 }
 
-func (p *AWSProvider) taskArnFromPid(pid string) (string, error) {
+func (p *Provider) taskArnFromPid(pid string) (string, error) {
 	running, err := p.tasksByStatus("RUNNING")
 	if err != nil {
 		return "", err
@@ -1267,7 +1306,7 @@ func (p *AWSProvider) taskArnFromPid(pid string) (string, error) {
 	return "", fmt.Errorf("could not find process")
 }
 
-func (p *AWSProvider) tasksByStatus(status string) ([]string, error) {
+func (p *Provider) tasksByStatus(status string) ([]string, error) {
 	req := &ecs.ListTasksInput{
 		Cluster:       aws.String(p.Cluster),
 		DesiredStatus: aws.String(status),
@@ -1295,7 +1334,7 @@ func (p *AWSProvider) tasksByStatus(status string) ([]string, error) {
 	return tasks, nil
 }
 
-func (p *AWSProvider) taskDefinitionsForPrefix(prefix string) ([]string, error) {
+func (p *Provider) taskDefinitionsForPrefix(prefix string) ([]string, error) {
 	tds := []string{}
 
 	for {
@@ -1316,13 +1355,7 @@ func (p *AWSProvider) taskDefinitionsForPrefix(prefix string) ([]string, error) 
 	return tds, nil
 }
 
-func (p *AWSProvider) taskDefinitionForRun(app string, opts structs.ProcessRunOptions) (string, error) {
-	if opts.Service == nil {
-		return "", fmt.Errorf("must specify a service")
-	}
-
-	service := *opts.Service
-
+func (p *Provider) taskDefinitionForRun(app, service string, opts structs.ProcessRunOptions) (string, error) {
 	release, err := p.resolveRelease(app, cs(opts.Release, ""))
 	if err != nil {
 		return "", nil
@@ -1352,32 +1385,30 @@ func (p *AWSProvider) taskDefinitionForRun(app string, opts structs.ProcessRunOp
 
 	switch a.Tags["Generation"] {
 	case "2":
-		td, err = p.generateTaskDefinition2(app, opts)
+		td, err = p.generateTaskDefinition2(app, service, opts)
 		if err != nil {
 			return "", err
 		}
 	default:
-		td, err = p.generateTaskDefinition1(app, opts)
+		td, err = p.generateTaskDefinition1(app, service, opts)
 		if err != nil {
 			return "", err
 		}
 	}
 
-	if opts.Stream == nil {
-		group, err := p.stackResource(p.rackStack(app), "LogGroup")
-		if err != nil {
-			return "", err
-		}
+	group, err := p.stackResource(p.rackStack(app), "LogGroup")
+	if err != nil {
+		return "", err
+	}
 
-		for i := range td.ContainerDefinitions {
-			td.ContainerDefinitions[i].LogConfiguration = &ecs.LogConfiguration{
-				LogDriver: aws.String("awslogs"),
-				Options: map[string]*string{
-					"awslogs-group":         aws.String(*group.PhysicalResourceId),
-					"awslogs-region":        aws.String(p.Region),
-					"awslogs-stream-prefix": aws.String("service"),
-				},
-			}
+	for i := range td.ContainerDefinitions {
+		td.ContainerDefinitions[i].LogConfiguration = &ecs.LogConfiguration{
+			LogDriver: aws.String("awslogs"),
+			Options: map[string]*string{
+				"awslogs-group":         aws.String(*group.PhysicalResourceId),
+				"awslogs-region":        aws.String(p.Region),
+				"awslogs-stream-prefix": aws.String("service"),
+			},
 		}
 	}
 
@@ -1417,7 +1448,7 @@ func truncate(f float64, precision int) float64 {
 	return float64(int(f*p)) / p
 }
 
-func (p *AWSProvider) waitForTask(arn string) (string, error) {
+func (p *Provider) waitForTask(arn string) (string, error) {
 	timeout := time.After(300 * time.Second)
 	tick := time.Tick(1 * time.Second)
 

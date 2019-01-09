@@ -11,10 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/convox/rack/structs"
-	"github.com/convox/rack/test/awsutil"
+	"github.com/convox/rack/pkg/structs"
+	"github.com/convox/rack/pkg/test/awsutil"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func init() {
@@ -135,35 +136,6 @@ func TestBuildGet(t *testing.T) {
 //     Tags:    map[string]string{},
 //   }, b)
 // }
-
-func TestBuildDelete(t *testing.T) {
-	provider := StubAwsProvider(
-		cycleBuildGetItem,
-		cycleBuildDescribeStacks,
-		cycleReleaseGetItem,
-		cycleReleaseListStackResources,
-		cycleReleaseEnvironmentGet,
-		cycleSystemListStackResources,
-		cycleBuildDeleteItem,
-		cycleBuildBatchDeleteImage,
-	)
-	defer provider.Close()
-
-	b, err := provider.BuildDelete("httpd", "B123")
-
-	assert.NoError(t, err)
-	assert.EqualValues(t, &structs.Build{
-		Id:       "BAFVEWUCAYT",
-		App:      "httpd",
-		Logs:     "object:///test/foo",
-		Manifest: "version: \"2\"\nnetworks: {}\nservices:\n  web:\n    build: {}\n    command: null\n    image: httpd\n    ports:\n    - 80:80\n",
-		Release:  "RVWOJNKRAXU",
-		Status:   "complete",
-		Started:  time.Unix(1459780456, 178278576).UTC(),
-		Ended:    time.Unix(1459780542, 440881687).UTC(),
-		Tags:     map[string]string{},
-	}, b)
-}
 
 func TestBuildExport(t *testing.T) {
 	provider := StubAwsProvider(
@@ -378,6 +350,7 @@ func TestBuildLogsRunning(t *testing.T) {
 	buf := &bytes.Buffer{}
 
 	r, err := provider.BuildLogs("httpd", "B123", structs.LogsOptions{})
+	require.NoError(t, err)
 
 	io.Copy(buf, r)
 
@@ -415,25 +388,6 @@ var cycleBuildBatchDeleteImage = awsutil.Cycle{
 			],
 			"registryId": "132866487567",
 			"repositoryName": "convox-httpd-hqvvfosgxt"
-		}`,
-	},
-	awsutil.Response{
-		StatusCode: 200,
-		Body:       `{}`,
-	},
-}
-
-var cycleBuildDeleteItem = awsutil.Cycle{
-	awsutil.Request{
-		RequestURI: "/",
-		Operation:  "DynamoDB_20120810.DeleteItem",
-		Body: `{
-			"Key": {
-				"id": {
-					"S": "B123"
-				}
-			},
-			"TableName": "convox-builds"
 		}`,
 	},
 	awsutil.Response{
@@ -763,7 +717,7 @@ var cycleBuildGetAuthorizationToken = awsutil.Cycle{
 		Body: `{
 			"authorizationData": [
 				{
-					"authorizationToken": "dXNlcjoxMjM0NQo=",
+					"authorizationToken": "dXNlcjoxMjM0NQ==",
 					"expiresAt": 1473039114.46,
 					"proxyEndpoint": "https://778743527532.dkr.ecr.us-east-1.amazonaws.com"
 				}
@@ -1415,7 +1369,7 @@ var cycleBuildDockerLogin = awsutil.Cycle{
 	Request: awsutil.Request{
 		RequestURI: "/v1.24/auth",
 		Body: `{
-			"password": "12345\n",
+			"password": "12345",
 			"serveraddress": "778743527532.dkr.ecr.us-east-1.amazonaws.com",
 			"username": "user"
 		}`,

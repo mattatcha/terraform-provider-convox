@@ -39,6 +39,11 @@
         "Default": "false",
         "AllowedValues": [ "true", "false" ]
       },
+      "EngineVersion": {
+        "Description": "Version of Postgres",
+        "Default": "9.6.3",
+        "Type": "String"
+      },
       "Family": {
         "Type": "String",
         "Default": "postgres9.6",
@@ -85,11 +90,6 @@
       "VpcCidr": {
         "Description": "VPC CIDR Block",
         "Type": "String"
-      },
-      "Version": {
-        "Description": "Version of Postgres",
-        "Default": "9.6.3",
-        "Type": "String"
       }
     },
     "Outputs": {
@@ -132,7 +132,7 @@
           "BackupRetentionPeriod":  { "Ref": "BackupRetentionPeriod" },
           "DBSubnetGroupName": { "Ref": "SubnetGroup" },
           "Engine": "postgres",
-          "EngineVersion": { "Ref": "Version" },
+          "EngineVersion": { "Ref": "EngineVersion" },
           "KmsKeyId": { "Fn::If": [ "Encrypted", { "Ref": "EncryptionKey" }, { "Ref": "AWS::NoValue" } ] },
           "MasterUsername": { "Ref": "Username" },
           "MasterUserPassword": { "Ref": "Password" },

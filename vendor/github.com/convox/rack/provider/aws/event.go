@@ -6,7 +6,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/sns"
-	"github.com/convox/rack/structs"
+	"github.com/convox/rack/pkg/structs"
 )
 
 // EventSend publishes an important message out to the world.
@@ -28,11 +28,11 @@ type event struct {
 	Timestamp time.Time         `json:"timestamp"`
 }
 
-func (p *AWSProvider) EventSend(action string, opts structs.EventSendOptions) error {
+func (p *Provider) EventSend(action string, opts structs.EventSendOptions) error {
 	e := event{
 		Action:    action,
 		Data:      opts.Data,
-		Status:    coalesces(opts.Status, "success"),
+		Status:    cs(opts.Status, "success"),
 		Timestamp: time.Now().UTC(),
 	}
 
@@ -43,9 +43,9 @@ func (p *AWSProvider) EventSend(action string, opts structs.EventSendOptions) er
 		}
 	}
 
-	if opts.Error != "" {
+	if opts.Error != nil {
 		e.Status = "error"
-		e.Data["message"] = opts.Error
+		e.Data["message"] = *opts.Error
 	}
 
 	e.Data["rack"] = p.Rack

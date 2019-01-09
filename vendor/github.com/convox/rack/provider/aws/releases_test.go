@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/convox/rack/options"
-	"github.com/convox/rack/structs"
-	"github.com/convox/rack/test/awsutil"
+	"github.com/convox/rack/pkg/options"
+	"github.com/convox/rack/pkg/structs"
+	"github.com/convox/rack/pkg/test/awsutil"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -40,7 +40,7 @@ func TestReleaseList(t *testing.T) {
 	)
 	defer provider.Close()
 
-	r, err := provider.ReleaseList("httpd", structs.ReleaseListOptions{Count: options.Int(20)})
+	r, err := provider.ReleaseList("httpd", structs.ReleaseListOptions{Limit: options.Int(20)})
 
 	assert.NoError(t, err)
 

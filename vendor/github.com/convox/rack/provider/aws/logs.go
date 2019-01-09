@@ -10,10 +10,10 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
-	"github.com/convox/rack/structs"
+	"github.com/convox/rack/pkg/structs"
 )
 
-func (p *AWSProvider) subscribeLogs(group string, opts structs.LogsOptions) (io.ReadCloser, error) {
+func (p *Provider) subscribeLogs(group string, opts structs.LogsOptions) (io.ReadCloser, error) {
 	r, w := io.Pipe()
 
 	go p.streamLogs(w, group, opts)
@@ -21,7 +21,7 @@ func (p *AWSProvider) subscribeLogs(group string, opts structs.LogsOptions) (io.
 	return r, nil
 }
 
-func (p *AWSProvider) streamLogs(w io.WriteCloser, group string, opts structs.LogsOptions) error {
+func (p *Provider) streamLogs(w io.WriteCloser, group string, opts structs.LogsOptions) error {
 	log := Logger.At("streamLogs").Namespace("group=%s", group)
 
 	defer w.Close()
@@ -31,15 +31,15 @@ func (p *AWSProvider) streamLogs(w io.WriteCloser, group string, opts structs.Lo
 		LogGroupName: aws.String(group),
 	}
 
-	if opts.Filter != "" {
-		log = log.Namespace("filter=%s", opts.Filter)
-		req.FilterPattern = aws.String(opts.Filter)
+	if opts.Filter != nil {
+		log = log.Namespace("filter=%s", *opts.Filter)
+		req.FilterPattern = aws.String(*opts.Filter)
 	}
 
 	var start int64
 
-	if !opts.Since.IsZero() {
-		start = opts.Since.UnixNano() / int64(time.Millisecond)
+	if opts.Since != nil {
+		start = time.Now().UTC().Add((*opts.Since)*-1).UnixNano() / int64(time.Millisecond)
 		log = log.Namespace("start=%d", start)
 		req.StartTime = aws.Int64(start)
 	}
@@ -69,7 +69,7 @@ func (p *AWSProvider) streamLogs(w io.WriteCloser, group string, opts structs.Lo
 			start = latest + 1
 		}
 
-		log.Success()
+		// log.Success()
 
 		if res.NextToken != nil {
 			req.NextToken = res.NextToken
@@ -79,7 +79,7 @@ func (p *AWSProvider) streamLogs(w io.WriteCloser, group string, opts structs.Lo
 
 		req.NextToken = nil
 
-		if !opts.Follow {
+		if opts.Follow != nil && !*opts.Follow {
 			break
 		}
 
@@ -95,7 +95,7 @@ func (p *AWSProvider) streamLogs(w io.WriteCloser, group string, opts structs.Lo
 	return nil
 }
 
-func (p *AWSProvider) writeLogEvents(w io.Writer, events []*cloudwatchlogs.FilteredLogEvent) (int64, error) {
+func (p *Provider) writeLogEvents(w io.Writer, events []*cloudwatchlogs.FilteredLogEvent) (int64, error) {
 	if len(events) == 0 {
 		return 0, nil
 	}
@@ -141,7 +141,7 @@ func (p *AWSProvider) writeLogEvents(w io.Writer, events []*cloudwatchlogs.Filte
 		}
 	}
 
-	log.Success()
+	// log.Success()
 
 	return latest, nil
 }

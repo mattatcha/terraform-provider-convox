@@ -9,14 +9,17 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/user"
 	"text/template"
 	"time"
 
-	"github.com/convox/rack/structs"
+	"github.com/convox/rack/pkg/structs"
 	"github.com/pkg/errors"
+
+	cv "github.com/convox/version"
 )
 
 const (
@@ -84,16 +87,34 @@ func (p *Provider) SystemGet() (*structs.System, error) {
 	log := p.logger("SystemGet")
 
 	system := &structs.System{
-		Image:   fmt.Sprintf("%s:%s", p.Image, p.Version),
-		Name:    p.Name,
-		Status:  "running",
-		Version: p.Version,
+		Domain:   fmt.Sprintf("rack.%s", p.Rack),
+		Name:     p.Rack,
+		Provider: "local",
+		Region:   "local",
+		Status:   "running",
+		Version:  p.Version,
 	}
 
 	return system, log.Success()
 }
 
-func (p *Provider) SystemInstall(name string, opts structs.SystemInstallOptions) (string, error) {
+func (p *Provider) SystemInstall(w io.Writer, opts structs.SystemInstallOptions) (string, error) {
+	name := cs(opts.Name, "convox")
+
+	var version string
+
+	if opts.Version != nil {
+		version = *opts.Version
+	} else {
+		v, err := cv.Latest()
+		if err != nil {
+			return "", err
+		}
+		version = v
+	}
+
+	id := cs(opts.Id, "")
+
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
@@ -108,40 +129,39 @@ func (p *Provider) SystemInstall(name string, opts structs.SystemInstallOptions)
 		return "", fmt.Errorf("must be root to install a local rack")
 	}
 
-	if opts.Output != nil {
-		fmt.Fprintf(opts.Output, "pulling: convox/rack:%s\n", *opts.Version)
-	}
+	fmt.Fprintf(w, "pulling: convox/rack:%s\n", version)
 
-	if opts.Version == nil {
-		return "", fmt.Errorf("must specify a version")
-	}
-
-	// vf := filepath.Join(p.Volume, "version")
-
-	// if err := ioutil.WriteFile(vf, []byte(*opts.Version), 0644); err != nil {
-	//   return "", err
-	// }
-
-	// cmd := exec.Command("docker", "pull", fmt.Sprintf("convox/rack:%s", *opts.Version))
-
-	// if opts.Output != nil {
-	//   cmd.Stdout = text.NewIndentWriter(opts.Output, []byte("  "))
-	//   cmd.Stderr = text.NewIndentWriter(opts.Output, []byte("  "))
-	// }
-
-	// if err := cmd.Run(); err != nil {
-	//   return "", err
-	// }
-
-	if err := launcherInstall("convox.router", opts, exe, "router"); err != nil {
+	if err := launcherInstall("router", w, opts, exe, "router"); err != nil {
 		return "", err
 	}
 
-	if err := launcherInstall("convox.rack", opts, exe, "rack", "start"); err != nil {
+	if err := launcherInstall(fmt.Sprintf("rack.%s", name), w, opts, exe, "rack", "start", "--id", id, "--name", name); err != nil {
 		return "", err
 	}
 
-	return "https://localhost:5443", nil
+	url := fmt.Sprintf("https://rack.%s", name)
+
+	fmt.Fprintf(w, "waiting for rack... ")
+
+	tick := time.Tick(2 * time.Second)
+	timeout := time.After(30 * time.Minute)
+
+	ht := *(http.DefaultTransport.(*http.Transport))
+	ht.TLSClientConfig.InsecureSkipVerify = true
+	hc := &http.Client{Transport: &ht}
+
+	for {
+		select {
+		case <-tick:
+			_, err := hc.Get(url)
+			if err == nil {
+				fmt.Fprintf(w, "OK\n")
+				return url, nil
+			}
+		case <-timeout:
+			return "", fmt.Errorf("timeout")
+		}
+	}
 }
 
 func (p *Provider) SystemLogs(opts structs.LogsOptions) (io.ReadCloser, error) {
@@ -156,12 +176,12 @@ func (p *Provider) SystemLogs(opts structs.LogsOptions) (io.ReadCloser, error) {
 
 	args := []string{"logs"}
 
-	if opts.Follow {
+	if opts.Follow == nil || *opts.Follow {
 		args = append(args, "-f")
 	}
 
-	if !opts.Since.IsZero() {
-		args = append(args, "--since", opts.Since.Format(time.RFC3339))
+	if opts.Since != nil {
+		args = append(args, "--since", time.Now().UTC().Add((*opts.Since)*-1).Format(time.RFC3339))
 	}
 
 	args = append(args, hostname)
@@ -181,6 +201,10 @@ func (p *Provider) SystemLogs(opts structs.LogsOptions) (io.ReadCloser, error) {
 	}()
 
 	return r, log.Success()
+}
+
+func (p *Provider) SystemMetrics(opts structs.MetricsOptions) (structs.Metrics, error) {
+	return nil, fmt.Errorf("unimplemented")
 }
 
 func (p *Provider) SystemOptions() (map[string]string, error) {
@@ -214,30 +238,27 @@ func (p *Provider) SystemReleases() (structs.Releases, error) {
 	return nil, fmt.Errorf("unimplemented")
 }
 
-func (p *Provider) SystemUninstall(name string, opts structs.SystemInstallOptions) error {
-	launcherRemove("convox.frontend")
-	launcherRemove("convox.rack")
-	launcherRemove("convox.router")
+func (p *Provider) SystemUninstall(name string, w io.Writer, opts structs.SystemUninstallOptions) error {
+	u, err := user.Current()
+	if err != nil {
+		return err
+	}
 
-	exec.Command("launchctl", "remove", "convox.frontend").Run()
-	exec.Command("launchctl", "remove", "convox.rack").Run()
-	exec.Command("launchctl", "remove", "convox.router").Run()
+	if u.Uid != "0" {
+		return fmt.Errorf("must be root to uninstall a local rack")
+	}
+
+	launcherRemove("rack", w)
+	launcherRemove(fmt.Sprintf("rack.%s", name), w)
 
 	return nil
 }
 
 func (p *Provider) SystemUpdate(opts structs.SystemUpdateOptions) error {
-	log := p.logger("SystemUpdate").Append("version=%q", opts.Version)
-
-	w := opts.Output
-	if w == nil {
-		w = ioutil.Discard
-	}
+	log := p.logger("SystemUpdate").Append("version=%q", *opts.Version)
 
 	if opts.Version != nil {
 		v := *opts.Version
-
-		w.Write([]byte("Restarting... OK\n"))
 
 		if err := ioutil.WriteFile("/var/convox/version", []byte(v), 0644); err != nil {
 			return errors.WithStack(log.Error(err))
@@ -256,14 +277,14 @@ func (p *Provider) SystemUpdate(opts structs.SystemUpdateOptions) error {
 	return log.Success()
 }
 
-func launcherInstall(name string, opts structs.SystemInstallOptions, command string, args ...string) error {
+func launcherInstall(name string, w io.Writer, opts structs.SystemInstallOptions, command string, args ...string) error {
 	var buf bytes.Buffer
 
 	params := map[string]interface{}{
 		"Name":    name,
 		"Command": command,
 		"Args":    args,
-		"Logs":    fmt.Sprintf("/var/log/%s.log", name),
+		"Logs":    fmt.Sprintf("/var/log/convox/%s.log", name),
 	}
 
 	if err := launcher.Execute(&buf, params); err != nil {
@@ -272,9 +293,7 @@ func launcherInstall(name string, opts structs.SystemInstallOptions, command str
 
 	path := launcherPath(name)
 
-	if opts.Output != nil {
-		fmt.Fprintf(opts.Output, "installing: %s\n", path)
-	}
+	fmt.Fprintf(w, "installing: %s\n", path)
 
 	if err := ioutil.WriteFile(path, buf.Bytes(), 0644); err != nil {
 		return err
@@ -287,10 +306,10 @@ func launcherInstall(name string, opts structs.SystemInstallOptions, command str
 	return nil
 }
 
-func launcherRemove(name string) error {
+func launcherRemove(name string, w io.Writer) error {
 	path := launcherPath(name)
 
-	fmt.Printf("removing: %s\n", path)
+	fmt.Fprintf(w, "removing: %s\n", path)
 
 	launcherStop(name)
 

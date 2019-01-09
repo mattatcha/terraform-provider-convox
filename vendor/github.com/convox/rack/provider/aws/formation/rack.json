@@ -10,10 +10,14 @@
     },
     "BlankInstanceBootCommand": { "Fn::Equals": [ { "Ref": "InstanceBootCommand" }, "" ] },
     "BlankInstanceRunCommand": { "Fn::Equals": [ { "Ref": "InstanceRunCommand" }, "" ] },
-    "BlankInstanceSecurityGroup": { "Fn::Equals": [ {"Ref": "InstanceSecurityGroup" }, "" ]},
+    "BlankInstanceSecurityGroup": { "Fn::Equals": [ {"Ref": "InstanceSecurityGroup" }, "" ] },
+    "BlankInternalSuffix": { "Fn::Equals": [ { "Ref": "InternalSuffix"}, "" ] },
     "BlankInternetGateway": { "Fn::Equals": [ { "Ref": "InternetGateway"}, "" ] },
     "BlankKey": { "Fn::Equals": [ { "Ref": "Key" }, "" ] },
     "BlankLogBucket": { "Fn::Equals": [ { "Ref": "LogBucket" }, "" ] },
+    "BlankLogRetention": { "Fn::Equals": [ { "Ref": "LogRetention" }, "" ] },
+    "BlankRouterSecurityGroup": { "Fn::Equals": [ { "Fn::Join": [ ",", { "Ref": "RouterSecurityGroup" } ] }, "" ] },
+    "BlankSslPolicy": { "Fn::Equals": [ { "Ref": "SslPolicy" }, "" ] },
     "DedicatedBuilder": { "Fn::Not": [ { "Fn::Equals": [ { "Ref": "BuildInstance" }, "" ] } ] },
     "Development": { "Fn::Equals": [ { "Ref": "Development" }, "Yes" ] },
     "EncryptEbs" : { "Fn::Equals": [ { "Ref": "EncryptEbs" }, "Yes" ] },
@@ -33,6 +37,7 @@
       "Fn::And": [ { "Condition": "Private" }, { "Condition": "ThirdAvailabilityZone" } ]
     },
     "PrivateApi": { "Fn::Equals": [ { "Ref": "PrivateApi" }, "Yes" ] },
+    "PublicRouter": { "Fn::Equals": [ { "Ref": "InternalOnly" }, "No" ] },
     "RegionHasEFS": { "Fn::Equals": [
       { "Fn::FindInMap": [ "RegionConfig", { "Ref": "AWS::Region" }, "EFS" ] },
       "Yes"
@@ -47,37 +52,33 @@
     ] },
     "ThirdAvailabilityZoneAndNotExistingVpcAndBlankInternetGateway": {
       "Fn::And": [
-        { "Condition": "ThirdAvailabilityZone"},
-        { "Condition": "NotExistingVpcAndBlankInternetGateway"}
+        { "Condition": "ThirdAvailabilityZone" },
+        { "Condition": "NotExistingVpcAndBlankInternetGateway" }
       ]
     }
   },
   "Mappings": {
     "RegionConfig": {
-      "ap-northeast-1": { "Ami": "ami-5add893c", "EFS": "No",  "ThirdAvailabilityZone": "Yes", "ELBAccountId": "582318560864", "Fargate": "No"  },
-      "ap-northeast-2": { "Ami": "ami-ba74d8d4", "EFS": "No",  "ThirdAvailabilityZone": "No",  "ELBAccountId": "600734575887", "Fargate": "No"  },
-      "ap-south-1":     { "Ami": "ami-2149114e", "EFS": "No",  "ThirdAvailabilityZone": "No",  "ELBAccountId": "718504428378", "Fargate": "No"  },
-      "ap-southeast-1": { "Ami": "ami-acbcefd0", "EFS": "No",  "ThirdAvailabilityZone": "Yes", "ELBAccountId": "114774131450", "Fargate": "No"  },
-      "ap-southeast-2": { "Ami": "ami-4cc5072e", "EFS": "Yes", "ThirdAvailabilityZone": "Yes", "ELBAccountId": "783225319266", "Fargate": "No"  },
-      "ca-central-1":   { "Ami": "ami-a535b2c1", "EFS": "No",  "ThirdAvailabilityZone": "No",  "ELBAccountId": "985666609251", "Fargate": "No"  },
-      "eu-central-1":   { "Ami": "ami-ac055447", "EFS": "Yes", "ThirdAvailabilityZone": "Yes", "ELBAccountId": "054676820928", "Fargate": "No"  },
-      "eu-west-1":      { "Ami": "ami-bfb5fec6", "EFS": "Yes", "ThirdAvailabilityZone": "Yes", "ELBAccountId": "156460612806", "Fargate": "No"  },
-      "eu-west-2":      { "Ami": "ami-a48d6bc3", "EFS": "No",  "ThirdAvailabilityZone": "Yes", "ELBAccountId": "652711504416", "Fargate": "No"  },
-      "eu-west-3":      { "Ami": "ami-914afcec", "EFS": "No",  "ThirdAvailabilityZone": "Yes", "ELBAccountId": "009996457667", "Fargate": "No"  },
-      "sa-east-1":      { "Ami": "ami-d3bce9bf", "EFS": "No",  "ThirdAvailabilityZone": "Yes", "ELBAccountId": "507241528517", "Fargate": "No"  },
-      "us-east-1":      { "Ami": "ami-cb17d8b6", "EFS": "Yes", "ThirdAvailabilityZone": "Yes", "ELBAccountId": "127311923021", "Fargate": "Yes" },
-      "us-east-2":      { "Ami": "ami-1b90a67e", "EFS": "Yes", "ThirdAvailabilityZone": "Yes", "ELBAccountId": "033677994240", "Fargate": "No"  },
-      "us-west-1":      { "Ami": "ami-9cbbaffc", "EFS": "Yes", "ThirdAvailabilityZone": "No",  "ELBAccountId": "027434742980", "Fargate": "No"  },
-      "us-west-2":      { "Ami": "ami-05b5277d", "EFS": "Yes", "ThirdAvailabilityZone": "Yes", "ELBAccountId": "797873946194", "Fargate": "No"  }
+      "ap-northeast-1": { "Ami": "ami-0c38293d60d98af86", "EFS": "Yes", "ThirdAvailabilityZone": "Yes", "ELBAccountId": "582318560864", "Fargate": "Yes" },
+      "ap-northeast-2": { "Ami": "ami-0bdc871079baf9649", "EFS": "Yes", "ThirdAvailabilityZone": "No",  "ELBAccountId": "600734575887", "Fargate": "Yes" },
+      "ap-south-1":     { "Ami": "ami-0b7c3be99909df6ef", "EFS": "No",  "ThirdAvailabilityZone": "No",  "ELBAccountId": "718504428378", "Fargate": "Yes" },
+      "ap-southeast-1": { "Ami": "ami-0e28ff4e3f1776d86", "EFS": "Yes", "ThirdAvailabilityZone": "Yes", "ELBAccountId": "114774131450", "Fargate": "Yes" },
+      "ap-southeast-2": { "Ami": "ami-0eed1c915ea891aca", "EFS": "Yes", "ThirdAvailabilityZone": "Yes", "ELBAccountId": "783225319266", "Fargate": "Yes" },
+      "ca-central-1":   { "Ami": "ami-02c80e9173258d289", "EFS": "No",  "ThirdAvailabilityZone": "No",  "ELBAccountId": "985666609251", "Fargate": "Yes" },
+      "eu-central-1":   { "Ami": "ami-055aa9664ef169e25", "EFS": "Yes", "ThirdAvailabilityZone": "Yes", "ELBAccountId": "054676820928", "Fargate": "Yes" },
+      "eu-north-1":     { "Ami": "ami-09c22e4e811424b3a", "EFS": "No",  "ThirdAvailabilityZone": "Yes", "ELBAccountId": "897822967062", "Fargate": "No"  },
+      "eu-west-1":      { "Ami": "ami-0acc9f8be17a41897", "EFS": "Yes", "ThirdAvailabilityZone": "Yes", "ELBAccountId": "156460612806", "Fargate": "Yes" },
+      "eu-west-2":      { "Ami": "ami-0b5225210a12d9951", "EFS": "No",  "ThirdAvailabilityZone": "Yes", "ELBAccountId": "652711504416", "Fargate": "Yes" },
+      "eu-west-3":      { "Ami": "ami-0caadc4f0db31a303", "EFS": "No",  "ThirdAvailabilityZone": "Yes", "ELBAccountId": "009996457667", "Fargate": "No"  },
+      "sa-east-1":      { "Ami": "ami-078146697425f25a7", "EFS": "No",  "ThirdAvailabilityZone": "Yes", "ELBAccountId": "507241528517", "Fargate": "No"  },
+      "us-east-1":      { "Ami": "ami-0a6b7e0cc0b1f464f", "EFS": "Yes", "ThirdAvailabilityZone": "Yes", "ELBAccountId": "127311923021", "Fargate": "Yes" },
+      "us-east-2":      { "Ami": "ami-037a92bf1efdb11a2", "EFS": "Yes", "ThirdAvailabilityZone": "Yes", "ELBAccountId": "033677994240", "Fargate": "Yes" },
+      "us-west-1":      { "Ami": "ami-0184f498956de7db5", "EFS": "Yes", "ThirdAvailabilityZone": "No",  "ELBAccountId": "027434742980", "Fargate": "Yes" },
+      "us-west-2":      { "Ami": "ami-0c1f4871ebaae6d86", "EFS": "Yes", "ThirdAvailabilityZone": "Yes", "ELBAccountId": "797873946194", "Fargate": "Yes" }
     }
   },
   "Outputs": {
-    "Autoscale": {
-      "Value": { "Fn::If": [ "Autoscale", "true", "false" ] }
-    },
-    "AutoscaleExtra": {
-      "Value": { "Ref": "AutoscaleExtra" }
-    },
+    "Foo": { "Value": "3" },
     "AutoscalingGroup": {
       "Value": { "Ref": "Instances" }
     },
@@ -90,9 +91,6 @@
     "BuildCluster": {
       "Value": { "Fn::If": [ "DedicatedBuilder", { "Ref": "BuildCluster" }, { "Ref": "Cluster" } ] }
     },
-    "CloudformationTopic": {
-      "Value": { "Ref": "CloudformationTopic" }
-    },
     "Cluster": {
       "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:Cluster" } },
       "Value": { "Ref": "Cluster" }
@@ -104,6 +102,7 @@
       "Value": { "Fn::GetAtt": [ "Balancer", "DNSName" ] }
     },
     "Domain": {
+      "Condition": "PublicRouter",
       "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:Domain" } },
       "Value": { "Fn::GetAtt": [ "Router", "DNSName" ] }
     },
@@ -118,17 +117,12 @@
     "DynamoReleases": {
       "Value": { "Ref": "DynamoReleases" }
     },
+    "EcsPollInterval": {
+      "Value": { "Ref": "EcsPollInterval" }
+    },
     "EncryptionKey": {
       "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:EncryptionKey" } },
       "Value": { "Ref": "EncryptionKey" }
-    },
-    "Endpoint": {
-      "Value": { "Fn::Join": [ ".", [
-        "rack",
-        { "Fn::Select": [ 0, { "Fn::Split": [ ".", { "Fn::GetAtt": [ "Router", "DNSName" ] } ] } ] },
-        { "Fn::Select": [ 1, { "Fn::Split": [ ".", { "Fn::GetAtt": [ "Router", "DNSName" ] } ] } ] },
-        "convox.site"
-      ] ] }
     },
     "Fargate": {
       "Value": { "Fn::FindInMap": [ "RegionConfig", { "Ref": "AWS::Region" }, "Fargate" ] }
@@ -147,6 +141,10 @@
     },
     "InstancesRole": {
       "Value": { "Fn::GetAtt": [ "InstancesRole", "Arn" ] }
+    },
+    "InstancesSecurityGroup": {
+      "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:InstancesSecurityGroup" } },
+      "Value": { "Fn::If": [ "BlankInstanceSecurityGroup", { "Ref": "InstancesSecurity" }, { "Ref": "InstanceSecurityGroup" } ] }
     },
     "Internal": {
       "Value": { "Ref": "Internal" }
@@ -205,21 +203,16 @@
     "Private": {
       "Value": { "Ref": "Private" }
     },
-    "Provider": {
-      "Condition": "Development",
-      "Value": "aws"
-    },
     "Rack": {
       "Value": { "Ref": "AWS::StackName" }
     },
-    "Release": {
-      "Value": { "Ref": "Version" }
-    },
     "RouterCertificate": {
+      "Condition": "PublicRouter",
       "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:RouterCertificate" } },
       "Value": { "Ref": "RouterApiCertificate" }
     },
     "RouterHost": {
+      "Condition": "PublicRouter",
       "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:RouterHost" } },
       "Value": { "Fn::Join": [ ".", [
         { "Fn::Select": [ 0, { "Fn::Split": [ ".", { "Fn::GetAtt": [ "Router", "DNSName" ] } ] } ] },
@@ -228,12 +221,24 @@
       ] ] }
     },
     "RouterListener80": {
+      "Condition": "PublicRouter",
       "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:RouterListener80" } },
       "Value": { "Ref": "RouterListener80" }
     },
     "RouterListener443": {
+      "Condition": "PublicRouter",
       "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:RouterListener443" } },
       "Value": { "Ref": "RouterListener443" }
+    },
+    "RouterName": {
+      "Condition": "PublicRouter",
+      "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:RouterName" } },
+      "Value": { "Fn::GetAtt": [ "Router", "LoadBalancerFullName" ] }
+    },
+    "RouterInternalCertificate": {
+      "Condition": "Internal",
+      "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:RouterInternalCertificate" } },
+      "Value": { "Ref": "RouterInternalCertificate" }
     },
     "RouterInternalHost": {
       "Condition": "Internal",
@@ -254,6 +259,21 @@
       "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:RouterInternalListener443" } },
       "Value": { "Ref": "RouterInternalListener443" }
     },
+    "RouterInternalName": {
+      "Condition": "Internal",
+      "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:RouterInternalName" } },
+      "Value": { "Fn::GetAtt": [ "RouterInternal", "LoadBalancerFullName" ] }
+    },
+    "RouterInternalSecurityGroup": {
+      "Condition": "Internal",
+      "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:RouterInternalSecurityGroup" } },
+      "Value": { "Ref": "RouterInternalSecurity" }
+    },
+    "RouterSecurityGroup": {
+      "Condition": "PublicRouter",
+      "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:RouterSecurityGroup" } },
+      "Value": { "Fn::If": [ "BlankRouterSecurityGroup", { "Ref": "RouterSecurity" }, { "Fn::Select": [ 0, { "Ref": "RouterSecurityGroup" } ] } ] }
+    },
     "RouteTablePublic": {
       "Condition": "NotExistingVpcAndBlankInternetGateway",
       "Value": { "Ref": "Routes" }
@@ -264,9 +284,6 @@
         ""
       ] }
     },
-    "SecurityGroup": {
-      "Value": { "Fn::If": [ "BlankInstanceSecurityGroup", { "Ref": "InstancesSecurity" }, { "Ref": "InstanceSecurityGroup" } ] }
-    },
     "ServiceRole": {
       "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:ServiceRole" } },
       "Value": { "Fn::GetAtt": [ "ServiceRole", "Arn" ] }
@@ -275,7 +292,7 @@
       "Value": { "Ref": "Settings" }
     },
     "SpotInstances": {
-      "Value": { "Fn::If": [ "SpotInstances", "true", "false" ] }
+      "Value": { "Fn::If": [ "SpotInstances", "Yes", "No" ] }
     },
     "Subnets": {
       "Value": {
@@ -316,8 +333,26 @@
         ]
       }
     },
+    "SubnetPrivate0": {
+      "Condition": "Private",
+      "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:SubnetPrivate0" } },
+      "Value": { "Ref": "SubnetPrivate0" }
+    },
+    "SubnetPrivate1": {
+      "Condition": "Private",
+      "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:SubnetPrivate1" } },
+      "Value": { "Ref": "SubnetPrivate1" }
+    },
+    "SubnetPrivate2": {
+      "Condition": "PrivateAndThirdAvailabilityZone",
+      "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:SubnetPrivate2" } },
+      "Value": { "Ref": "SubnetPrivate2" }
+    },
     "StackId": {
       "Value": { "Ref": "AWS::StackId" }
+    },
+    "Version": {
+      "Value": { "Ref": "Version" }
     },
     "Vpc": {
       "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:Vpc" } },
@@ -361,7 +396,7 @@
     "BuildCpu": {
       "Type": "String",
       "Description": "How much cpu should be reserved by the builder",
-      "Default": "0"
+      "Default": "256"
     },
     "BuildImage": {
       "Type": "String",
@@ -371,7 +406,7 @@
     "BuildInstance": {
       "Type": "String",
       "Description": "Instance type for a dedicated build cluster",
-      "Default": ""
+      "Default": "t2.small"
     },
     "BuildMemory": {
       "Type": "String",
@@ -381,23 +416,23 @@
     "BuildVolumeSize": {
       "Type": "Number",
       "Description": "Default build disk size in GB",
-      "Default": "200"
+      "Default": "100"
     },
     "ClientId": {
       "Type": "String",
       "Description": "Anonymous identifier",
       "Default": ""
     },
-    "ContainerDisk": {
-      "Type": "Number",
-      "Description": "Default container disk size in GB",
-      "Default": "10"
-    },
     "Development": {
       "Type": "String",
       "Description": "Development mode",
       "Default": "No",
       "AllowedValues": [ "Yes", "No" ]
+    },
+    "EcsPollInterval": {
+      "Type": "Number",
+      "Default": "1",
+      "Description": "How often to poll ECS for service events in seconds. Longer intervals may alleviate rate limiting / throttling from ECS."
     },
     "EncryptEbs": {
       "Type": "String",
@@ -426,6 +461,17 @@
       "Description": "Support applications that are only accessible inside the VPC",
       "Default": "No",
       "AllowedValues": [ "Yes", "No" ]
+    },
+    "InternalOnly": {
+      "Type": "String",
+      "Description": "Only support applications that are only accessible inside the VPC",
+      "Default": "No",
+      "AllowedValues": [ "Yes", "No" ]
+    },
+    "InternalSuffix": {
+      "Type": "String",
+      "Description": "Suffix for internal router",
+      "Default": "-rti"
     },
     "InstanceBootCommand": {
       "Type": "String",
@@ -474,6 +520,11 @@
       "Description": "Bucket to receive S3 logs",
       "Type": "String"
     },
+    "LogRetention": {
+      "Default": "",
+      "Description": "Number of days to keep logs (blank for unlimited)",
+      "Type": "String"
+    },
     "MaxAvailabilityZones": {
       "Type": "Number",
       "Default": "3",
@@ -482,6 +533,7 @@
     "OnDemandMinCount": {
       "Default": "3",
       "Description": "The minimum number of on-demand instances in the runtime cluster",
+      "MinValue": "1",
       "Type": "Number"
     },
     "Password": {
@@ -503,9 +555,19 @@
       "Default": "No",
       "AllowedValues": [ "Yes", "No" ]
     },
+    "RouterSecurityGroup": {
+      "Default": "",
+      "Description": "The security groups (comma delimited) to assign to the rack router.",
+      "Type": "CommaDelimitedList"
+    },
     "SpotInstanceBid": {
       "Default": "",
       "Description": "Bid price for spot instances",
+      "Type": "String"
+    },
+    "SslPolicy": {
+      "Default": "",
+      "Description": "SSL policy for rack load balancer",
       "Type": "String"
     },
     "Subnet0CIDR": {
@@ -542,11 +604,6 @@
       "Type": "Number",
       "Description": "Default swap volume size in GB",
       "Default": "5"
-    },
-    "RootSize": {
-      "Type": "Number",
-      "Description": "Default root disk size in GB",
-      "Default": "8"
     },
     "Version": {
       "Description": "(REQUIRED) Convox release version",
@@ -594,7 +651,10 @@
       }
     },
     "LogGroup": {
-      "Type": "AWS::Logs::LogGroup"
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "RetentionInDays": { "Fn::If": [ "BlankLogRetention", { "Ref": "AWS::NoValue" }, { "Ref": "LogRetention" } ] }
+      }
     },
     "CustomTopicRole": {
       "Type": "AWS::IAM::Role",
@@ -641,7 +701,7 @@
         "Handler": "index.external",
         "MemorySize": "128",
         "Role": { "Fn::GetAtt": [ "CustomTopicRole", "Arn" ] },
-        "Runtime": "nodejs4.3",
+        "Runtime": "nodejs8.10",
         "Timeout": "300"
       }
     },
@@ -1057,7 +1117,8 @@
           {
             "DeviceName": "/dev/xvda",
             "Ebs": {
-              "VolumeSize": { "Ref": "RootSize" },
+              "Encrypted": { "Fn::If": [ "EncryptEbs", "true", { "Ref": "AWS::NoValue" } ] },
+              "VolumeSize": { "Ref": "BuildVolumeSize" },
               "VolumeType":"gp2"
             }
           },
@@ -1066,14 +1127,6 @@
             "Ebs": {
               "Encrypted": { "Fn::If": [ "EncryptEbs", "true", { "Ref": "AWS::NoValue" } ] },
               "VolumeSize": { "Ref": "SwapSize" },
-              "VolumeType":"gp2"
-            }
-          },
-          {
-            "DeviceName": "/dev/xvdcz",
-            "Ebs": {
-              "Encrypted": { "Fn::If": [ "EncryptEbs", "true", { "Ref": "AWS::NoValue" } ] },
-              "VolumeSize": { "Ref": "BuildVolumeSize" },
               "VolumeType":"gp2"
             }
           }
@@ -1097,7 +1150,6 @@
             "bootcmd:\n",
             "  - mkswap /dev/xvdb\n",
             "  - swapon /dev/xvdb\n",
-            "  - [ cloud-init-per, instance, docker_storage_setup, /usr/bin/docker-storage-setup ]\n",
             "  - export http_proxy=", { "Ref": "HttpProxy" }, "\n",
             "  - echo http_proxy=", { "Ref": "HttpProxy" }, " >> /etc/environment\n",
             "  - export https_proxy=", { "Ref": "HttpProxy" }, "\n",
@@ -1118,14 +1170,10 @@
             "  - echo 'ECS_INSTANCE_ATTRIBUTES={\"asg\":\"build\"}' >> /etc/ecs/ecs.config\n",
             "  - echo HTTP_PROXY=", { "Ref": "HttpProxy" }, " >> /etc/ecs/ecs.config\n",
             "  - echo NO_PROXY=169.254.169.254,169.254.170.2,/var/run/docker.sock >> /etc/ecs/ecs.config\n",
-            "  - head -n -1 /etc/sysconfig/docker >> /etc/sysconfig/docker-tmp\n",
-            "  - mv /etc/sysconfig/docker-tmp /etc/sysconfig/docker\n",
-            "  - echo 'OPTIONS=\"--default-ulimit nofile=1024000:1024000\"' >> /etc/sysconfig/docker\n",
-            { "Fn::Join": [ "", [
-              "  - echo 'OPTIONS=\"${OPTIONS} --storage-opt dm.basesize=", { "Ref": "ContainerDisk" }, "G\"' >> /etc/sysconfig/docker\n",
-              "  - echo 'OPTIONS=\"${OPTIONS} --log-opt max-file=2 --log-opt max-size=50m --host=unix:///var/run/docker.sock --host=0.0.0.0:2376\"' >> /etc/sysconfig/docker\n",
-              "  - echo 'ECS_ENGINE_AUTH_DATA={\"index.docker.io\":{\"username\":\"\",\"password\":\"\",\"email\":\"\"}' >> /etc/ecs/ecs.config\n"
-            ] ] },
+            "  - echo 'OPTIONS=\"--default-ulimit nofile=1024000:1024000 --log-opt max-file=2 --log-opt max-size=50m --host=unix:///var/run/docker.sock --host=0.0.0.0:2376\"' >> /etc/sysconfig/docker\n",
+            "  - echo 'ECS_ENGINE_AUTH_DATA={\"index.docker.io\":{\"username\":\"\",\"password\":\"\",\"email\":\"\"}' >> /etc/ecs/ecs.config\n",
+            "  - echo 'docker image prune -a --filter=\"until=96h\" --force' > /etc/cron.daily/docker-prune\n",
+            "  - chmod +x /etc/cron.daily/docker-prune\n",
             { "Fn::If": [ "HttpProxy",
               { "Fn::Join": ["", ["  - echo \"export HTTP_PROXY=", { "Ref": "HttpProxy" }, "/\" >> /etc/sysconfig/docker\n"
               ] ] },
@@ -1188,6 +1236,19 @@
             "Key": "GatewayAttachment",
             "Value": { "Fn::If": [ "ExistingVpc", "existing", { "Ref": "GatewayAttachment" } ] },
             "PropagateAtLaunch": false
+          },
+          {
+            "Key": "NatGateways",
+            "PropagateAtLaunch": false,
+            "Value": { "Fn::If": [
+              "Private",
+              { "Fn::Join": [ ",", [
+                { "Ref": "Nat0" },
+                { "Ref": "Nat1" },
+                { "Fn::If": [ "ThirdAvailabilityZone", { "Ref": "Nat2" }, { "Ref": "AWS::NoValue" } ] }
+              ] ] },
+              ""
+            ] }
           }
         ]
       },
@@ -1195,7 +1256,7 @@
         "AutoScalingRollingUpdate": {
           "MaxBatchSize": { "Ref": "InstanceUpdateBatchSize" },
           "MinInstancesInService": "1",
-          "PauseTime" : "PT15M",
+          "PauseTime" : "PT5M",
           "SuspendProcesses": [
             "ScheduledActions"
           ],
@@ -1211,7 +1272,8 @@
           {
             "DeviceName": "/dev/xvda",
             "Ebs": {
-              "VolumeSize": { "Ref": "RootSize" },
+              "Encrypted": { "Fn::If": [ "EncryptEbs", "true", { "Ref": "AWS::NoValue" } ] },
+              "VolumeSize": { "Ref": "VolumeSize" },
               "VolumeType":"gp2"
             }
           },
@@ -1220,14 +1282,6 @@
             "Ebs": {
               "Encrypted": { "Fn::If": [ "EncryptEbs", "true", { "Ref": "AWS::NoValue" } ] },
               "VolumeSize": { "Ref": "SwapSize" },
-              "VolumeType":"gp2"
-            }
-          },
-          {
-            "DeviceName": "/dev/xvdcz",
-            "Ebs": {
-              "Encrypted": { "Fn::If": [ "EncryptEbs", "true", { "Ref": "AWS::NoValue" } ] },
-              "VolumeSize": { "Ref": "VolumeSize" },
               "VolumeType":"gp2"
             }
           }
@@ -1280,18 +1334,15 @@
             ] },
             "  - [ cloud-init-per, instance, docker_storage_setup, /usr/bin/docker-storage-setup ]\n",
             "  - echo ECS_CLUSTER=", { "Ref": "Cluster" }, " >> /etc/ecs/ecs.config\n",
+            "  - echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config\n",
             "  - echo ECS_ENGINE_AUTH_TYPE=docker >> /etc/ecs/ecs.config\n",
             "  - echo 'ECS_INSTANCE_ATTRIBUTES={\"asg\":\"primary\"}' >> /etc/ecs/ecs.config\n",
             "  - echo HTTP_PROXY=", { "Ref": "HttpProxy" }, " >> /etc/ecs/ecs.config\n",
             "  - echo NO_PROXY=169.254.169.254,169.254.170.2,/var/run/docker.sock >> /etc/ecs/ecs.config\n",
-            "  - head -n -1 /etc/sysconfig/docker >> /etc/sysconfig/docker-tmp\n",
-            "  - mv /etc/sysconfig/docker-tmp /etc/sysconfig/docker\n",
-            "  - echo 'OPTIONS=\"--default-ulimit nofile=1024000:1024000\"' >> /etc/sysconfig/docker\n",
-            { "Fn::Join": [ "", [
-              "  - echo 'OPTIONS=\"${OPTIONS} --storage-opt dm.basesize=", { "Ref": "ContainerDisk" }, "G\"' >> /etc/sysconfig/docker\n",
-              "  - echo 'OPTIONS=\"${OPTIONS} --log-opt max-file=2 --log-opt max-size=50m --host=unix:///var/run/docker.sock --host=0.0.0.0:2376\"' >> /etc/sysconfig/docker\n",
-              "  - echo 'ECS_ENGINE_AUTH_DATA={\"index.docker.io\":{\"username\":\"\",\"password\":\"\",\"email\":\"\"}' >> /etc/ecs/ecs.config\n"
-            ] ] },
+            "  - echo 'OPTIONS=\"--default-ulimit nofile=1024000:1024000 --log-opt max-file=2 --log-opt max-size=50m --host=unix:///var/run/docker.sock --host=0.0.0.0:2376\"' >> /etc/sysconfig/docker\n",
+            "  - echo 'ECS_ENGINE_AUTH_DATA={\"index.docker.io\":{\"username\":\"\",\"password\":\"\",\"email\":\"\"}' >> /etc/ecs/ecs.config\n",
+            "  - echo 'docker image prune -a --filter=\"until=96h\" --force' > /etc/cron.daily/docker-prune\n",
+            "  - chmod +x /etc/cron.daily/docker-prune\n",
             { "Fn::If": [ "HttpProxy",
               { "Fn::Join": ["", ["  - echo \"export HTTP_PROXY=", { "Ref": "HttpProxy" }, "/\" >> /etc/sysconfig/docker\n"
               ] ] },
@@ -1357,6 +1408,19 @@
             "Key": "GatewayAttachment",
             "Value": { "Fn::If": [ "ExistingVpc", "existing", { "Ref": "GatewayAttachment" } ] },
             "PropagateAtLaunch": false
+          },
+          {
+            "Key": "NatGateways",
+            "PropagateAtLaunch": false,
+            "Value": { "Fn::If": [
+              "Private",
+              { "Fn::Join": [ ",", [
+                { "Ref": "Nat0" },
+                { "Ref": "Nat1" },
+                { "Fn::If": [ "ThirdAvailabilityZone", { "Ref": "Nat2" }, { "Ref": "AWS::NoValue" } ] }
+              ] ] },
+              ""
+            ] }
           }
         ]
       },
@@ -1364,12 +1428,54 @@
         "AutoScalingRollingUpdate": {
           "MaxBatchSize": { "Ref": "InstanceUpdateBatchSize" },
           "MinInstancesInService": { "Fn::If": [ "SpotInstances", { "Ref": "OnDemandMinCount" }, { "Ref": "InstanceCount" } ] },
-          "PauseTime" : "PT15M",
+          "PauseTime" : "PT5M",
           "SuspendProcesses": [
             "ScheduledActions"
           ],
           "WaitOnResourceSignals": "true"
         }
+      }
+    },
+    "InstancesAutoscaler": {
+      "Type": "AWS::Lambda::Function",
+      "DependsOn": "ApiRole",
+      "Condition": "Autoscale",
+      "Properties": {
+        "Code": {
+          "S3Bucket": { "Fn::Sub": "convox-${AWS::Region}" },
+          "S3Key": { "Fn::Sub": "release/${Version}/lambda/autoscale.zip" }
+        },
+        "Environment": {
+          "Variables": {
+            "ASG": { "Ref": "Instances" },
+            "CLUSTER": { "Ref": "Cluster" },
+            "EXTRA": { "Ref": "AutoscaleExtra" },
+            "STACK": { "Ref": "AWS::StackName" }
+          }
+        },
+        "Handler": "handler",
+        "MemorySize": "128",
+        "Role": { "Fn::GetAtt": [ "ApiRole", "Arn" ] },
+        "Runtime": "go1.x",
+        "Timeout": "60"
+      }
+    },
+    "InstancesAutoscalerPermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Condition": "Autoscale",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": { "Fn::GetAtt": [ "InstancesAutoscaler", "Arn" ] },
+        "Principal": "events.amazonaws.com",
+        "SourceArn": { "Fn::GetAtt": [ "InstancesAutoscalerEvent", "Arn" ] }
+      }
+    },
+    "InstancesAutoscalerEvent": {
+      "Type": "AWS::Events::Rule",
+      "Condition": "Autoscale",
+      "Properties": {
+        "ScheduleExpression": "cron(*/1 * * * ? *)",
+        "Targets": [ { "Id": "InstancesAutoscaler", "Arn": { "Fn::GetAtt": [ "InstancesAutoscaler", "Arn" ] } } ]
       }
     },
     "InstancesLifecycleLaunching": {
@@ -1445,7 +1551,7 @@
         "Handler": "index.external",
         "MemorySize": "128",
         "Role": { "Fn::GetAtt": [ "InstancesLifecycleHandlerRole", "Arn" ] },
-        "Runtime": "nodejs4.3",
+        "Runtime": "nodejs8.10",
         "Timeout": "300"
       }
     },
@@ -1513,7 +1619,8 @@
           {
             "DeviceName": "/dev/xvda",
             "Ebs": {
-              "VolumeSize": { "Ref": "RootSize" },
+              "Encrypted": { "Fn::If": [ "EncryptEbs", "true", { "Ref": "AWS::NoValue" } ] },
+              "VolumeSize": { "Ref": "VolumeSize" },
               "VolumeType":"gp2"
             }
           },
@@ -1524,14 +1631,6 @@
               "VolumeSize": { "Ref": "SwapSize" },
               "VolumeType":"gp2"
             }
-          },
-          {
-            "DeviceName": "/dev/xvdcz",
-            "Ebs": {
-              "Encrypted": { "Fn::If": [ "EncryptEbs", "true", { "Ref": "AWS::NoValue" } ] },
-              "VolumeSize": { "Ref": "VolumeSize" },
-              "VolumeType":"gp2"
-            }
           }
         ],
         "IamInstanceProfile": { "Ref": "InstancesProfile" },
@@ -1539,7 +1638,7 @@
         "InstanceMonitoring": true,
         "InstanceType": { "Ref": "InstanceType" },
         "KeyName": { "Fn::If": [ "BlankKey", { "Ref": "AWS::NoValue" }, { "Ref": "Key" } ] },
-        "SecurityGroups": [ { "Ref": "InstancesSecurity" } ],
+        "SecurityGroups": [ { "Fn::If": [ "BlankInstanceSecurityGroup", { "Ref": "InstancesSecurity" }, { "Ref": "InstanceSecurityGroup" } ] } ],
         "SpotPrice": { "Ref": "SpotInstanceBid" },
         "UserData": { "Fn::Base64":
           { "Fn::Join": [ "", [
@@ -1582,18 +1681,15 @@
             ] },
             "  - [ cloud-init-per, instance, docker_storage_setup, /usr/bin/docker-storage-setup ]\n",
             "  - echo ECS_CLUSTER=", { "Ref": "Cluster" }, " >> /etc/ecs/ecs.config\n",
+            "  - echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config\n",
             "  - echo ECS_ENGINE_AUTH_TYPE=docker >> /etc/ecs/ecs.config\n",
             "  - echo 'ECS_INSTANCE_ATTRIBUTES={\"asg\":\"spot\"}' >> /etc/ecs/ecs.config\n",
             "  - echo HTTP_PROXY=", { "Ref": "HttpProxy" }, " >> /etc/ecs/ecs.config\n",
             "  - echo NO_PROXY=169.254.169.254,169.254.170.2,/var/run/docker.sock >> /etc/ecs/ecs.config\n",
-            "  - head -n -1 /etc/sysconfig/docker >> /etc/sysconfig/docker-tmp\n",
-            "  - mv /etc/sysconfig/docker-tmp /etc/sysconfig/docker\n",
-            "  - echo 'OPTIONS=\"--default-ulimit nofile=1024000:1024000\"' >> /etc/sysconfig/docker\n",
-            { "Fn::Join": [ "", [
-              "  - echo 'OPTIONS=\"${OPTIONS} --storage-opt dm.basesize=", { "Ref": "ContainerDisk" }, "G\"' >> /etc/sysconfig/docker\n",
-              "  - echo 'OPTIONS=\"${OPTIONS} --log-opt max-file=2 --log-opt max-size=50m --host=unix:///var/run/docker.sock --host=0.0.0.0:2376\"' >> /etc/sysconfig/docker\n",
-              "  - echo 'ECS_ENGINE_AUTH_DATA={\"index.docker.io\":{\"username\":\"\",\"password\":\"\",\"email\":\"\"}' >> /etc/ecs/ecs.config\n"
-            ] ] },
+            "  - echo 'OPTIONS=\"--default-ulimit nofile=1024000:1024000 --log-opt max-file=2 --log-opt max-size=50m --host=unix:///var/run/docker.sock --host=0.0.0.0:2376\"' >> /etc/sysconfig/docker\n",
+            "  - echo 'ECS_ENGINE_AUTH_DATA={\"index.docker.io\":{\"username\":\"\",\"password\":\"\",\"email\":\"\"}' >> /etc/ecs/ecs.config\n",
+            "  - echo 'docker image prune -a --filter=\"until=96h\" --force' > /etc/cron.daily/docker-prune\n",
+            "  - chmod +x /etc/cron.daily/docker-prune\n",
             { "Fn::If": [ "HttpProxy",
               { "Fn::Join": ["", ["  - echo \"export HTTP_PROXY=", { "Ref": "HttpProxy" }, "/\" >> /etc/sysconfig/docker\n"
               ] ] },
@@ -1673,7 +1769,7 @@
             "Ref": "InstanceUpdateBatchSize"
           },
           "MinInstancesInService": "0",
-          "PauseTime": "PT15M",
+          "PauseTime": "PT5M",
           "SuspendProcesses": [
             "ScheduledActions"
           ],
@@ -1738,7 +1834,12 @@
       "Condition": "RegionHasEFS",
       "Properties": {
         "GroupDescription": { "Fn::Sub": "${AWS::StackName} volumes" },
-        "SecurityGroupIngress": [ { "IpProtocol": "tcp", "FromPort": "2049", "ToPort": "2049", "CidrIp": { "Ref": "VPCCIDR" } } ],
+        "SecurityGroupIngress": [ {
+          "IpProtocol": "tcp",
+          "FromPort": "2049",
+          "ToPort": "2049",
+          "SourceSecurityGroupId": { "Fn::If": [ "BlankInstanceSecurityGroup", { "Ref": "InstancesSecurity" }, { "Ref": "InstanceSecurityGroup" } ] }
+        } ],
         "Tags": [ { "Key": "Name", "Value": { "Fn::Sub": "${AWS::StackName}-volumes" } } ],
         "VpcId": { "Fn::If": [ "BlankExistingVpc", { "Ref": "Vpc" }, { "Ref": "ExistingVpc" } ] }
       }
@@ -1834,6 +1935,7 @@
       }
     },
     "Router": {
+      "Condition": "PublicRouter",
       "DependsOn": [ "ApiRole", "LogsPolicy" ],
       "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
       "Properties": {
@@ -1848,23 +1950,31 @@
           { "Ref": "Subnet1" },
           { "Fn::If": [ "ThirdAvailabilityZone", { "Ref": "Subnet2" }, { "Ref": "AWS::NoValue" } ] }
         ],
-        "SecurityGroups": [ { "Ref": "RouterSecurity" } ]
+        "SecurityGroups": { "Fn::If": [ "BlankRouterSecurityGroup", [ { "Ref": "RouterSecurity" } ], { "Ref": "RouterSecurityGroup" } ] },
+        "Tags": [
+          { "Key": "Rack", "Value": { "Ref": "AWS::StackName" } }
+        ]
       }
     },
     "RouterSecurity": {
       "Type": "AWS::EC2::SecurityGroup",
+      "Condition": "PublicRouter",
       "DependsOn": "ApiRole",
       "Properties": {
         "GroupDescription": { "Fn::Sub": "${AWS::StackName} router" },
-        "SecurityGroupIngress": [ { "CidrIp": "0.0.0.0/0", "IpProtocol": "tcp", "FromPort": "0", "ToPort": "65535" } ],
+        "SecurityGroupIngress": [
+          { "CidrIp": "0.0.0.0/0", "IpProtocol": "tcp", "FromPort": "80", "ToPort": "80" },
+          { "CidrIp": "0.0.0.0/0", "IpProtocol": "tcp", "FromPort": "443", "ToPort": "443" }
+        ],
         "Tags": [ { "Key": "Name", "Value": { "Fn::Sub": "${AWS::StackName}-router" } } ],
         "VpcId": { "Fn::If": [ "BlankExistingVpc", { "Ref": "Vpc" }, { "Ref": "ExistingVpc" } ] }
       }
     },
     "RouterListener80": {
       "Type": "AWS::ElasticLoadBalancingV2::Listener",
+      "Condition": "PublicRouter",
       "Properties": {
-        "DefaultActions": [ { "Type": "forward", "TargetGroupArn": { "Ref": "RouterApiTargetGroup" } } ],
+        "DefaultActions": [ { "Type": "redirect", "RedirectConfig": { "Protocol": "HTTPS", "Port": "443", "StatusCode": "HTTP_301" } } ],
         "LoadBalancerArn": { "Ref" : "Router" },
         "Port": "80",
         "Protocol": "HTTP"
@@ -1872,16 +1982,19 @@
     },
     "RouterListener443": {
       "Type": "AWS::ElasticLoadBalancingV2::Listener",
+      "Condition": "PublicRouter",
       "Properties": {
         "Certificates": [ { "CertificateArn": { "Ref": "RouterApiCertificate" } } ],
         "DefaultActions": [ { "Type": "forward", "TargetGroupArn": { "Ref": "RouterApiTargetGroup" } } ],
         "LoadBalancerArn": { "Ref" : "Router" },
         "Port": "443",
-        "Protocol": "HTTPS"
+        "Protocol": "HTTPS",
+        "SslPolicy": { "Fn::If": [ "BlankSslPolicy", { "Ref": "AWS::NoValue" }, { "Ref": "SslPolicy" } ] }
       }
     },
     "RouterApiCertificate": {
       "Type": "AWS::CertificateManager::Certificate",
+      "Condition": "PublicRouter",
       "DependsOn": "RouterApiTargetGroup",
       "Properties": {
         "DomainName": { "Fn::Join": [ ".", [
@@ -1905,6 +2018,7 @@
     },
     "RouterApiTargetGroup": {
       "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Condition": "PublicRouter",
       "DependsOn": "Router",
       "Properties": {
         "HealthCheckIntervalSeconds": "5",
@@ -1931,14 +2045,14 @@
           { "Key": "access_logs.s3.prefix", "Value": { "Fn::Sub": "convox/logs/${AWS::StackName}/alb" } },
           { "Key": "idle_timeout.timeout_seconds", "Value": "3600" }
         ],
-        "Name": { "Fn::Sub": "${AWS::StackName}-rti" },
+        "Name": { "Fn::If": [ "BlankInternalSuffix", { "Ref": "AWS::NoValue" }, { "Fn::Sub": "${AWS::StackName}${InternalSuffix}" } ] },
         "Scheme": "internal",
         "Subnets": [
           { "Ref": "Subnet0" },
           { "Ref": "Subnet1" },
           { "Fn::If": [ "ThirdAvailabilityZone", { "Ref": "Subnet2" }, { "Ref": "AWS::NoValue" } ] }
         ],
-        "SecurityGroups": [ { "Ref": "RouterSecurity" } ]
+        "SecurityGroups": [ { "Ref": "RouterInternalSecurity" } ]
       }
     },
     "RouterInternalSecurity": {
@@ -1947,7 +2061,10 @@
       "DependsOn": "ApiRole",
       "Properties": {
         "GroupDescription": { "Fn::Sub": "${AWS::StackName} internal router" },
-        "SecurityGroupIngress": [ { "CidrIp": { "Ref": "VPCCIDR" }, "IpProtocol": "tcp", "FromPort": "0", "ToPort": "65535" } ],
+        "SecurityGroupIngress": [
+          { "CidrIp": { "Ref": "VPCCIDR" }, "IpProtocol": "tcp", "FromPort": "80", "ToPort": "80" },
+          { "CidrIp": { "Ref": "VPCCIDR" }, "IpProtocol": "tcp", "FromPort": "443", "ToPort": "443" }
+        ],
         "Tags": [ { "Key": "Name", "Value": { "Fn::Sub": "${AWS::StackName}-router-internal" } } ],
         "VpcId": { "Fn::If": [ "BlankExistingVpc", { "Ref": "Vpc" }, { "Ref": "ExistingVpc" } ] }
       }
@@ -1970,7 +2087,8 @@
         "DefaultActions": [ { "Type": "forward", "TargetGroupArn": { "Ref": "RouterInternalApiTargetGroup" } } ],
         "LoadBalancerArn": { "Ref" : "RouterInternal" },
         "Port": "443",
-        "Protocol": "HTTPS"
+        "Protocol": "HTTPS",
+        "SslPolicy": { "Fn::If": [ "BlankSslPolicy", { "Ref": "AWS::NoValue" }, { "Ref": "SslPolicy" } ] }
       }
     },
     "RouterInternalCertificate": {
@@ -2024,19 +2142,17 @@
         "HealthCheck": {
           "HealthyThreshold": "2",
           "Interval": 5,
-          "Target": { "Fn::If": [ "PrivateApi", "HTTPS:3101/check", "HTTPS:3001/check" ] },
+          "Target": { "Fn::If": [ "PrivateApi", "HTTPS:3100/check", "HTTPS:3000/check" ] },
           "Timeout": 3,
           "UnhealthyThreshold": "2"
         },
         "LBCookieStickinessPolicy": [ { "PolicyName": "affinity" } ],
         "Listeners": { "Fn::If": [ "PrivateApi",
           [
-            { "Protocol": "TCP", "LoadBalancerPort": "80", "InstanceProtocol": "TCP", "InstancePort": "3100" },
-            { "Protocol": "TCP", "LoadBalancerPort": "443", "InstanceProtocol": "TCP", "InstancePort": "3101" }
+            { "Protocol": "TCP", "LoadBalancerPort": "443", "InstanceProtocol": "TCP", "InstancePort": "3100" }
           ],
           [
-            { "Protocol": "TCP", "LoadBalancerPort": "80", "InstanceProtocol": "TCP", "InstancePort": "3000" },
-            { "Protocol": "TCP", "LoadBalancerPort": "443", "InstanceProtocol": "TCP", "InstancePort": "3001" }
+            { "Protocol": "TCP", "LoadBalancerPort": "443", "InstanceProtocol": "TCP", "InstancePort": "3000" }
           ]
         ] },
         "LoadBalancerName": { "Fn::If": [ "PrivateApi", { "Fn::Join": [ "-", [ { "Ref": "AWS::StackName" }, "i" ] ] }, { "Ref": "AWS::StackName" } ] },
@@ -2084,7 +2200,10 @@
       "Type": "AWS::IAM::Role",
       "Properties": {
         "AssumeRolePolicyDocument": {
-          "Statement": [ { "Effect": "Allow", "Principal": { "Service": [ "ecs-tasks.amazonaws.com" ] }, "Action": [ "sts:AssumeRole" ] } ],
+          "Statement": [
+            { "Effect": "Allow", "Principal": { "Service": [ "ecs-tasks.amazonaws.com" ] }, "Action": [ "sts:AssumeRole" ] },
+            { "Effect": "Allow", "Principal": { "Service": [ "lambda.amazonaws.com" ] }, "Action": [ "sts:AssumeRole" ] }
+          ],
           "Version": "2012-10-17"
         },
         "ManagedPolicyArns": [ "arn:aws:iam::aws:policy/PowerUserAccess" ],
@@ -2108,6 +2227,8 @@
                 "Effect": "Allow",
                 "Action": [
                   "iam:DeleteServerCertificate",
+                  "iam:DetachRolePolicy",
+                  "iam:GetRole",
                   "iam:GetServerCertificate",
                   "iam:ListServerCertificates",
                   "iam:PassRole",
@@ -2149,47 +2270,53 @@
         "ContainerDefinitions": [
           {
             "Cpu": { "Ref": "BuildCpu" },
-            "DockerLabels": { "convox.release": { "Ref": "Version" } },
-            "Environment": [
-              { "Name": "AUTOSCALE", "Value": { "Fn::If": [ "Autoscale", "true", "false" ] } },
-              { "Name": "AWS_REGION", "Value": { "Ref": "AWS::Region" } },
-              { "Name": "BUILD_CLUSTER", "Value": { "Fn::If": [ "DedicatedBuilder", { "Ref": "BuildCluster" }, { "Ref": "Cluster" } ] } },
-              { "Name": "CLIENT_ID", "Value": { "Ref": "ClientId" } },
-              { "Name": "CLOUDFORMATION_TOPIC", "Value": { "Ref": "CloudformationTopic" } },
-              { "Name": "CLUSTER", "Value": { "Ref": "Cluster" } },
-              { "Name": "CUSTOM_TOPIC", "Value": { "Fn::GetAtt": [ "CustomTopic", "Arn" ] } },
-              { "Name": "DYNAMO_BUILDS", "Value": { "Ref": "DynamoBuilds" } },
-              { "Name": "DYNAMO_RELEASES", "Value": { "Ref": "DynamoReleases" } },
-              { "Name": "ENCRYPTION_KEY", "Value": { "Ref": "EncryptionKey" } },
-              { "Name": "HTTP_PROXY", "Value": { "Ref": "HttpProxy" } },
-              { "Name": "HTTPS_PROXY", "Value": { "Ref": "HttpProxy" } },
-              { "Name": "INTERNAL", "Value": { "Ref": "Internal" } },
-              { "Name": "LOG_BUCKET", "Value": { "Fn::If": [ "BlankLogBucket", { "Ref": "Logs" }, { "Ref": "LogBucket" } ] } },
-              { "Name": "LOG_GROUP", "Value": { "Ref": "LogGroup" } },
-              { "Name": "NOTIFICATION_HOST", "Value": { "Fn::GetAtt": [ "Balancer", "DNSName" ] } },
-              { "Name": "NOTIFICATION_TOPIC", "Value": { "Ref": "NotificationTopic" } },
-              { "Name": "ON_DEMAND_MIN_COUNT", "Value": { "Ref": "OnDemandMinCount" } },
-              { "Name": "PASSWORD", "Value": { "Ref": "Password" } },
-              { "Name": "PRIVATE", "Value": { "Ref": "Private" } },
-              { "Name": "PROVIDER", "Value": "aws" },
-              { "Name": "RACK", "Value": { "Ref": "AWS::StackName" } },
-              { "Name": "RELEASE", "Value": { "Ref": "Version" } },
-              { "Name": "ROLLBAR_TOKEN", "Value": "f67f25b8a9024d5690f997bd86bf14b0" },
-              { "Name": "SECURITY_GROUP", "Value": { "Fn::If": [ "BlankInstanceSecurityGroup", { "Ref": "InstancesSecurity" }, { "Ref": "InstanceSecurityGroup" } ] } },
-              { "Name": "SEGMENT_WRITE_KEY", "Value": "KLvwCXo6qcTmQHLpF69DEwGf9zh7lt9i" },
-              { "Name": "SETTINGS_BUCKET", "Value": { "Ref": "Settings" } },
-              { "Name": "SPOT_INSTANCES", "Value": { "Fn::If": [ "SpotInstances", "true", "false" ] } },
-              { "Name": "STACK_ID", "Value": { "Ref": "AWS::StackId" } },
-              { "Name": "SUBNETS", "Value": { "Fn::Join": [ ",", [
+            "DockerLabels": {
+              "convox.release": { "Ref": "Version" },
+              "rack.BuildCluster": { "Fn::If": [ "DedicatedBuilder", { "Ref": "BuildCluster" }, { "Ref": "Cluster" } ] },
+              "rack.CloudformationTopic": { "Ref": "CloudformationTopic" },
+              "rack.Cluster": { "Ref": "Cluster" },
+              "rack.DynamoBuilds": { "Ref": "DynamoBuilds" },
+              "rack.DynamoReleases": { "Ref": "DynamoReleases" },
+              "rack.EcsPollInterval": { "Ref": "EcsPollInterval" },
+              "rack.EncryptionKey": { "Ref": "EncryptionKey" },
+              "rack.Fargate": { "Fn::FindInMap": [ "RegionConfig", { "Ref": "AWS::Region" }, "Fargate" ] },
+              "rack.Internal": { "Ref": "Internal" },
+              "rack.InternalOnly": { "Ref": "InternalOnly" },
+              "rack.LogBucket": { "Fn::If": [ "BlankLogBucket", { "Ref": "Logs" }, { "Ref": "LogBucket" } ] },
+              "rack.NotificationTopic": { "Ref": "NotificationTopic" },
+              "rack.OnDemandMinCount": { "Ref": "OnDemandMinCount" },
+              "rack.Private": { "Ref": "Private" },
+              "rack.SecurityGroup": { "Fn::If": [ "BlankInstanceSecurityGroup", { "Ref": "InstancesSecurity" }, { "Ref": "InstanceSecurityGroup" } ] },
+              "rack.SettingsBucket": { "Ref": "Settings" },
+              "rack.SpotInstances": { "Fn::If": [ "SpotInstances", "Yes", "No" ] },
+              "rack.Subnets": { "Fn::Join": [ ",", [
                 { "Ref": "Subnet0" },
                 { "Ref": "Subnet1" },
                 { "Fn::If": [ "ThirdAvailabilityZone", { "Ref": "Subnet2" }, { "Ref": "AWS::NoValue" } ] }
-              ] ] } },
-              { "Name": "VPC", "Value": { "Fn::If": [ "BlankExistingVpc",
+              ] ] },
+              "rack.SubnetsPrivate": { "Fn::If": [ "Private",
+                { "Fn::Join": [ ",", [
+                  { "Ref": "SubnetPrivate0" },
+                  { "Ref": "SubnetPrivate1" },
+                  { "Fn::If": [ "ThirdAvailabilityZone", { "Ref": "SubnetPrivate2" }, { "Ref": "AWS::NoValue" } ] }
+                ] ] },
+                { "Ref": "AWS::NoValue" }
+              ] },
+              "rack.Version": { "Ref": "Version" },
+              "rack.Vpc": { "Fn::If": [ "BlankExistingVpc",
                 { "Ref": "Vpc" },
                 { "Ref": "ExistingVpc" }
-              ] } },
-              { "Name": "VPCCIDR", "Value": { "Ref": "VPCCIDR" } }
+              ] },
+              "rack.VpcCidr": { "Ref": "VPCCIDR" }
+            },
+            "Environment": [
+              { "Name": "AWS_REGION", "Value": { "Ref": "AWS::Region" } },
+              { "Name": "HTTP_PROXY", "Value": { "Ref": "HttpProxy" } },
+              { "Name": "HTTPS_PROXY", "Value": { "Ref": "HttpProxy" } },
+              { "Name": "PASSWORD", "Value": { "Ref": "Password" } },
+              { "Name": "PROVIDER", "Value": "aws" },
+              { "Name": "RACK", "Value": { "Ref": "AWS::StackName" } },
+              { "Name": "STACK_ID", "Value": { "Ref": "AWS::StackId" } }
             ],
             "Image": { "Fn::If": [ "BlankBuildImage",
               { "Fn::Sub": "convox/rack:${Version}" },
@@ -2216,49 +2343,56 @@
       "Properties": {
         "ContainerDefinitions": [
           {
-            "Command": [ "bin/monitor" ],
+            "Command": [ "/go/bin/monitor" ],
             "Cpu": "64",
-            "DockerLabels": { "convox.release": { "Ref": "Version" } },
-            "Environment": [
-              { "Name": "AUTOSCALE", "Value": { "Fn::If": [ "Autoscale", "true", "false" ] } },
-              { "Name": "AUTOSCALE_EXTRA", "Value": { "Ref": "AutoscaleExtra" } },
-              { "Name": "AWS_REGION", "Value": { "Ref": "AWS::Region" } },
-              { "Name": "BUILD_CLUSTER", "Value": { "Fn::If": [ "DedicatedBuilder", { "Ref": "BuildCluster" }, { "Ref": "Cluster" } ] } },
-              { "Name": "CLIENT_ID", "Value": { "Ref": "ClientId" } },
-              { "Name": "CLOUDFORMATION_TOPIC", "Value": { "Ref": "CloudformationTopic" } },
-              { "Name": "CLUSTER", "Value": { "Ref": "Cluster" } },
-              { "Name": "CUSTOM_TOPIC", "Value": { "Fn::GetAtt": [ "CustomTopic", "Arn" ] } },
-              { "Name": "DYNAMO_BUILDS", "Value": { "Ref": "DynamoBuilds" } },
-              { "Name": "DYNAMO_RELEASES", "Value": { "Ref": "DynamoReleases" } },
-              { "Name": "ENCRYPTION_KEY", "Value": { "Ref": "EncryptionKey" } },
-              { "Name": "HTTP_PROXY", "Value": { "Ref": "HttpProxy" } },
-              { "Name": "HTTPS_PROXY", "Value": { "Ref": "HttpProxy" } },
-              { "Name": "INTERNAL", "Value": { "Ref": "Internal" } },
-              { "Name": "LOG_GROUP", "Value": { "Ref": "LogGroup" } },
-              { "Name": "NOTIFICATION_HOST", "Value": { "Fn::GetAtt": [ "Balancer", "DNSName" ] } },
-              { "Name": "NOTIFICATION_TOPIC", "Value": { "Ref": "NotificationTopic" } },
-              { "Name": "ON_DEMAND_MIN_COUNT", "Value": { "Ref": "OnDemandMinCount" } },
-              { "Name": "PASSWORD", "Value": { "Ref": "Password" } },
-              { "Name": "PRIVATE", "Value": { "Ref": "Private" } },
-              { "Name": "PROVIDER", "Value": "aws" },
-              { "Name": "RACK", "Value": { "Ref": "AWS::StackName" } },
-              { "Name": "RELEASE", "Value": { "Ref": "Version" } },
-              { "Name": "ROLLBAR_TOKEN", "Value": "f67f25b8a9024d5690f997bd86bf14b0" },
-              { "Name": "SECURITY_GROUP", "Value": { "Fn::If": [ "BlankInstanceSecurityGroup", { "Ref": "InstancesSecurity" }, { "Ref": "InstanceSecurityGroup" } ] } },
-              { "Name": "SEGMENT_WRITE_KEY", "Value": "KLvwCXo6qcTmQHLpF69DEwGf9zh7lt9i" },
-              { "Name": "SPOT_INSTANCES", "Value": { "Fn::If": [ "SpotInstances", "true", "false" ] } },
-              { "Name": "SETTINGS_BUCKET", "Value": { "Ref": "Settings" } },
-              { "Name": "STACK_ID", "Value": { "Ref": "AWS::StackId" } },
-              { "Name": "SUBNETS", "Value": { "Fn::Join": [ ",", [
+            "DockerLabels": {
+              "convox.release": { "Ref": "Version" },
+              "rack.BuildCluster": { "Fn::If": [ "DedicatedBuilder", { "Ref": "BuildCluster" }, { "Ref": "Cluster" } ] },
+              "rack.CloudformationTopic": { "Ref": "CloudformationTopic" },
+              "rack.Cluster": { "Ref": "Cluster" },
+              "rack.DynamoBuilds": { "Ref": "DynamoBuilds" },
+              "rack.DynamoReleases": { "Ref": "DynamoReleases" },
+              "rack.EcsPollInterval": { "Ref": "EcsPollInterval" },
+              "rack.EncryptionKey": { "Ref": "EncryptionKey" },
+              "rack.Fargate": { "Fn::FindInMap": [ "RegionConfig", { "Ref": "AWS::Region" }, "Fargate" ] },
+              "rack.Internal": { "Ref": "Internal" },
+              "rack.InternalOnly": { "Ref": "InternalOnly" },
+              "rack.LogBucket": { "Fn::If": [ "BlankLogBucket", { "Ref": "Logs" }, { "Ref": "LogBucket" } ] },
+              "rack.NotificationTopic": { "Ref": "NotificationTopic" },
+              "rack.OnDemandMinCount": { "Ref": "OnDemandMinCount" },
+              "rack.Private": { "Ref": "Private" },
+              "rack.SecurityGroup": { "Fn::If": [ "BlankInstanceSecurityGroup", { "Ref": "InstancesSecurity" }, { "Ref": "InstanceSecurityGroup" } ] },
+              "rack.SettingsBucket": { "Ref": "Settings" },
+              "rack.SpotInstances": { "Fn::If": [ "SpotInstances", "Yes", "No" ] },
+              "rack.Subnets": { "Fn::Join": [ ",", [
                 { "Ref": "Subnet0" },
                 { "Ref": "Subnet1" },
                 { "Fn::If": [ "ThirdAvailabilityZone", { "Ref": "Subnet2" }, { "Ref": "AWS::NoValue" } ] }
-              ] ] } },
-              { "Name": "VPC", "Value": { "Fn::If": [ "BlankExistingVpc",
+              ] ] },
+              "rack.SubnetsPrivate": { "Fn::If": [ "Private",
+                { "Fn::Join": [ ",", [
+                  { "Ref": "SubnetPrivate0" },
+                  { "Ref": "SubnetPrivate1" },
+                  { "Fn::If": [ "ThirdAvailabilityZone", { "Ref": "SubnetPrivate2" }, { "Ref": "AWS::NoValue" } ] }
+                ] ] },
+                { "Ref": "AWS::NoValue" }
+              ] },
+              "rack.Version": { "Ref": "Version" },
+              "rack.Vpc": { "Fn::If": [ "BlankExistingVpc",
                 { "Ref": "Vpc" },
                 { "Ref": "ExistingVpc" }
-              ] } },
-              { "Name": "VPCCIDR", "Value": { "Ref": "VPCCIDR" } }
+              ] },
+              "rack.VpcCidr": { "Ref": "VPCCIDR" }
+            },
+            "Environment": [
+              { "Name": "AWS_REGION", "Value": { "Ref": "AWS::Region" } },
+              { "Name": "CLIENT_ID", "Value": { "Ref": "ClientId" } },
+              { "Name": "HTTP_PROXY", "Value": { "Ref": "HttpProxy" } },
+              { "Name": "HTTPS_PROXY", "Value": { "Ref": "HttpProxy" } },
+              { "Name": "PASSWORD", "Value": { "Ref": "Password" } },
+              { "Name": "PROVIDER", "Value": "aws" },
+              { "Name": "RACK", "Value": { "Ref": "AWS::StackName" } },
+              { "Name": "STACK_ID", "Value": { "Ref": "AWS::StackId" } }
             ],
             "Image": { "Fn::Sub": "convox/rack:${Version}" },
             "LogConfiguration": {
@@ -2269,7 +2403,7 @@
                 "awslogs-stream-prefix": "service"
               }
             },
-            "Memory": "64",
+            "Memory": "128",
             "MountPoints": [ { "SourceVolume": "docker", "ContainerPath": "/var/run/docker.sock" } ],
             "Name": "monitor"
           }
@@ -2284,53 +2418,58 @@
       "Properties": {
         "ContainerDefinitions": [
           {
-            "Command": [ "bin/web" ],
+            "Command": [ "/go/bin/rack" ],
             "Cpu": "128",
-            "DockerLabels": { "convox.release": { "Ref": "Version" } },
-            "Environment": [
-              { "Name": "AUTOSCALE", "Value": { "Fn::If": [ "Autoscale", "true", "false" ] } },
-              { "Name": "AWS_REGION", "Value": { "Ref": "AWS::Region" } },
-              { "Name": "BUILD_CLUSTER", "Value": { "Fn::If": [ "DedicatedBuilder", { "Ref": "BuildCluster" }, { "Ref": "Cluster" } ] } },
-              { "Name": "CLIENT_ID", "Value": { "Ref": "ClientId" } },
-              { "Name": "CLOUDFORMATION_TOPIC", "Value": { "Ref": "CloudformationTopic" } },
-              { "Name": "CLUSTER", "Value": { "Ref": "Cluster" } },
-              { "Name": "CUSTOM_TOPIC", "Value": { "Fn::GetAtt": [ "CustomTopic", "Arn" ] } },
-              { "Name": "DYNAMO_BUILDS", "Value": { "Ref": "DynamoBuilds" } },
-              { "Name": "DYNAMO_RELEASES", "Value": { "Ref": "DynamoReleases" } },
-              { "Name": "ENCRYPTION_KEY", "Value": { "Ref": "EncryptionKey" } },
-              { "Name": "FARGATE", "Value": { "Fn::FindInMap": [ "RegionConfig", { "Ref": "AWS::Region" }, "Fargate" ] } },
-              { "Name": "HTTP_PROXY", "Value": { "Ref": "HttpProxy" } },
-              { "Name": "HTTPS_PROXY", "Value": { "Ref": "HttpProxy" } },
-              { "Name": "INTERNAL", "Value": { "Ref": "Internal" } },
-              { "Name": "LOG_GROUP", "Value": { "Ref": "LogGroup" } },
-              { "Name": "NOTIFICATION_HOST", "Value": { "Fn::GetAtt": [ "Balancer", "DNSName" ] } },
-              { "Name": "NOTIFICATION_TOPIC", "Value": { "Ref": "NotificationTopic" } },
-              { "Name": "ON_DEMAND_MIN_COUNT", "Value": { "Ref": "OnDemandMinCount" } },
-              { "Name": "PASSWORD", "Value": { "Ref": "Password" } },
-              { "Name": "PRIVATE", "Value": { "Ref": "Private" } },
-              { "Name": "PROVIDER", "Value": "aws" },
-              { "Name": "RACK", "Value": { "Ref": "AWS::StackName" } },
-              { "Name": "RELEASE", "Value": { "Ref": "Version" } },
-              { "Name": "ROLLBAR_TOKEN", "Value": "f67f25b8a9024d5690f997bd86bf14b0" },
-              { "Name": "SECURITY_GROUP", "Value": { "Fn::If": [ "BlankInstanceSecurityGroup", { "Ref": "InstancesSecurity" }, { "Ref": "InstanceSecurityGroup" } ] } },
-              { "Name": "SEGMENT_WRITE_KEY", "Value": "KLvwCXo6qcTmQHLpF69DEwGf9zh7lt9i" },
-              { "Name": "SPOT_INSTANCES", "Value": { "Fn::If": [ "SpotInstances", "true", "false" ] } },
-              { "Name": "SETTINGS_BUCKET", "Value": { "Ref": "Settings" } },
-              { "Name": "STACK_ID", "Value": { "Ref": "AWS::StackId" } },
-              { "Name": "SUBNETS", "Value": { "Fn::Join": [ ",", [
+            "DockerLabels": {
+              "convox.release": { "Ref": "Version" },
+              "rack.AsgSpot": { "Fn::If": [ "SpotInstances", { "Ref": "SpotInstances" }, { "Ref": "AWS::NoValue" } ] },
+              "rack.AsgStandard": { "Ref": "Instances" },
+              "rack.BuildCluster": { "Fn::If": [ "DedicatedBuilder", { "Ref": "BuildCluster" }, { "Ref": "Cluster" } ] },
+              "rack.CloudformationTopic": { "Ref": "CloudformationTopic" },
+              "rack.Cluster": { "Ref": "Cluster" },
+              "rack.DynamoBuilds": { "Ref": "DynamoBuilds" },
+              "rack.DynamoReleases": { "Ref": "DynamoReleases" },
+              "rack.EcsPollInterval": { "Ref": "EcsPollInterval" },
+              "rack.EncryptionKey": { "Ref": "EncryptionKey" },
+              "rack.Fargate": { "Fn::FindInMap": [ "RegionConfig", { "Ref": "AWS::Region" }, "Fargate" ] },
+              "rack.Internal": { "Ref": "Internal" },
+              "rack.InternalOnly": { "Ref": "InternalOnly" },
+              "rack.LogBucket": { "Fn::If": [ "BlankLogBucket", { "Ref": "Logs" }, { "Ref": "LogBucket" } ] },
+              "rack.NotificationTopic": { "Ref": "NotificationTopic" },
+              "rack.OnDemandMinCount": { "Ref": "OnDemandMinCount" },
+              "rack.Private": { "Ref": "Private" },
+              "rack.SecurityGroup": { "Fn::If": [ "BlankInstanceSecurityGroup", { "Ref": "InstancesSecurity" }, { "Ref": "InstanceSecurityGroup" } ] },
+              "rack.SettingsBucket": { "Ref": "Settings" },
+              "rack.SpotInstances": { "Fn::If": [ "SpotInstances", "Yes", "No" ] },
+              "rack.Subnets": { "Fn::Join": [ ",", [
                 { "Ref": "Subnet0" },
                 { "Ref": "Subnet1" },
                 { "Fn::If": [ "ThirdAvailabilityZone", { "Ref": "Subnet2" }, { "Ref": "AWS::NoValue" } ] }
-              ] ] } },
-              { "Name": "SUBNETS_PRIVATE", "Value": { "Fn::If": [ "Private",
-                { "Fn::Join": [ ",", [ { "Ref": "SubnetPrivate0" }, { "Ref": "SubnetPrivate1" }, { "Fn::If": [ "ThirdAvailabilityZone", { "Ref": "SubnetPrivate2" }, { "Ref": "AWS::NoValue" } ] } ] ] },
-                ""
-              ] } },
-              { "Name": "VPC", "Value": { "Fn::If": [ "BlankExistingVpc",
+              ] ] },
+              "rack.SubnetsPrivate": { "Fn::If": [ "Private",
+                { "Fn::Join": [ ",", [
+                  { "Ref": "SubnetPrivate0" },
+                  { "Ref": "SubnetPrivate1" },
+                  { "Fn::If": [ "ThirdAvailabilityZone", { "Ref": "SubnetPrivate2" }, { "Ref": "AWS::NoValue" } ] }
+                ] ] },
+                { "Ref": "AWS::NoValue" }
+              ] },
+              "rack.Version": { "Ref": "Version" },
+              "rack.Vpc": { "Fn::If": [ "BlankExistingVpc",
                 { "Ref": "Vpc" },
                 { "Ref": "ExistingVpc" }
-              ] } },
-              { "Name": "VPCCIDR", "Value": { "Ref": "VPCCIDR" } }
+              ] },
+              "rack.VpcCidr": { "Ref": "VPCCIDR" }
+            },
+            "Environment": [
+              { "Name": "AWS_REGION", "Value": { "Ref": "AWS::Region" } },
+              { "Name": "CLIENT_ID", "Value": { "Ref": "ClientId" } },
+              { "Name": "HTTP_PROXY", "Value": { "Ref": "HttpProxy" } },
+              { "Name": "HTTPS_PROXY", "Value": { "Ref": "HttpProxy" } },
+              { "Name": "PASSWORD", "Value": { "Ref": "Password" } },
+              { "Name": "PROVIDER", "Value": "aws" },
+              { "Name": "RACK", "Value": { "Ref": "AWS::StackName" } },
+              { "Name": "STACK_ID", "Value": { "Ref": "AWS::StackId" } }
             ],
             "Image": { "Fn::Sub": "convox/rack:${Version}" },
             "LogConfiguration": {
@@ -2346,12 +2485,10 @@
             "Name": "web",
             "PortMappings": { "Fn::If": [ "PrivateApi",
               [
-                { "HostPort": "3100", "ContainerPort": "5442", "Protocol": "tcp" },
-                { "HostPort": "3101", "ContainerPort": "5443", "Protocol": "tcp" }
+                { "HostPort": "3100", "ContainerPort": "5443", "Protocol": "tcp" }
               ],
               [
-                { "HostPort": "3000", "ContainerPort": "5442", "Protocol": "tcp" },
-                { "HostPort": "3001", "ContainerPort": "5443", "Protocol": "tcp" }
+                { "HostPort": "3000", "ContainerPort": "5443", "Protocol": "tcp" }
               ]
             ] }
           }
@@ -2404,6 +2541,13 @@
       "DeletionPolicy": "Retain",
       "Properties": {
         "AccessControl": "LogDeliveryWrite",
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [ { "ServerSideEncryptionByDefault": { "SSEAlgorithm": "aws:kms" } } ]
+        },
+        "LifecycleConfiguration": { "Fn::If": [ "BlankLogRetention",
+          { "Ref": "AWS::NoValue" },
+          { "Rules": [ { "ExpirationInDays": { "Ref": "LogRetention" }, "Status": "Enabled" } ] }
+        ] },
         "Tags": [
           { "Key": "System", "Value": "convox" },
           { "Key": "Rack", "Value": { "Ref": "AWS::StackName" } }
@@ -2434,9 +2578,12 @@
       "DeletionPolicy": "Retain",
       "Properties": {
         "AccessControl": "Private",
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [ { "ServerSideEncryptionByDefault": { "SSEAlgorithm": "aws:kms" } } ]
+        },
         "LoggingConfiguration": {
           "DestinationBucketName": { "Fn::If": [ "BlankLogBucket", { "Ref": "Logs" }, { "Ref": "LogBucket" } ] },
-          "LogFilePrefix": { "Fn::Sub": "convox/logs/${AWS::StackName}/s3" }
+          "LogFilePrefix": { "Fn::Sub": "convox/logs/${AWS::StackName}/s3/" }
         },
         "Tags": [
           { "Key": "System", "Value": "convox" },

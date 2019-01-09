@@ -5,13 +5,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/convox/rack/helpers"
-	"github.com/convox/rack/manifest"
-	"github.com/convox/rack/manifest1"
-	"github.com/convox/rack/structs"
+	"github.com/convox/rack/pkg/helpers"
+	"github.com/convox/rack/pkg/manifest"
+	"github.com/convox/rack/pkg/manifest1"
+	"github.com/convox/rack/pkg/structs"
 )
 
-func (p *AWSProvider) ServiceList(app string) (structs.Services, error) {
+func (p *Provider) ServiceList(app string) (structs.Services, error) {
 	a, err := p.AppGet(app)
 	if err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func (p *AWSProvider) ServiceList(app string) (structs.Services, error) {
 		return nil, err
 	}
 
-	m, err := manifest.Load([]byte(r.Manifest), manifest.Environment(env))
+	m, err := manifest.Load([]byte(r.Manifest), env)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +52,28 @@ func (p *AWSProvider) ServiceList(app string) (structs.Services, error) {
 	ss := structs.Services{}
 
 	for _, ms := range m.Services {
+		endpoint := a.Outputs[fmt.Sprintf("Service%sEndpoint", upperName(ms.Name))]
 		cert := a.Outputs[fmt.Sprintf("Service%sCertificate", upperName(ms.Name))]
+
+		if endpoint == "" {
+			sr, err := p.stackResource(p.rackStack(app), fmt.Sprintf("Service%s", upperName(ms.Name)))
+			if err != nil && !strings.HasPrefix(err.Error(), "resource not found") {
+				return nil, err
+			}
+
+			if sr != nil && sr.PhysicalResourceId != nil {
+				s, err := p.describeStack(*sr.PhysicalResourceId)
+				if err != nil {
+					return nil, err
+				}
+
+				outputs := stackOutputs(s)
+
+				cert = outputs["Certificate"]
+				endpoint = outputs["Endpoint"]
+			}
+		}
+
 		cid := ""
 
 		for _, c := range cs {
@@ -63,7 +84,7 @@ func (p *AWSProvider) ServiceList(app string) (structs.Services, error) {
 
 		s := structs.Service{
 			Name:   ms.Name,
-			Domain: a.Outputs[fmt.Sprintf("Service%sEndpoint", upperName(ms.Name))],
+			Domain: endpoint,
 		}
 
 		if s.Domain != "" {
@@ -73,9 +94,9 @@ func (p *AWSProvider) ServiceList(app string) (structs.Services, error) {
 			}
 		}
 
-		parts := strings.SplitN(a.Parameters[fmt.Sprintf("%sFormation", upperName(ms.Name))], ",", 3)
+		parts := strings.Split(a.Parameters[fmt.Sprintf("%sFormation", upperName(ms.Name))], ",")
 
-		if len(parts) != 3 {
+		if len(parts) < 3 {
 			return nil, fmt.Errorf("could not read formation for service: %s", ms.Name)
 		}
 
@@ -100,7 +121,7 @@ func (p *AWSProvider) ServiceList(app string) (structs.Services, error) {
 	return ss, nil
 }
 
-func (p *AWSProvider) serviceListGeneration1(a *structs.App) (structs.Services, error) {
+func (p *Provider) serviceListGeneration1(a *structs.App) (structs.Services, error) {
 	if a.Release == "" {
 		return nil, fmt.Errorf("no release for app: %s", a.Name)
 	}
@@ -164,7 +185,7 @@ func (p *AWSProvider) serviceListGeneration1(a *structs.App) (structs.Services, 
 	return ss, nil
 }
 
-func (p *AWSProvider) ServiceUpdate(app, name string, opts structs.ServiceUpdateOptions) error {
+func (p *Provider) ServiceUpdate(app, name string, opts structs.ServiceUpdateOptions) error {
 	a, err := p.AppGet(app)
 	if err != nil {
 		return err
@@ -172,9 +193,9 @@ func (p *AWSProvider) ServiceUpdate(app, name string, opts structs.ServiceUpdate
 
 	param := fmt.Sprintf("%sFormation", upperName(name))
 
-	parts := strings.SplitN(a.Parameters[param], ",", 3)
+	parts := strings.Split(a.Parameters[param], ",")
 
-	if len(parts) != 3 {
+	if len(parts) < 3 {
 		return fmt.Errorf("could not read formation for service: %s", name)
 	}
 
@@ -190,7 +211,7 @@ func (p *AWSProvider) ServiceUpdate(app, name string, opts structs.ServiceUpdate
 		parts[2] = strconv.Itoa(*opts.Memory)
 	}
 
-	if err := p.updateStack(p.rackStack(a.Name), "", map[string]string{param: strings.Join(parts, ",")}); err != nil {
+	if err := p.updateStack(p.rackStack(a.Name), nil, map[string]string{param: strings.Join(parts, ",")}, map[string]string{}); err != nil {
 		return err
 	}
 

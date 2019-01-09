@@ -3,14 +3,14 @@ package local
 import (
 	"fmt"
 
-	"github.com/convox/rack/structs"
+	"github.com/convox/rack/pkg/structs"
 )
 
 func (p *Provider) CertificateApply(app, service string, port int, id string) error {
 	return fmt.Errorf("unimplemented")
 }
 
-func (p *Provider) CertificateCreate(pub, key, chain string) (*structs.Certificate, error) {
+func (p *Provider) CertificateCreate(pub, key string, opts structs.CertificateCreateOptions) (*structs.Certificate, error) {
 	return nil, fmt.Errorf("unimplemented")
 }
 

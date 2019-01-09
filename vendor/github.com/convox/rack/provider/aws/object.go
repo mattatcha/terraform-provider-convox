@@ -6,25 +6,27 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net/url"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/convox/rack/structs"
+	"github.com/convox/rack/pkg/structs"
 )
 
-func (p *AWSProvider) ObjectDelete(app, key string) error {
+func (p *Provider) ObjectDelete(app, key string) error {
 	exists, err := p.ObjectExists(app, key)
 	if err != nil {
 		return err
 	}
 
 	if !exists {
-		return fmt.Errorf("no such object: %s", key)
+		return errorNotFound(fmt.Sprintf("object not found: %s", key))
 	}
 
-	bucket, err := p.appResource(app, "Settings")
+	bucket, err := p.appBucket(app)
 	if err != nil {
 		return err
 	}
@@ -40,8 +42,8 @@ func (p *AWSProvider) ObjectDelete(app, key string) error {
 	return nil
 }
 
-func (p *AWSProvider) ObjectExists(app, key string) (bool, error) {
-	bucket, err := p.appResource(app, "Settings")
+func (p *Provider) ObjectExists(app, key string) (bool, error) {
+	bucket, err := p.appBucket(app)
 	if err != nil {
 		return false, err
 	}
@@ -61,8 +63,8 @@ func (p *AWSProvider) ObjectExists(app, key string) (bool, error) {
 }
 
 // ObjectFetch fetches an Object
-func (p *AWSProvider) ObjectFetch(app, key string) (io.ReadCloser, error) {
-	bucket, err := p.appResource(app, "Settings")
+func (p *Provider) ObjectFetch(app, key string) (io.ReadCloser, error) {
+	bucket, err := p.appBucket(app)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +74,7 @@ func (p *AWSProvider) ObjectFetch(app, key string) (io.ReadCloser, error) {
 		Key:    aws.String(key),
 	})
 	if ae, ok := err.(awserr.Error); ok && ae.Code() == "NoSuchKey" {
-		return nil, errorNotFound(fmt.Sprintf("no such key: %s", key))
+		return nil, errorNotFound(fmt.Sprintf("key not found: %s", key))
 	}
 	if err != nil {
 		return nil, err
@@ -81,10 +83,10 @@ func (p *AWSProvider) ObjectFetch(app, key string) (io.ReadCloser, error) {
 	return res.Body, nil
 }
 
-func (p *AWSProvider) ObjectList(app, prefix string) ([]string, error) {
+func (p *Provider) ObjectList(app, prefix string) ([]string, error) {
 	log := Logger.At("ObjectList").Namespace("prefix=%q", prefix).Start()
 
-	bucket, err := p.appResource(app, "Settings")
+	bucket, err := p.appBucket(app)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +111,7 @@ func (p *AWSProvider) ObjectList(app, prefix string) ([]string, error) {
 }
 
 // ObjectStore stores an Object
-func (p *AWSProvider) ObjectStore(app, key string, r io.Reader, opts structs.ObjectStoreOptions) (*structs.Object, error) {
+func (p *Provider) ObjectStore(app, key string, r io.Reader, opts structs.ObjectStoreOptions) (*structs.Object, error) {
 	log := Logger.At("ObjectStore").Namespace("app=%q key=%q", app, key).Start()
 
 	if key == "" {
@@ -122,7 +124,7 @@ func (p *AWSProvider) ObjectStore(app, key string, r io.Reader, opts structs.Obj
 
 	log = log.Replace("key", key)
 
-	bucket, err := p.appResource(app, "Settings")
+	bucket, err := p.appBucket(app)
 	if err != nil {
 		return nil, log.Error(err)
 	}
@@ -153,6 +155,42 @@ func (p *AWSProvider) ObjectStore(app, key string, r io.Reader, opts structs.Obj
 	o := &structs.Object{Url: url}
 
 	return o, log.Success()
+}
+
+func (p *Provider) appBucket(app string) (string, error) {
+	if app == "" {
+		return p.rackResource("Settings")
+	}
+
+	return p.appResource(app, "Settings")
+}
+
+func (p *Provider) objectPresignedURL(o *structs.Object, duration time.Duration) (string, error) {
+	ou, err := url.Parse(o.Url)
+	if err != nil {
+		return "", err
+	}
+
+	if ou.Scheme != "object" {
+		return "", fmt.Errorf("url is not an object: %s", o.Url)
+	}
+
+	bucket, err := p.appBucket(ou.Hostname())
+	if err != nil {
+		return "", err
+	}
+
+	req, _ := p.s3().GetObjectRequest(&s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(ou.Path),
+	})
+
+	su, err := req.Presign(duration)
+	if err != nil {
+		return "", err
+	}
+
+	return su, nil
 }
 
 func generateTempKey() (string, error) {

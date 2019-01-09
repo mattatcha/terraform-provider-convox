@@ -1,23 +1,46 @@
 package aws
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"math/rand"
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudformation"
-	"github.com/convox/rack/structs"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/convox/rack/pkg/options"
+	"github.com/convox/rack/pkg/structs"
 )
+
+var resourceSystemParameters = map[string]bool{
+	"CustomTopic":       true,
+	"NotificationTopic": true,
+	"Private":           true,
+	"Release":           true,
+	"SecurityGroups":    true,
+	"Subnets":           true,
+	"SubnetsPrivate":    true,
+	"Version":           true,
+	"Vpc":               true,
+	"VpcCidr":           true,
+}
 
 // ResourceCreate creates a new resource.
 // Note: see also createResource() below.
-func (p *AWSProvider) ResourceCreate(name, kind string, opts structs.ResourceCreateOptions) (*structs.Resource, error) {
+func (p *Provider) ResourceCreate(kind string, opts structs.ResourceCreateOptions) (*structs.Resource, error) {
+	name := fmt.Sprintf("%s-%d", kind, (rand.Intn(8999) + 1000))
+
+	if opts.Name != nil {
+		name = *opts.Name
+	}
+
 	_, err := p.ResourceGet(name)
 	if awsError(err) != "ValidationError" {
 		return nil, fmt.Errorf("resource named %s already exists", name)
@@ -28,16 +51,12 @@ func (p *AWSProvider) ResourceCreate(name, kind string, opts structs.ResourceCre
 		Parameters: cfParams(opts.Parameters),
 		Type:       kind,
 	}
-	s.Parameters["CustomTopic"] = customTopic
-	s.Parameters["NotificationTopic"] = notificationTopic
 
 	var req *cloudformation.CreateStackInput
 
 	switch s.Type {
 	case "memcached", "mysql", "postgres", "redis", "sqs":
 		req, err = p.createResource(s)
-	case "fluentd":
-		req, err = p.createResourceURL(s, "tcp")
 	case "s3":
 		if s.Parameters["Topic"] != "" {
 			s.Parameters["Topic"] = fmt.Sprintf("%s-%s", p.Rack, s.Parameters["Topic"])
@@ -49,13 +68,11 @@ func (p *AWSProvider) ResourceCreate(name, kind string, opts structs.ResourceCre
 		}
 		req, err = p.createResource(s)
 	case "syslog":
-		s.Parameters["Private"] = fmt.Sprintf("%t", p.SubnetsPrivate != "")
 		req, err = p.createResourceURL(s, "tcp", "tcp+tls", "udp")
 	case "webhook":
-		s.Parameters["Url"] = fmt.Sprintf("http://%s/sns?endpoint=%s", p.NotificationHost, url.QueryEscape(s.Parameters["Url"]))
 		req, err = p.createResourceURL(s, "http", "https")
 	default:
-		err = fmt.Errorf("Invalid resource type: %s", s.Type)
+		err = fmt.Errorf("invalid resource type: %s", s.Type)
 	}
 	if err != nil {
 		return s, err
@@ -86,6 +103,7 @@ func (p *AWSProvider) ResourceCreate(name, kind string, opts structs.ResourceCre
 		"System":   "convox",
 		"Type":     "resource",
 	}
+
 	tagKeys := []string{}
 
 	for key := range tags {
@@ -100,7 +118,7 @@ func (p *AWSProvider) ResourceCreate(name, kind string, opts structs.ResourceCre
 
 	_, err = p.cloudformation().CreateStack(req)
 	if err != nil {
-		p.EventSend("resource:create", structs.EventSendOptions{Data: map[string]string{"name": s.Name, "type": s.Type}, Error: err.Error()})
+		p.EventSend("resource:create", structs.EventSendOptions{Data: map[string]string{"name": s.Name, "type": s.Type}, Error: options.String(err.Error())})
 		return nil, err
 	}
 
@@ -110,36 +128,43 @@ func (p *AWSProvider) ResourceCreate(name, kind string, opts structs.ResourceCre
 }
 
 // ResourceDelete deletes a resource.
-func (p *AWSProvider) ResourceDelete(name string) (*structs.Resource, error) {
-	s, err := p.ResourceGet(name)
+func (p *Provider) ResourceDelete(name string) error {
+	r, err := p.ResourceGet(name)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	apps, err := p.resourceApps(*s)
+	apps, err := p.resourceApps(*r)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if len(apps) > 0 {
-		return nil, fmt.Errorf("resource is linked to %s", apps[0].Name)
+		return fmt.Errorf("resource is linked to %s", apps[0].Name)
+	}
+
+	switch r.Type {
+	case "syslog":
+		if err := p.deleteSyslogInterfaces(r); err != nil {
+			return err
+		}
 	}
 
 	_, err = p.cloudformation().DeleteStack(&cloudformation.DeleteStackInput{
-		StackName: aws.String(p.rackStack(s.Name)),
+		StackName: aws.String(p.rackStack(r.Name)),
 	})
 	if err != nil {
-		p.EventSend("resource:delete", structs.EventSendOptions{Data: map[string]string{"name": s.Name, "type": s.Type}, Error: err.Error()})
-		return nil, err
+		p.EventSend("resource:delete", structs.EventSendOptions{Data: map[string]string{"name": r.Name, "type": r.Type}, Error: options.String(err.Error())})
+		return err
 	}
 
-	p.EventSend("resource:delete", structs.EventSendOptions{Data: map[string]string{"name": s.Name, "type": s.Type}})
+	p.EventSend("resource:delete", structs.EventSendOptions{Data: map[string]string{"name": r.Name, "type": r.Type}})
 
-	return s, err
+	return nil
 }
 
 // ResourceGet retrieves a resource.
-func (p *AWSProvider) ResourceGet(name string) (*structs.Resource, error) {
+func (p *Provider) ResourceGet(name string) (*structs.Resource, error) {
 	stacks, err := p.describeStacks(&cloudformation.DescribeStacksInput{
 		StackName: aws.String(p.rackStack(name)),
 	})
@@ -153,10 +178,14 @@ func (p *AWSProvider) ResourceGet(name string) (*structs.Resource, error) {
 	outputs := stackOutputs(stacks[0])
 	tags := stackTags(stacks[0])
 
+	if tags["Type"] != "resource" && tags["Type"] != "service" {
+		return nil, errorNotFound(fmt.Sprintf("resource not found: %s", name))
+	}
+
 	s := resourceFromStack(stacks[0])
 
 	if tags["Rack"] != p.Rack {
-		return nil, fmt.Errorf("no such stack on this rack: %s", name)
+		return nil, fmt.Errorf("rack mismatch for stack: %s", name)
 	}
 
 	switch coalesces(tags["Resource"], tags["Service"]) {
@@ -164,8 +193,6 @@ func (p *AWSProvider) ResourceGet(name string) (*structs.Resource, error) {
 		s.Url = fmt.Sprintf("%s:%s", outputs["Port11211TcpAddr"], outputs["Port11211TcpPort"])
 	case "mysql":
 		s.Url = fmt.Sprintf("mysql://%s:%s@%s:%s/%s", outputs["EnvMysqlUsername"], outputs["EnvMysqlPassword"], outputs["Port3306TcpAddr"], outputs["Port3306TcpPort"], outputs["EnvMysqlDatabase"])
-	case "papertrail":
-		s.Url = s.Parameters["Url"]
 	case "postgres":
 		s.Url = fmt.Sprintf("postgres://%s:%s@%s:%s/%s", outputs["EnvPostgresUsername"], outputs["EnvPostgresPassword"], outputs["Port5432TcpAddr"], outputs["Port5432TcpPort"], outputs["EnvPostgresDatabase"])
 	case "redis":
@@ -180,25 +207,41 @@ func (p *AWSProvider) ResourceGet(name string) (*structs.Resource, error) {
 			u.User = url.UserPassword(outputs["AccessKey"], outputs["SecretAccessKey"])
 			s.Url = u.String()
 		}
+	case "syslog":
+		s.Url = s.Parameters["Url"]
 	case "webhook":
-		if parsedURL, err := url.Parse(s.Parameters["Url"]); err == nil {
-			s.Url = parsedURL.Query().Get("endpoint")
+		u, err := webhookURL(s.Parameters["Url"])
+		if err != nil {
+			return nil, err
+		}
+		s.Url = u
+	}
+
+	for k := range s.Parameters {
+		if resourceSystemParameters[k] {
+			delete(s.Parameters, k)
+		}
+
+		if k == "Password" {
+			s.Parameters[k] = "****"
 		}
 	}
 
 	// Populate linked apps
-	apps, err := p.resourceApps(s)
-	if err != nil {
-		return nil, err
+	switch s.Type {
+	case "syslog":
+		apps, err := p.resourceApps(s)
+		if err != nil {
+			return nil, err
+		}
+		s.Apps = apps
 	}
-
-	s.Apps = apps
 
 	return &s, nil
 }
 
 //resourceApps returns the apps that have been linked with a resource (ignoring apps that have been delete out of band)
-func (p *AWSProvider) resourceApps(s structs.Resource) (structs.Apps, error) {
+func (p *Provider) resourceApps(s structs.Resource) (structs.Apps, error) {
 	stacks, err := p.describeStacks(&cloudformation.DescribeStacksInput{
 		StackName: aws.String(p.rackStack(s.Name)),
 	})
@@ -215,31 +258,28 @@ func (p *AWSProvider) resourceApps(s structs.Resource) (structs.Apps, error) {
 
 	for key, value := range outputs {
 		if strings.HasSuffix(key, "Link") {
-			// Extract app name from log group
-			index := strings.Index(value, "-LogGroup")
-			// avoid runtime panic
-			if index == -1 {
-				continue
+			if ix := strings.Index(value, "-LogGroup"); ix > -1 {
+				value = value[:ix]
 			}
-			r := strings.NewReplacer(fmt.Sprintf("%s-", p.Rack), "", value[index:], "")
-			app := r.Replace(value)
+			if prefix := fmt.Sprintf("%s-", p.Rack); strings.HasPrefix(value, prefix) {
+				value = strings.Replace(value, prefix, "", 1)
+			}
+			app := value
 
 			a, err := p.AppGet(app)
 			if err != nil {
-				if err.Error() == fmt.Sprintf("%s not found", app) {
-					continue
-				}
 				return nil, err
 			}
 
 			apps = append(apps, *a)
 		}
 	}
+
 	return apps, nil
 }
 
 // ResourceList lists the resources.
-func (p *AWSProvider) ResourceList() (structs.Resources, error) {
+func (p *Provider) ResourceList() (structs.Resources, error) {
 	stacks, err := p.describeStacks(&cloudformation.DescribeStacksInput{})
 	if err != nil {
 		return nil, err
@@ -257,24 +297,27 @@ func (p *AWSProvider) ResourceList() (structs.Resources, error) {
 	}
 
 	for _, s := range resources {
-		apps, err := p.resourceApps(s)
-		if err != nil {
-			return nil, err
+		switch s.Type {
+		case "syslog":
+			apps, err := p.resourceApps(s)
+			if err != nil {
+				return nil, err
+			}
+			s.Apps = apps
 		}
-		s.Apps = apps
 	}
 
 	return resources, nil
 }
 
 // ResourceLink creates a link between the provided app and resource.
-func (p *AWSProvider) ResourceLink(name, app, process string) (*structs.Resource, error) {
-	a, err := p.AppGet(app)
+func (p *Provider) ResourceLink(name, app string) (*structs.Resource, error) {
+	s, err := p.ResourceGet(name)
 	if err != nil {
 		return nil, err
 	}
 
-	s, err := p.ResourceGet(name)
+	a, err := p.AppGet(app)
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +338,7 @@ func (p *AWSProvider) ResourceLink(name, app, process string) (*structs.Resource
 
 	// Update Resource and/or App stacks
 	switch s.Type {
-	case "fluentd", "syslog":
+	case "syslog":
 		err = p.linkResource(a, s) // Update resource to know about App
 	default:
 		err = fmt.Errorf("resource type %s does not have a link strategy", s.Type)
@@ -304,8 +347,64 @@ func (p *AWSProvider) ResourceLink(name, app, process string) (*structs.Resource
 	return s, err
 }
 
+func (p *Provider) ResourceTypes() (structs.ResourceTypes, error) {
+	files, err := ioutil.ReadDir("provider/aws/templates/resource/")
+	if err != nil {
+		return nil, err
+	}
+
+	rts := structs.ResourceTypes{}
+
+	for _, f := range files {
+		name := strings.Split(f.Name(), ".")[0]
+
+		data, err := resourceFormation(name, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		rt := structs.ResourceType{
+			Name:       name,
+			Parameters: structs.ResourceParameters{},
+		}
+
+		var r struct {
+			Parameters map[string]struct {
+				Default     string
+				Description string
+			}
+		}
+
+		if err := json.Unmarshal([]byte(data), &r); err != nil {
+			return nil, err
+		}
+
+		for k, p := range r.Parameters {
+			def := p.Default
+
+			if k == "Password" {
+				def = "(generated)"
+			}
+
+			if resourceSystemParameters[k] {
+				continue
+			}
+
+			rt.Parameters = append(rt.Parameters, structs.ResourceParameter{
+				Default:     def,
+				Description: p.Description,
+				Name:        k,
+			})
+		}
+
+		rts = append(rts, rt)
+	}
+
+	return rts, nil
+}
+
 // ResourceUnlink removes a link between the provided app and resource.
-func (p *AWSProvider) ResourceUnlink(name, app, process string) (*structs.Resource, error) {
+func (p *Provider) ResourceUnlink(name, app string) (*structs.Resource, error) {
 	a, err := p.AppGet(app)
 	if err != nil {
 		return nil, err
@@ -315,6 +414,8 @@ func (p *AWSProvider) ResourceUnlink(name, app, process string) (*structs.Resour
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Printf("s.Parameters = %+v\n", s.Parameters)
 
 	apps, err := p.resourceApps(*s)
 	if err != nil {
@@ -338,7 +439,7 @@ func (p *AWSProvider) ResourceUnlink(name, app, process string) (*structs.Resour
 
 	// Update Resource and/or App stacks
 	switch s.Type {
-	case "fluentd", "syslog":
+	case "syslog":
 		err = p.unlinkResource(a, s) // Update resource to forget about App
 	default:
 		err = fmt.Errorf("resource type %s does not have an unlink strategy", s.Type)
@@ -348,32 +449,45 @@ func (p *AWSProvider) ResourceUnlink(name, app, process string) (*structs.Resour
 }
 
 // ResourceUpdate updates a resource with new params.
-func (p *AWSProvider) ResourceUpdate(name string, params map[string]string) (*structs.Resource, error) {
+func (p *Provider) ResourceUpdate(name string, opts structs.ResourceUpdateOptions) (*structs.Resource, error) {
 	s, err := p.ResourceGet(name)
 	if err != nil {
 		return nil, err
 	}
 
-	for key, value := range cfParams(params) {
-		s.Parameters[key] = value
-	}
-
-	err = p.updateResource(s)
+	err = p.updateResource(s, opts.Parameters)
 
 	return s, err
 }
 
-// createResource creates a Resource.
-// Note: see also ResourceCreate() above.
-// This should probably be renamed to createResourceStack to be in conformity with createResourceURL below.
-func (p *AWSProvider) createResource(s *structs.Resource) (*cloudformation.CreateStackInput, error) {
+func (p *Provider) createResource(s *structs.Resource) (*cloudformation.CreateStackInput, error) {
+	params := map[string]string{}
+
+	for k, v := range s.Parameters {
+		params[k] = v
+	}
+
 	formation, err := resourceFormation(s.Type, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := p.appendSystemParameters(s); err != nil {
-		return nil, err
+	for k, v := range p.resourceSystemParameters() {
+		s.Parameters[k] = v
+	}
+
+	if s.Parameters["Password"] == "" {
+		pw, err := generatePassword()
+		if err != nil {
+			return nil, err
+		}
+
+		s.Parameters["Password"] = pw
+	}
+
+	// reapply manually-specified parameters
+	for k, v := range params {
+		s.Parameters[k] = v
 	}
 
 	if err := filterFormationParameters(s, formation); err != nil {
@@ -381,15 +495,16 @@ func (p *AWSProvider) createResource(s *structs.Resource) (*cloudformation.Creat
 	}
 
 	req := &cloudformation.CreateStackInput{
-		Capabilities: []*string{aws.String("CAPABILITY_IAM")},
-		StackName:    aws.String(fmt.Sprintf("%s-%s", p.Rack, s.Name)),
-		TemplateBody: aws.String(formation),
+		Capabilities:     []*string{aws.String("CAPABILITY_IAM")},
+		NotificationARNs: []*string{aws.String(p.CloudformationTopic)},
+		StackName:        aws.String(fmt.Sprintf("%s-%s", p.Rack, s.Name)),
+		TemplateBody:     aws.String(formation),
 	}
 
 	return req, nil
 }
 
-func (p *AWSProvider) createResourceURL(s *structs.Resource, allowedProtocols ...string) (*cloudformation.CreateStackInput, error) {
+func (p *Provider) createResourceURL(s *structs.Resource, allowedProtocols ...string) (*cloudformation.CreateStackInput, error) {
 	if s.Parameters["Url"] == "" {
 		return nil, fmt.Errorf("must specify a URL")
 	}
@@ -415,40 +530,102 @@ func (p *AWSProvider) createResourceURL(s *structs.Resource, allowedProtocols ..
 	return p.createResource(s)
 }
 
-func (p *AWSProvider) updateResource(s *structs.Resource) error {
+// clean up any ENIs attached to the lambda function as they will block stack deletion
+func (p *Provider) deleteSyslogInterfaces(r *structs.Resource) error {
+	fmt.Printf("r = %+v\n", r)
+
+	fn, err := p.stackResource(p.rackStack(r.Name), "Function")
+	if err != nil {
+		fmt.Printf("err = %+v\n", err)
+		return nil
+	}
+
+	res, err := p.ec2().DescribeNetworkInterfaces(&ec2.DescribeNetworkInterfacesInput{
+		Filters: []*ec2.Filter{
+			{Name: aws.String("requester-id"), Values: []*string{aws.String(fmt.Sprintf("*:%s", *fn.PhysicalResourceId))}},
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	for _, ni := range res.NetworkInterfaces {
+		if ni.Attachment != nil {
+			_, err := p.ec2().DetachNetworkInterface(&ec2.DetachNetworkInterfaceInput{
+				AttachmentId: ni.Attachment.AttachmentId,
+			})
+			if err != nil {
+				return err
+			}
+		}
+
+		for {
+			res, err := p.ec2().DescribeNetworkInterfaces(&ec2.DescribeNetworkInterfacesInput{
+				Filters: []*ec2.Filter{
+					{Name: aws.String("network-interface-id"), Values: []*string{ni.NetworkInterfaceId}},
+				},
+			})
+			if err != nil {
+				return err
+			}
+			if len(res.NetworkInterfaces) < 1 {
+				return nil
+			}
+
+			if res.NetworkInterfaces[0].Attachment == nil {
+				break
+			}
+
+			time.Sleep(1 * time.Second)
+		}
+
+		_, err := p.ec2().DeleteNetworkInterface(&ec2.DeleteNetworkInterfaceInput{
+			NetworkInterfaceId: ni.NetworkInterfaceId,
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (p *Provider) updateResource(s *structs.Resource, params map[string]string) error {
 	formation, err := resourceFormation(s.Type, s)
 	if err != nil {
 		return err
 	}
 
-	if err := p.appendSystemParameters(s); err != nil {
+	if params == nil {
+		params = map[string]string{}
+	}
+
+	for k, v := range p.resourceSystemParameters() {
+		params[k] = v
+	}
+
+	// inject webhook url for backwards-compatibility
+	if s.Type == "webhook" {
+		params["Url"] = s.Url
+	}
+
+	tags := map[string]string{
+		"Name":     s.Name,
+		"Rack":     p.Rack,
+		"Resource": s.Type,
+		"System":   "convox",
+		"Type":     "resource",
+	}
+
+	if err := p.updateStack(p.rackStack(s.Name), []byte(formation), params, tags); err != nil {
 		return err
 	}
 
-	if err := filterFormationParameters(s, formation); err != nil {
-		return err
-	}
-
-	req := &cloudformation.UpdateStackInput{
-		Capabilities: []*string{aws.String("CAPABILITY_IAM")},
-		StackName:    aws.String(p.rackStack(s.Name)),
-		TemplateBody: aws.String(formation),
-	}
-
-	for key, value := range s.Parameters {
-		req.Parameters = append(req.Parameters, &cloudformation.Parameter{
-			ParameterKey:   aws.String(key),
-			ParameterValue: aws.String(value),
-		})
-	}
-
-	_, err = p.cloudformation().UpdateStack(req)
-
-	return err
+	return nil
 }
 
 // add to links
-func (p *AWSProvider) linkResource(a *structs.App, s *structs.Resource) error {
+func (p *Provider) linkResource(a *structs.App, s *structs.Resource) error {
 	for _, app := range s.Apps {
 		if a.Name == app.Name {
 			return fmt.Errorf("app already linked")
@@ -457,11 +634,11 @@ func (p *AWSProvider) linkResource(a *structs.App, s *structs.Resource) error {
 
 	s.Apps = append(s.Apps, *a)
 
-	return p.updateResource(s)
+	return p.updateResource(s, nil)
 }
 
 // delete from links
-func (p *AWSProvider) unlinkResource(a *structs.App, s *structs.Resource) error {
+func (p *Provider) unlinkResource(a *structs.App, s *structs.Resource) error {
 	apps := structs.Apps{}
 
 	for _, app := range s.Apps {
@@ -472,27 +649,23 @@ func (p *AWSProvider) unlinkResource(a *structs.App, s *structs.Resource) error 
 
 	s.Apps = apps
 
-	return p.updateResource(s)
+	return p.updateResource(s, nil)
 }
 
-func (p *AWSProvider) appendSystemParameters(s *structs.Resource) error {
-	password, err := generatePassword()
-	if err != nil {
-		return err
-	}
+func (p *Provider) resourceSystemParameters() map[string]string {
+	params := map[string]string{}
 
-	if s.Parameters["Password"] == "" {
-		s.Parameters["Password"] = password
-	}
+	params["NotificationTopic"] = p.NotificationTopic
+	params["Private"] = fmt.Sprintf("%t", p.SubnetsPrivate != "")
+	params["Release"] = p.Version
+	params["SecurityGroups"] = p.SecurityGroup
+	params["Subnets"] = p.Subnets
+	params["SubnetsPrivate"] = coalesceString(p.SubnetsPrivate, p.Subnets)
+	params["Version"] = p.Version
+	params["Vpc"] = p.Vpc
+	params["VpcCidr"] = p.VpcCidr
 
-	s.Parameters["Release"] = p.Release
-	s.Parameters["SecurityGroups"] = p.SecurityGroup
-	s.Parameters["Subnets"] = p.Subnets
-	s.Parameters["SubnetsPrivate"] = coalesceString(p.SubnetsPrivate, p.Subnets)
-	s.Parameters["Vpc"] = p.Vpc
-	s.Parameters["VpcCidr"] = p.VpcCidr
-
-	return nil
+	return params
 }
 
 func coalesceString(ss ...string) string {
@@ -558,10 +731,25 @@ func resourceFromStack(stack *cloudformation.Stack) structs.Resource {
 		rtype = tags["Service"]
 	}
 
+	delete(params, "Password")
+
 	return structs.Resource{
 		Name:       tags["Name"],
 		Parameters: params,
 		Type:       rtype,
 		Status:     humanStatus(*stack.StackStatus),
 	}
+}
+
+func webhookURL(webhook string) (string, error) {
+	if !strings.Contains(webhook, "/sns?endpoint=") {
+		return webhook, nil
+	}
+
+	u, err := url.Parse(webhook)
+	if err != nil {
+		return "", err
+	}
+
+	return u.Query().Get("endpoint"), nil
 }

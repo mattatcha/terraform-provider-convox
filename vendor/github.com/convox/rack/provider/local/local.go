@@ -2,21 +2,24 @@ package local
 
 import (
 	"context"
-	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
-	"net/http"
 	"os"
+	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/boltdb/bolt"
 	"github.com/convox/logger"
-	"github.com/convox/rack/structs"
+	"github.com/convox/rack/pkg/metrics"
+	"github.com/convox/rack/pkg/router"
+	"github.com/convox/rack/pkg/structs"
+	"github.com/pkg/errors"
 )
 
 func init() {
@@ -24,32 +27,59 @@ func init() {
 }
 
 type Provider struct {
-	Combined bool
-	Image    string
-	Name     string
-	Root     string
-	Router   string
-	Test     bool
-	Version  string
-	Volume   string
+	Combined  bool
+	Container string
+	Id        string
+	Image     string
+	Rack      string
+	Root      string
+	Router    string
+	Test      bool
+	Version   string
+	Volume    string
 
-	ctx  context.Context
-	db   *bolt.DB
-	logs *logger.Logger
+	Metrics *metrics.Metrics
+
+	ctx    context.Context
+	db     *bolt.DB
+	logs   *logger.Logger
+	router *router.Client
 }
 
-func FromEnv() *Provider {
-	return &Provider{
+func FromEnv() (*Provider, error) {
+	p := &Provider{
 		Combined: os.Getenv("COMBINED") == "true",
+		Id:       os.Getenv("ID"),
 		Image:    coalesce(os.Getenv("IMAGE"), "convox/rack"),
-		Name:     coalesce(os.Getenv("NAME"), "convox"),
-		Root:     coalesce(os.Getenv("PROVIDER_ROOT"), "/var/convox"),
-		Router:   coalesce(os.Getenv("PROVIDER_ROUTER"), "10.42.0.0"),
+		Rack:     coalesce(os.Getenv("RACK"), "convox"),
+		Root:     "/var/convox",
+		Router:   coalesce(os.Getenv("ROUTER"), "10.42.0.0"),
 		Test:     os.Getenv("TEST") == "true",
 		Version:  coalesce(os.Getenv("VERSION"), "latest"),
-		Volume:   coalesce(os.Getenv("PROVIDER_VOLUME"), "/var/convox"),
+		Volume:   coalesce(os.Getenv("VOLUME"), "/var/convox"),
+		Metrics:  metrics.New("https://metrics.convox.com/metrics/rack"),
 		logs:     logger.NewWriter("", ioutil.Discard),
 	}
+
+	host, err := os.Hostname()
+	if err != nil {
+		return nil, err
+	}
+
+	p.Container = host
+
+	if p.Id == "" {
+		p.Id, _ = dockerSystemId()
+	}
+
+	image, err := p.rackImage()
+	if err != nil {
+		return p, nil
+	}
+
+	p.Image = coalesce(os.Getenv("IMAGE"), image)
+
+	return p, nil
 }
 
 func (p *Provider) Initialize(opts structs.ProviderOptions) error {
@@ -63,7 +93,7 @@ func (p *Provider) Initialize(opts structs.ProviderOptions) error {
 		return err
 	}
 
-	db, err := bolt.Open(filepath.Join(p.Root, "convox.db"), 0600, nil)
+	db, err := bolt.Open(filepath.Join(p.Root, fmt.Sprintf("%s.db", p.Rack)), 0600, nil)
 	if err != nil {
 		return err
 	}
@@ -74,9 +104,27 @@ func (p *Provider) Initialize(opts structs.ProviderOptions) error {
 		return err
 	}
 
-	if err := p.checkRouter(); err != nil {
-		return err
+	if p.Router != "" {
+		p.router = router.NewClient(coalesce(p.Router, "10.42.0.0"))
+
+		if err := p.routerCheck(); err != nil {
+			return err
+		}
+
+		if err := p.routerRegister(); err != nil {
+			return err
+		}
 	}
+
+	terminate := make(chan os.Signal, 1)
+	signal.Notify(terminate, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		<-terminate
+		if err := p.shutdown(); err != nil {
+			p.logs.Error(errors.WithStack(err))
+		}
+	}()
 
 	if p.Combined {
 		go p.Workers()
@@ -96,7 +144,7 @@ func (p *Provider) logger(at string) *logger.Logger {
 // shutdown cleans up any running resources and exit
 func (p *Provider) shutdown() error {
 	cs, err := containersByLabels(map[string]string{
-		"convox.rack": p.Name,
+		"convox.rack": p.Rack,
 	})
 	if err != nil {
 		return err
@@ -135,43 +183,84 @@ func (p *Provider) createRootBucket(name string) (*bolt.Bucket, error) {
 	return bucket, err
 }
 
-func (p *Provider) checkRouter() error {
-	if p.Router == "none" {
-		return nil
-	}
-
-	c := http.Client{
-		Timeout: 2 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-		},
-	}
-
-	res, err := c.Get(fmt.Sprintf("https://%s/version", p.Router))
+func (p *Provider) rackImage() (string, error) {
+	image, err := exec.Command("docker", "inspect", "-f", "{{.Config.Image}}", p.Container).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("unable to register with router")
+		return "", err
 	}
 
-	defer res.Body.Close()
+	return strings.TrimSpace(string(image)), nil
+}
 
-	data, err := ioutil.ReadAll(res.Body)
+func (p *Provider) routerCheck() error {
+	v, err := p.router.Version()
 	if err != nil {
 		return err
 	}
 
-	var v struct {
-		Version string
-	}
+	if v != "dev" && strings.Compare(v, p.Version) < 0 {
+		if err := p.router.Terminate(); err != nil {
+			return err
+		}
 
-	if err := json.Unmarshal(data, &v); err != nil {
-		return err
-	}
-
-	if v.Version != "dev" && strings.Compare(v.Version, p.Version) < 0 {
-		c.PostForm(fmt.Sprintf("https://%s/terminate", p.Router), nil)
+		time.Sleep(3 * time.Second)
 	}
 
 	return nil
+}
+
+func (p *Provider) routerRegister() error {
+	port, err := exec.Command("docker", "inspect", "-f", `{{(index (index .NetworkSettings.Ports "5443/tcp") 0).HostPort}}`, p.Container).CombinedOutput()
+	if err != nil {
+		return err
+	}
+
+	return p.router.RackCreate(p.Rack, fmt.Sprintf("tls://127.0.0.1:%s", strings.TrimSpace(string(port))))
+}
+
+func dockerSystemId() (string, error) {
+	data, err := exec.Command("docker", "system", "info").CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "ID: ") {
+			return strings.ToLower(strings.TrimPrefix(line, "ID: ")), nil
+		}
+	}
+
+	return "", fmt.Errorf("could not find docker system id")
+}
+
+func systemVolume(volume string) bool {
+	switch volume {
+	case "/var/run/docker.sock":
+		return true
+	}
+
+	return false
+}
+
+func (p *Provider) serviceVolumes(app string, volumes []string) ([]string, error) {
+	vv := []string{}
+
+	for _, v := range volumes {
+		parts := strings.SplitN(v, ":", 2)
+
+		from := parts[0]
+
+		if !systemVolume(from) {
+			from = fmt.Sprintf("%s/%s/volumes/%s", p.Volume, app, from)
+		}
+
+		switch len(parts) {
+		case 1:
+			vv = append(vv, fmt.Sprintf("%s:%s", from, parts[0]))
+		case 2:
+			vv = append(vv, fmt.Sprintf("%s:%s", from, parts[1]))
+		}
+	}
+
+	return vv, nil
 }

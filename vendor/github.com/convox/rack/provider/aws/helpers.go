@@ -14,9 +14,9 @@ import (
 	"io/ioutil"
 	"math/big"
 	"math/rand"
-	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -32,9 +32,10 @@ import (
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sts"
-	"github.com/convox/rack/cache"
-	"github.com/convox/rack/manifest1"
-	"github.com/convox/rack/structs"
+	"github.com/convox/rack/pkg/cache"
+	"github.com/convox/rack/pkg/manifest1"
+	"github.com/convox/rack/pkg/structs"
+	docker "github.com/fsouza/go-dockerclient"
 )
 
 type Template struct {
@@ -48,7 +49,7 @@ type TemplateParameter struct {
 	Type        string
 }
 
-func (p *AWSProvider) accountId() (string, error) {
+func (p *Provider) accountId() (string, error) {
 	res, err := p.sts().GetCallerIdentity(&sts.GetCallerIdentityInput{})
 	if err != nil {
 		return "", err
@@ -162,20 +163,20 @@ func cs(s *string, def string) string {
 	return def
 }
 
-func ct(t *time.Time) time.Time {
+func ct(t *time.Time, def time.Time) time.Time {
 	if t != nil {
 		return *t
 	}
-	return time.Time{}
+	return def
 }
 
 func generation(g *string) string {
 	if g == nil {
-		return "1"
+		return "2"
 	}
 
 	if *g == "" {
-		return "1"
+		return "2"
 	}
 
 	return *g
@@ -192,7 +193,7 @@ func generateId(prefix string, size int) string {
 }
 
 func buildTemplate(name, section string, data interface{}) (string, error) {
-	d, err := Asset(fmt.Sprintf("templates/%s.tmpl", name))
+	d, err := ioutil.ReadFile(fmt.Sprintf("provider/aws/templates/%s.tmpl", name))
 	if err != nil {
 		return "", err
 	}
@@ -212,7 +213,7 @@ func buildTemplate(name, section string, data interface{}) (string, error) {
 	return formation.String(), nil
 }
 
-func (p *AWSProvider) createdTime() string {
+func (p *Provider) createdTime() string {
 	if p.IsTest() {
 		return time.Time{}.Format(sortableTime)
 	}
@@ -274,9 +275,23 @@ func humanStatus(original string) string {
 	}
 }
 
+func taskStatus(original string) string {
+	return strings.ToLower(original)
+}
+
 func lastline(data []byte) string {
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
 	return lines[len(lines)-1]
+}
+
+var randomAlphabet = []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+
+func randomString(size int) string {
+	b := make([]rune, size)
+	for i := range b {
+		b[i] = randomAlphabet[rand.Intn(len(randomAlphabet))]
+	}
+	return string(b)
 }
 
 func recoverWith(f func(err error)) {
@@ -300,6 +315,26 @@ func remarshal(v interface{}, w interface{}) error {
 	return json.Unmarshal(data, &w)
 }
 
+func retry(times int, interval time.Duration, fn func() error) error {
+	i := 0
+
+	for {
+		err := fn()
+		if err == nil {
+			return nil
+		}
+
+		// add 20% jitter
+		time.Sleep(interval + time.Duration(rand.Intn(int(interval/20))))
+
+		i++
+
+		if i > times {
+			return err
+		}
+	}
+}
+
 func stackName(app *structs.App) string {
 	if _, ok := app.Tags["Rack"]; ok {
 		return fmt.Sprintf("%s-%s", app.Tags["Rack"], app.Name)
@@ -308,7 +343,7 @@ func stackName(app *structs.App) string {
 	return app.Name
 }
 
-func (p *AWSProvider) rackStack(name string) string {
+func (p *Provider) rackStack(name string) string {
 	return fmt.Sprintf("%s-%s", p.Rack, name)
 }
 
@@ -344,9 +379,6 @@ func stackTags(stack *cloudformation.Stack) map[string]string {
 
 func templateHelpers() template.FuncMap {
 	return template.FuncMap{
-		"env": func(s string) string {
-			return os.Getenv(s)
-		},
 		"upper": func(s string) string {
 			return upperName(s)
 		},
@@ -354,6 +386,34 @@ func templateHelpers() template.FuncMap {
 			return template.HTML(fmt.Sprintf("%q", s))
 		},
 	}
+}
+
+func volumeFrom(app, s string) string {
+	parts := strings.SplitN(s, ":", 2)
+
+	switch v := parts[0]; v {
+	case "/cgroup/":
+		return v
+	case "/sys/fs/cgroup/":
+		return v
+	case "/proc/":
+		return v
+	case "/var/run/docker.sock":
+		return v
+	default:
+		return path.Join("/volumes", app, v)
+	}
+}
+
+func volumeTo(s string) string {
+	parts := strings.SplitN(s, ":", 2)
+	switch len(parts) {
+	case 1:
+		return s
+	case 2:
+		return parts[1]
+	}
+	return fmt.Sprintf("invalid volume %q", s)
 }
 
 func dashName(name string) string {
@@ -368,6 +428,9 @@ func upperName(name string) string {
 	if name == "" {
 		return ""
 	}
+
+	// replace underscores with dashes
+	name = strings.Replace(name, "_", "-", -1)
 
 	// myapp -> Myapp; my-app -> MyApp
 	us := strings.ToUpper(name[0:1]) + name[1:]
@@ -399,7 +462,7 @@ func upperName(name string) string {
  * AWS API HELPERS
  ****************************************************************************/
 
-func (p *AWSProvider) createStack(name string, body []byte, params map[string]string, tags map[string]string) error {
+func (p *Provider) createStack(name string, body []byte, params map[string]string, tags map[string]string) error {
 	req := &cloudformation.CreateStackInput{
 		Capabilities:     []*string{aws.String("CAPABILITY_IAM")},
 		StackName:        aws.String(name),
@@ -429,7 +492,7 @@ func (p *AWSProvider) createStack(name string, body []byte, params map[string]st
 	return nil
 }
 
-func (p *AWSProvider) dynamoBatchDeleteItems(wrs []*dynamodb.WriteRequest, tableName string) error {
+func (p *Provider) dynamoBatchDeleteItems(wrs []*dynamodb.WriteRequest, tableName string) error {
 
 	if len(wrs) > 0 {
 
@@ -473,7 +536,7 @@ func (p *AWSProvider) dynamoBatchDeleteItems(wrs []*dynamodb.WriteRequest, table
 
 // listAndDescribeContainerInstances lists and describes all the ECS instances.
 // It handles pagination for clusters > 100 instances.
-func (p *AWSProvider) listAndDescribeContainerInstances() (*ecs.DescribeContainerInstancesOutput, error) {
+func (p *Provider) listAndDescribeContainerInstances() (*ecs.DescribeContainerInstancesOutput, error) {
 	instances := []*ecs.ContainerInstance{}
 	var nextToken string
 
@@ -483,7 +546,7 @@ func (p *AWSProvider) listAndDescribeContainerInstances() (*ecs.DescribeContaine
 			NextToken: &nextToken,
 		})
 		if ae, ok := err.(awserr.Error); ok && ae.Code() == "ClusterNotFoundException" {
-			return nil, errorNotFound(fmt.Sprintf("cluster not found: %s", p.Cluster))
+			return nil, fmt.Errorf("cluster not found: %s", p.Cluster)
 		}
 		if err != nil {
 			return nil, err
@@ -513,7 +576,7 @@ func (p *AWSProvider) listAndDescribeContainerInstances() (*ecs.DescribeContaine
 	}, nil
 }
 
-func (p *AWSProvider) describeContainerInstances(input *ecs.DescribeContainerInstancesInput) (*ecs.DescribeContainerInstancesOutput, error) {
+func (p *Provider) describeContainerInstances(input *ecs.DescribeContainerInstancesInput) (*ecs.DescribeContainerInstancesOutput, error) {
 	res, ok := cache.Get("describeContainerInstances", input).(*ecs.DescribeContainerInstancesOutput)
 	if ok {
 		return res, nil
@@ -534,7 +597,7 @@ func (p *AWSProvider) describeContainerInstances(input *ecs.DescribeContainerIns
 	return res, nil
 }
 
-func (p *AWSProvider) describeServices(input *ecs.DescribeServicesInput) (*ecs.DescribeServicesOutput, error) {
+func (p *Provider) describeServices(input *ecs.DescribeServicesInput) (*ecs.DescribeServicesOutput, error) {
 	res, ok := cache.Get("describeServices", input.Services).(*ecs.DescribeServicesOutput)
 
 	if ok {
@@ -556,7 +619,7 @@ func (p *AWSProvider) describeServices(input *ecs.DescribeServicesInput) (*ecs.D
 	return res, nil
 }
 
-func (p *AWSProvider) describeStacks(input *cloudformation.DescribeStacksInput) ([]*cloudformation.Stack, error) {
+func (p *Provider) describeStacks(input *cloudformation.DescribeStacksInput) ([]*cloudformation.Stack, error) {
 	var stacks []*cloudformation.Stack
 	stacks, ok := cache.Get("describeStacks", input.StackName).([]*cloudformation.Stack)
 
@@ -586,12 +649,12 @@ func (p *AWSProvider) describeStacks(input *cloudformation.DescribeStacksInput) 
 	return stacks, nil
 }
 
-func (p *AWSProvider) describeStack(name string) (*cloudformation.Stack, error) {
+func (p *Provider) describeStack(name string) (*cloudformation.Stack, error) {
 	stacks, err := p.describeStacks(&cloudformation.DescribeStacksInput{
 		StackName: aws.String(name),
 	})
 	if ae, ok := err.(awserr.Error); ok && ae.Code() == "ValidationError" {
-		return nil, errorNotFound(fmt.Sprintf("%s not found", name))
+		return nil, fmt.Errorf("stack not found: %s", name)
 	}
 	if err != nil {
 		return nil, err
@@ -603,7 +666,7 @@ func (p *AWSProvider) describeStack(name string) (*cloudformation.Stack, error) 
 	return stacks[0], nil
 }
 
-func (p *AWSProvider) describeStackEvents(input *cloudformation.DescribeStackEventsInput) (*cloudformation.DescribeStackEventsOutput, error) {
+func (p *Provider) describeStackEvents(input *cloudformation.DescribeStackEventsInput) (*cloudformation.DescribeStackEventsOutput, error) {
 	res, ok := cache.Get("describeStackEvents", input.StackName).(*cloudformation.DescribeStackEventsOutput)
 
 	if ok {
@@ -624,7 +687,7 @@ func (p *AWSProvider) describeStackEvents(input *cloudformation.DescribeStackEve
 	return res, nil
 }
 
-func (p *AWSProvider) describeStackResource(input *cloudformation.DescribeStackResourceInput) (*cloudformation.DescribeStackResourceOutput, error) {
+func (p *Provider) describeStackResource(input *cloudformation.DescribeStackResourceInput) (*cloudformation.DescribeStackResourceOutput, error) {
 	key := fmt.Sprintf("%s.%s", *input.StackName, *input.LogicalResourceId)
 
 	res, ok := cache.Get("describeStackResource", key).(*cloudformation.DescribeStackResourceOutput)
@@ -647,7 +710,7 @@ func (p *AWSProvider) describeStackResource(input *cloudformation.DescribeStackR
 	return res, nil
 }
 
-func (p *AWSProvider) describeStackResources(input *cloudformation.DescribeStackResourcesInput) (*cloudformation.DescribeStackResourcesOutput, error) {
+func (p *Provider) describeStackResources(input *cloudformation.DescribeStackResourcesInput) (*cloudformation.DescribeStackResourcesOutput, error) {
 	res, ok := cache.Get("describeStackResources", input.StackName).(*cloudformation.DescribeStackResourcesOutput)
 
 	if ok {
@@ -668,7 +731,7 @@ func (p *AWSProvider) describeStackResources(input *cloudformation.DescribeStack
 	return res, nil
 }
 
-func (p *AWSProvider) listStackResources(stack string) ([]*cloudformation.StackResourceSummary, error) {
+func (p *Provider) listStackResources(stack string) ([]*cloudformation.StackResourceSummary, error) {
 	res, ok := cache.Get("listStackResources", stack).([]*cloudformation.StackResourceSummary)
 	if ok {
 		return res, nil
@@ -704,7 +767,22 @@ func (p *AWSProvider) listStackResources(stack string) ([]*cloudformation.StackR
 	return srs, nil
 }
 
-func (p *AWSProvider) rackResource(resource string) (string, error) {
+func (p *Provider) appOutput(app, output string) (string, error) {
+	s, err := p.describeStack(p.rackStack(app))
+	if err != nil {
+		return "", err
+	}
+
+	for k, v := range stackOutputs(s) {
+		if k == output {
+			return v, nil
+		}
+	}
+
+	return "", nil
+}
+
+func (p *Provider) rackResource(resource string) (string, error) {
 	res, err := p.stackResource(p.Rack, resource)
 	if err != nil {
 		return "", err
@@ -713,7 +791,7 @@ func (p *AWSProvider) rackResource(resource string) (string, error) {
 	return *res.PhysicalResourceId, nil
 }
 
-func (p *AWSProvider) appResource(app, resource string) (string, error) {
+func (p *Provider) appResource(app, resource string) (string, error) {
 	res, err := p.stackResource(fmt.Sprintf("%s-%s", p.Rack, app), resource)
 	if err != nil {
 		return "", err
@@ -722,7 +800,7 @@ func (p *AWSProvider) appResource(app, resource string) (string, error) {
 	return *res.PhysicalResourceId, nil
 }
 
-func (p *AWSProvider) stackResource(stack, resource string) (*cloudformation.StackResourceSummary, error) {
+func (p *Provider) stackResource(stack, resource string) (*cloudformation.StackResourceSummary, error) {
 	log := Logger.At("stackResource").Namespace("stack=%s resource=%s", stack, resource).Start()
 
 	srs, err := p.listStackResources(stack)
@@ -736,10 +814,27 @@ func (p *AWSProvider) stackResource(stack, resource string) (*cloudformation.Sta
 		}
 	}
 
-	return nil, log.Error(fmt.Errorf("resource not found: %s", resource))
+	return nil, fmt.Errorf("resource not found: %s", resource)
 }
 
-func (p *AWSProvider) stackParameter(stack, param string) (string, error) {
+func (p *Provider) appResources(app string) (map[string]string, error) {
+	srs, err := p.listStackResources(p.rackStack(app))
+	if err != nil {
+		return nil, err
+	}
+
+	rs := map[string]string{}
+
+	for _, sr := range srs {
+		if sr.LogicalResourceId != nil && sr.PhysicalResourceId != nil {
+			rs[*sr.LogicalResourceId] = *sr.PhysicalResourceId
+		}
+	}
+
+	return rs, nil
+}
+
+func (p *Provider) stackParameter(stack, param string) (string, error) {
 	res, err := p.describeStack(stack)
 	if err != nil {
 		return "", err
@@ -751,10 +846,96 @@ func (p *AWSProvider) stackParameter(stack, param string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("parameter not found")
+	return "", fmt.Errorf("parameter not found: %s", param)
 }
 
-func (p *AWSProvider) describeTaskDefinition(input *ecs.DescribeTaskDefinitionInput) (*ecs.DescribeTaskDefinitionOutput, error) {
+func (p *Provider) dockerContainerFromPid(pid string) (*docker.Container, error) {
+	dc, err := p.dockerClientFromPid(pid)
+	if err != nil {
+		return nil, err
+	}
+
+	arn, err := p.taskArnFromPid(pid)
+	if err != nil {
+		return nil, err
+	}
+
+	tries := 0
+
+	var cs []docker.APIContainers
+
+	for {
+		tries += 1
+		time.Sleep(1 * time.Second)
+
+		cs, err = dc.ListContainers(docker.ListContainersOptions{
+			All: true,
+			Filters: map[string][]string{
+				"label": {
+					fmt.Sprintf("com.amazonaws.ecs.task-arn=%s", arn),
+					"convox.release",
+				},
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(cs) != 1 {
+			if tries < 20 {
+				continue
+			}
+			return nil, fmt.Errorf("could not find container for task: %s", arn)
+		}
+
+		c, err := dc.InspectContainer(cs[0].ID)
+		if err != nil {
+			return nil, err
+		}
+
+		return c, nil
+	}
+
+	return nil, fmt.Errorf("could not find container for task: %s", arn)
+}
+
+func (p *Provider) dockerClientFromPid(pid string) (*docker.Client, error) {
+	arn, err := p.taskArnFromPid(pid)
+	if err != nil {
+		return nil, err
+	}
+
+	task, err := p.describeTask(arn)
+	if err != nil {
+		return nil, err
+	}
+	if len(task.Containers) < 1 {
+		return nil, fmt.Errorf("no running container for process: %s", pid)
+	}
+
+	if task.ContainerInstanceArn == nil {
+		return nil, fmt.Errorf("could not find instance for process: %s", pid)
+	}
+
+	cires, err := p.describeContainerInstances(&ecs.DescribeContainerInstancesInput{
+		Cluster:            aws.String(p.Cluster),
+		ContainerInstances: []*string{task.ContainerInstanceArn},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(cires.ContainerInstances) < 1 {
+		return nil, fmt.Errorf("could not find instance for process: %s", pid)
+	}
+
+	dc, err := p.dockerInstance(*cires.ContainerInstances[0].Ec2InstanceId)
+	if err != nil {
+		return nil, err
+	}
+
+	return dc, nil
+}
+
+func (p *Provider) describeTaskDefinition(input *ecs.DescribeTaskDefinitionInput) (*ecs.DescribeTaskDefinitionOutput, error) {
 	td, ok := cache.Get("describeTaskDefinition", input).(*ecs.DescribeTaskDefinitionOutput)
 	if ok {
 		return td, nil
@@ -762,7 +943,7 @@ func (p *AWSProvider) describeTaskDefinition(input *ecs.DescribeTaskDefinitionIn
 
 	res, err := p.ecs().DescribeTaskDefinition(input)
 	if ae, ok := err.(awserr.Error); ok && ae.Code() == "ValidationError" {
-		return nil, errorNotFound(fmt.Sprintf("%s not found", *input.TaskDefinition))
+		return nil, fmt.Errorf("task definition not found: %s", *input.TaskDefinition)
 	}
 	if err != nil {
 		return nil, err
@@ -777,7 +958,7 @@ func (p *AWSProvider) describeTaskDefinition(input *ecs.DescribeTaskDefinitionIn
 	return res, nil
 }
 
-func (p *AWSProvider) describeTasks(input *ecs.DescribeTasksInput) (*ecs.DescribeTasksOutput, error) {
+func (p *Provider) describeTasks(input *ecs.DescribeTasksInput) (*ecs.DescribeTasksOutput, error) {
 	res, ok := cache.Get("describeTasks", input).(*ecs.DescribeTasksOutput)
 
 	if ok {
@@ -790,7 +971,7 @@ func (p *AWSProvider) describeTasks(input *ecs.DescribeTasksInput) (*ecs.Describ
 		return nil, err
 	}
 
-	if !p.SkipCache {
+	if !p.SkipCache && len(res.Failures) == 0 {
 		if err := cache.Set("describeTasks", input, res, 10*time.Second); err != nil {
 			return nil, err
 		}
@@ -799,7 +980,7 @@ func (p *AWSProvider) describeTasks(input *ecs.DescribeTasksInput) (*ecs.Describ
 	return res, nil
 }
 
-func (p *AWSProvider) listContainerInstances(input *ecs.ListContainerInstancesInput) (*ecs.ListContainerInstancesOutput, error) {
+func (p *Provider) listContainerInstances(input *ecs.ListContainerInstancesInput) (*ecs.ListContainerInstancesOutput, error) {
 	res, ok := cache.Get("listContainerInstances", input).(*ecs.ListContainerInstancesOutput)
 
 	if ok {
@@ -821,7 +1002,7 @@ func (p *AWSProvider) listContainerInstances(input *ecs.ListContainerInstancesIn
 	return res, nil
 }
 
-func (p *AWSProvider) objectURL(ou string) (string, error) {
+func (p *Provider) objectURL(ou string) (string, error) {
 	u, err := url.Parse(ou)
 	if err != nil {
 		return "", err
@@ -834,7 +1015,27 @@ func (p *AWSProvider) objectURL(ou string) (string, error) {
 	return fmt.Sprintf("https://s3.%s.amazonaws.com/%s%s", p.Region, p.SettingsBucket, u.Path), nil
 }
 
-func (p *AWSProvider) s3Exists(bucket, key string) (bool, error) {
+func (p *Provider) serviceArn(app, service string) (string, error) {
+	sarn, err := p.appOutput(app, fmt.Sprintf("Service%sService", upperName(service)))
+	if err != nil {
+		return "", err
+	}
+	if sarn != "" {
+		return sarn, nil
+	}
+
+	sarn, err = p.appResource(app, fmt.Sprintf("Service%sService", upperName(service)))
+	if err != nil && !strings.HasPrefix(err.Error(), "resource not found") {
+		return "", err
+	}
+	if sarn != "" {
+		return sarn, nil
+	}
+
+	return "", nil
+}
+
+func (p *Provider) s3Exists(bucket, key string) (bool, error) {
 	_, err := p.s3().HeadObject(&s3.HeadObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
@@ -851,7 +1052,7 @@ func (p *AWSProvider) s3Exists(bucket, key string) (bool, error) {
 	return true, nil
 }
 
-func (p *AWSProvider) s3Get(bucket, key string) ([]byte, error) {
+func (p *Provider) s3Get(bucket, key string) ([]byte, error) {
 	req := &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
@@ -866,7 +1067,7 @@ func (p *AWSProvider) s3Get(bucket, key string) ([]byte, error) {
 	return ioutil.ReadAll(res.Body)
 }
 
-func (p *AWSProvider) s3Delete(bucket, key string) error {
+func (p *Provider) s3Delete(bucket, key string) error {
 	req := &s3.DeleteObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
@@ -877,7 +1078,7 @@ func (p *AWSProvider) s3Delete(bucket, key string) error {
 	return err
 }
 
-func (p *AWSProvider) s3Put(bucket, key string, data []byte, public bool) error {
+func (p *Provider) s3Put(bucket, key string, data []byte, public bool) error {
 	req := &s3.PutObjectInput{
 		Body:          bytes.NewReader(data),
 		Bucket:        aws.String(bucket),
@@ -894,20 +1095,20 @@ func (p *AWSProvider) s3Put(bucket, key string, data []byte, public bool) error 
 	return err
 }
 
-func (p *AWSProvider) taskRelease(id string) (string, error) {
+func (p *Provider) taskRelease(id string) (string, error) {
 	if release, ok := cache.Get("taskRelease", id).(string); ok {
 		return release, nil
 	}
 
 	t, err := p.describeTasks(&ecs.DescribeTasksInput{
-		Cluster: aws.String(os.Getenv("CLUSTER")),
+		Cluster: aws.String(p.Cluster),
 		Tasks:   []*string{aws.String(id)},
 	})
 	if err != nil {
 		return "", err
 	}
 	if len(t.Tasks) < 1 {
-		return "", fmt.Errorf("no such task: %s", id)
+		return "", fmt.Errorf("task not found: %s", id)
 	}
 
 	release, err := p.taskDefinitionRelease(*t.Tasks[0].TaskDefinitionArn)
@@ -922,7 +1123,7 @@ func (p *AWSProvider) taskRelease(id string) (string, error) {
 	return release, nil
 }
 
-func (p *AWSProvider) taskDefinitionRelease(arn string) (string, error) {
+func (p *Provider) taskDefinitionRelease(arn string) (string, error) {
 	if release, ok := cache.Get("taskDefinitionRelease", arn).(string); ok {
 		return release, nil
 	}
@@ -952,7 +1153,7 @@ func (p *AWSProvider) taskDefinitionRelease(arn string) (string, error) {
 // updateStack updates a stack
 //   template is url to a template or empty string to reuse previous
 //   changes is a list of parameter changes to make (does not need to include every param)
-func (p *AWSProvider) updateStack(name string, template string, changes map[string]string) error {
+func (p *Provider) updateStack(name string, template []byte, changes map[string]string, tags map[string]string) error {
 	cache.Clear("describeStacks", nil)
 	cache.Clear("describeStacks", name)
 
@@ -974,48 +1175,26 @@ func (p *AWSProvider) updateStack(name string, template string, changes map[stri
 		pexisting[*p.ParameterKey] = true
 	}
 
-	if template != "" {
-		var data []byte
-		var err error
+	if template != nil {
+		key := ""
 
-		if strings.HasPrefix(template, "object://") {
-			u, err := url.Parse(template)
-			if err != nil {
-				return err
-			}
-
-			r, err := p.ObjectFetch(u.Host, u.Path)
-			if err != nil {
-				return err
-			}
-
-			data, err = ioutil.ReadAll(r)
-			if err != nil {
-				return err
-			}
-
-			ru, err := p.objectURL(template)
-			if err != nil {
-				return err
-			}
-
-			req.TemplateURL = aws.String(ru)
-		} else {
-			res, err := http.Get(template)
-			if err != nil {
-				return err
-			}
-			defer res.Body.Close()
-
-			data, err = ioutil.ReadAll(res.Body)
-			if err != nil {
-				return err
-			}
-
-			req.TemplateURL = aws.String(template)
+		if p.IsTest() {
+			key = "test-key"
 		}
 
-		fp, err := formationParameters(data)
+		ou, err := p.ObjectStore("", key, bytes.NewReader(template), structs.ObjectStoreOptions{})
+		if err != nil {
+			return err
+		}
+
+		tu, err := p.objectURL(ou.Url)
+		if err != nil {
+			return err
+		}
+
+		req.TemplateURL = aws.String(tu)
+
+		fp, err := formationParameters(template)
 		if err != nil {
 			return err
 		}
@@ -1054,6 +1233,23 @@ func (p *AWSProvider) updateStack(name string, template string, changes map[stri
 		}
 	}
 
+	req.Tags = stack.Tags
+
+	tks := []string{}
+
+	for key := range tags {
+		tks = append(tks, key)
+	}
+
+	sort.Strings(tks)
+
+	for _, key := range tks {
+		req.Tags = append(req.Tags, &cloudformation.Tag{
+			Key:   aws.String(key),
+			Value: aws.String(tags[key]),
+		})
+	}
+
 	_, err = p.cloudformation().UpdateStack(req)
 
 	cache.Clear("describeStacks", nil)
@@ -1069,7 +1265,7 @@ var (
 )
 
 // wait for a few successful certificate refreshes in a row
-func (p *AWSProvider) waitForServerCertificate(name string) error {
+func (p *Provider) waitForServerCertificate(name string) error {
 	confirmations := 0
 	done := time.Now().Add(serverCertificateWaitTimeout)
 

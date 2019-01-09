@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/convox/rack/structs"
+	"github.com/convox/rack/pkg/structs"
 	docker "github.com/fsouza/go-dockerclient"
 )
 
-func (p *AWSProvider) RegistryAdd(server, username, password string) (*structs.Registry, error) {
+func (p *Provider) RegistryAdd(server, username, password string) (*structs.Registry, error) {
 	log := Logger.At("RegistryAdd").Namespace("server=%q username=%q", server, username).Start()
 
 	if server == "" {
@@ -88,13 +88,13 @@ func (p *AWSProvider) RegistryAdd(server, username, password string) (*structs.R
 	return registry, log.Success()
 }
 
-func (p *AWSProvider) RegistryRemove(server string) error {
+func (p *Provider) RegistryRemove(server string) error {
 	log := Logger.At("RegistryRemove").Namespace("server=%q", server).Start()
 
 	key := fmt.Sprintf("system/registries/%x", sha256.New().Sum([]byte(server)))
 
 	if _, err := p.SettingExists(key); err != nil {
-		return log.Error(fmt.Errorf("no such registry: %s", server))
+		return log.Error(errorNotFound(fmt.Sprintf("registry not found: %s", server)))
 	}
 
 	if err := p.SettingDelete(key); err != nil {
@@ -104,7 +104,7 @@ func (p *AWSProvider) RegistryRemove(server string) error {
 	return log.Success()
 }
 
-func (p *AWSProvider) RegistryList() (structs.Registries, error) {
+func (p *Provider) RegistryList() (structs.Registries, error) {
 	log := Logger.At("RegistryList").Start()
 
 	objects, err := p.SettingList(structs.SettingListOptions{Prefix: "system/registries/"})

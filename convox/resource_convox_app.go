@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/convox/rack/client"
+	"github.com/convox/rack/pkg/structs"
 	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
@@ -77,7 +77,11 @@ func ResourceConvoxAppCreateFactory(clientUnpacker ClientUnpacker) schema.Create
 			generation = "1"
 		}
 
-		app, err := c.CreateApp(name, generation)
+		options := structs.AppCreateOptions{
+			Generation: &generation,
+		}
+
+		app, err := c.AppCreate(name, options)
 		if err != nil {
 			return errwrap.Wrapf(fmt.Sprintf(
 				"Error creating app (%s): {{err}}", name), err)
@@ -194,15 +198,11 @@ func ResourceConvoxAppDeleteFactory(clientUnpacker ClientUnpacker) schema.Delete
 	}
 }
 
-func readFormation(d *schema.ResourceData, v client.Formation) error {
+func readFormation(d *schema.ResourceData, v structs.Formation) error {
 	balancers := make(map[string]string, len(v))
 
 	for _, f := range v {
-		v := f.Balancer
-		if v == "" {
-			v = f.Hostname
-		}
-		balancers[f.Name] = v
+		balancers[f.Name] = f.Hostname
 	}
 
 	if err := d.Set("balancers", balancers); err != nil {
@@ -218,7 +218,7 @@ func setParams(c Client, d *schema.ResourceData) error {
 	}
 
 	raw := d.Get("params").(map[string]interface{})
-	params := make(client.Parameters)
+	params := make(map[string]string)
 	for key := range raw {
 		params[key] = raw[key].(string)
 	}

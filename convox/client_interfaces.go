@@ -3,7 +3,7 @@ package convox
 import (
 	"io"
 
-	"github.com/convox/rack/client"
+	"github.com/convox/rack/pkg/structs"
 )
 
 // ValueGetter gets values (from terraform schema)
@@ -17,23 +17,23 @@ type ClientUnpacker func(valueGetter ValueGetter, meta interface{}) (Client, err
 
 // Client interface is the subset of the convox client we use
 type Client interface {
-	CreateApp(name string, generation string) (*client.App, error)
-	GetApp(name string) (*client.App, error)
-	DeleteApp(name string) (*client.App, error)
+	AppCreate(name string, opts structs.AppCreateOptions) (*structs.App, error)
+	AppGet(name string) (*structs.App, error)
+	AppDelete(name string) error
 
-	ListFormation(app string) (client.Formation, error)
+	ListFormation(app string) (structs.Formation, error)
 
-	ListParameters(app string) (client.Parameters, error)
+	ListParameters(app string) (map[string]string, error)
 	SetParameters(app string, params map[string]string) error
 
-	GetEnvironment(app string) (client.Environment, error)
-	SetEnvironment(app string, body io.Reader) (client.Environment, string, error)
+	GetEnvironment(app string) (structs.Environment, error)
+	SetEnvironment(app string, body io.Reader) (structs.Environment, string, error)
 
-	GetResource(name string) (*client.Resource, error)
-	CreateResource(kind string, options map[string]string) (*client.Resource, error)
-	UpdateResource(name string, options map[string]string) (*client.Resource, error)
-	DeleteResource(name string) (*client.Resource, error)
+	ResourceCreate(kind string, opts structs.ResourceCreateOptions) (*structs.Resource, error)
+	ResourceDelete(name string) error
+	ResourceGet(name string) (*structs.Resource, error)
+	ResourceUpdate(name string, opts structs.ResourceUpdateOptions) (*structs.Resource, error)
 
-	CreateLink(app, resourceName string) (*client.Resource, error)
-	DeleteLink(app, resourceName string) (*client.Resource, error)
+	ResourceLink(name, app string) (*structs.Resource, error)
+	ResourceUnlink(name, app string) (*structs.Resource, error)
 }

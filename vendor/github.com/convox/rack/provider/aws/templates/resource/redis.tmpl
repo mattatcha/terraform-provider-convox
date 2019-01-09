@@ -9,7 +9,7 @@
       "AutomaticFailoverEnabled": {
         "Type": "String",
         "Default": "false",
-        "Description": "Indicates whether Multi-AZ is enabled. Must be accompanied with InstanceType=cache.m3.medium or higher and NumCacheCluster=2 or higher."
+        "Description": "Indicates whether Multi-AZ is enabled. Must be accompanied with NumCacheClusters=2 or higher."
       },
       "Database": {
         "Type" : "String",
@@ -21,6 +21,10 @@
         "Description": "Encrypt at rest and in transit",
         "Default": "false",
         "AllowedValues": [ "true", "false" ]
+      },
+      "EngineVersion": {
+        "Type": "String",
+        "Default": "3.2.6"
       },
       "InstanceType": {
         "Type": "String",
@@ -46,10 +50,6 @@
         "Type" : "List<AWS::EC2::Subnet::Id>",
         "Default" : "",
         "Description" : "VPC private subnets"
-      },
-      "Version": {
-        "Type": "String",
-        "Default": "3.2.6"
       },
       "Vpc": {
         "Type": "AWS::EC2::VPC::Id",
@@ -95,7 +95,7 @@
           "CacheNodeType": { "Ref": "InstanceType" },
           "CacheSubnetGroupName": { "Ref": "CacheSubnetGroup" },
           "Engine": "redis",
-          "EngineVersion": { "Ref": "Version" },
+          "EngineVersion": { "Ref": "EngineVersion" },
           "NumCacheClusters": { "Ref": "NumCacheClusters" },
           "Port": "6379",
           "ReplicationGroupDescription": { "Ref": "AWS::StackName" },

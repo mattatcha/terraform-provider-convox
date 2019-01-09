@@ -2,16 +2,15 @@ package local
 
 import (
 	"fmt"
-	"io"
 	"math/rand"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/convox/rack/cache"
-	"github.com/convox/rack/helpers"
-	"github.com/convox/rack/options"
-	"github.com/convox/rack/structs"
+	"github.com/convox/rack/pkg/cache"
+	"github.com/convox/rack/pkg/helpers"
+	"github.com/convox/rack/pkg/options"
+	"github.com/convox/rack/pkg/structs"
 	"github.com/pkg/errors"
 )
 
@@ -39,6 +38,15 @@ func (p *Provider) ReleaseCreate(app string, opts structs.ReleaseCreateOptions) 
 		r.Env = *opts.Env
 	}
 
+	if r.Build != "" {
+		b, err := p.BuildGet(app, r.Build)
+		if err != nil {
+			return nil, err
+		}
+
+		r.Manifest = b.Manifest
+	}
+
 	if err := p.storageStore(fmt.Sprintf("apps/%s/releases/%s/release.json", app, r.Id), r); err != nil {
 		return nil, errors.WithStack(log.Error(err))
 	}
@@ -48,11 +56,6 @@ func (p *Provider) ReleaseCreate(app string, opts structs.ReleaseCreateOptions) 
 
 func (p *Provider) ReleaseGet(app, id string) (*structs.Release, error) {
 	log := p.logger("ReleaseGet").Append("app=%q id=%q", app, id)
-
-	a, err := p.AppGet(app)
-	if err != nil {
-		return nil, log.Error(err)
-	}
 
 	var r *structs.Release
 
@@ -64,10 +67,6 @@ func (p *Provider) ReleaseGet(app, id string) (*structs.Release, error) {
 	}
 	if r == nil {
 		return nil, log.Error(fmt.Errorf("could not find release: %s", id))
-	}
-
-	if a.Release == r.Id {
-		r.Status = "active"
 	}
 
 	return r, log.Success()
@@ -100,8 +99,8 @@ func (p *Provider) ReleaseList(app string, opts structs.ReleaseListOptions) (str
 
 	limit := 10
 
-	if opts.Count != nil {
-		limit = *opts.Count
+	if opts.Limit != nil {
+		limit = *opts.Limit
 	}
 
 	if len(releases) > limit {
@@ -109,62 +108,6 @@ func (p *Provider) ReleaseList(app string, opts structs.ReleaseListOptions) (str
 	}
 
 	return releases, log.Success()
-}
-
-func (p *Provider) ReleaseLogs(app, id string, opts structs.LogsOptions) (io.ReadCloser, error) {
-	log := p.logger("ReleaseLogs").Append("app=%q id=%q", app, id)
-
-	key := fmt.Sprintf("apps/%s/releases/%s/log", app, id)
-
-	r, err := p.ReleaseGet(app, id)
-	if err != nil {
-		return nil, log.Error(err)
-	}
-
-	for {
-		if r.Status != "created" {
-			break
-		}
-
-		r, err = p.ReleaseGet(app, id)
-		if err != nil {
-			return nil, log.Error(err)
-		}
-
-		time.Sleep(1 * time.Second)
-	}
-
-	lr, lw := io.Pipe()
-
-	go func() {
-		defer lw.Close()
-
-		since := opts.Since
-
-		for {
-			time.Sleep(200 * time.Millisecond)
-
-			p.storageLogRead(key, since, func(at time.Time, entry []byte) {
-				since = at
-				lw.Write(entry)
-			})
-
-			if !opts.Follow {
-				break
-			}
-
-			r, err := p.ReleaseGet(app, id)
-			if err != nil {
-				continue
-			}
-
-			if r.Status == "promoted" || r.Status == "failed" || r.Status == "active" {
-				break
-			}
-		}
-	}()
-
-	return lr, log.Success()
 }
 
 func (p *Provider) ReleasePromote(app, id string) error {
@@ -184,13 +127,12 @@ func (p *Provider) ReleasePromote(app, id string) error {
 		return fmt.Errorf("no build for release: %s", id)
 	}
 
-	r.Status = "running"
-
 	if err := p.storageStore(fmt.Sprintf("apps/%s/releases/%s/release.json", app, id), r); err != nil {
 		return errors.WithStack(log.Error(err))
 	}
 
 	a.Release = r.Id
+	a.Sleep = false
 
 	if err := p.storageStore(fmt.Sprintf("apps/%s/app.json", a.Name), a); err != nil {
 		return errors.WithStack(log.Error(err))
@@ -199,8 +141,6 @@ func (p *Provider) ReleasePromote(app, id string) error {
 	if err := p.converge(app); err != nil {
 		return errors.WithStack(log.Error(err))
 	}
-
-	r.Status = "promoted"
 
 	if err := p.storageStore(fmt.Sprintf("apps/%s/releases/%s/release.json", app, id), r); err != nil {
 		return errors.WithStack(log.Error(err))
@@ -213,11 +153,10 @@ func (p *Provider) releaseFork(app string) (*structs.Release, error) {
 	r := &structs.Release{
 		Id:      helpers.Id("R", 10),
 		App:     app,
-		Status:  "created",
 		Created: time.Now().UTC(),
 	}
 
-	rs, err := p.ReleaseList(app, structs.ReleaseListOptions{Count: options.Int(1)})
+	rs, err := p.ReleaseList(app, structs.ReleaseListOptions{Limit: options.Int(1)})
 	if err != nil {
 		return nil, err
 	}

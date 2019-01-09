@@ -3,7 +3,6 @@ package aws
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -13,11 +12,11 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudformation"
 	"github.com/aws/aws-sdk-go/service/ecr"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/convox/rack/helpers"
-	"github.com/convox/rack/structs"
+	"github.com/convox/rack/pkg/helpers"
+	"github.com/convox/rack/pkg/structs"
 )
 
-func (p *AWSProvider) AppCancel(name string) error {
+func (p *Provider) AppCancel(name string) error {
 	_, err := p.cloudformation().CancelUpdateStack(&cloudformation.CancelUpdateStackInput{
 		StackName: aws.String(p.rackStack(name)),
 	})
@@ -28,7 +27,7 @@ func (p *AWSProvider) AppCancel(name string) error {
 	return nil
 }
 
-func (p *AWSProvider) AppCreate(name string, opts structs.AppCreateOptions) (*structs.App, error) {
+func (p *Provider) AppCreate(name string, opts structs.AppCreateOptions) (*structs.App, error) {
 	switch generation(opts.Generation) {
 	case "1":
 		return p.appCreateGeneration1(name)
@@ -50,8 +49,8 @@ func (p *AWSProvider) AppCreate(name string, opts structs.AppCreateOptions) (*st
 	tags := map[string]string{
 		"Generation": "2",
 		"System":     "convox",
-		"Rack":       os.Getenv("RACK"),
-		"Version":    p.Release,
+		"Rack":       p.Rack,
+		"Version":    p.Version,
 		"Type":       "app",
 		"Name":       name,
 	}
@@ -68,26 +67,29 @@ func (p *AWSProvider) AppCreate(name string, opts structs.AppCreateOptions) (*st
 	return p.AppGet(name)
 }
 
-func (p *AWSProvider) appCreateGeneration1(name string) (*structs.App, error) {
-	data, err := formationTemplate("g1/app", nil)
+func (p *Provider) appCreateGeneration1(name string) (*structs.App, error) {
+	data, err := formationTemplate("g1/app", map[string]interface{}{"Version": p.Version})
 	if err != nil {
 		return nil, err
 	}
 
 	params := map[string]string{
-		"LogBucket":      os.Getenv("LOG_BUCKET"),
-		"Private":        os.Getenv("PRIVATE"),
+		"LogBucket":      p.LogBucket,
+		"Private":        "No",
 		"Rack":           p.Rack,
-		"Subnets":        os.Getenv("SUBNETS"),
-		"SubnetsPrivate": coalesces(os.Getenv("SUBNETS_PRIVATE"), os.Getenv("SUBNETS")),
-		"Version":        os.Getenv("RELEASE"),
+		"Subnets":        p.Subnets,
+		"SubnetsPrivate": coalesces(p.SubnetsPrivate, p.Subnets),
+	}
+
+	if p.Private {
+		params["Private"] = "Yes"
 	}
 
 	tags := map[string]string{
 		"Generation": "1",
 		"System":     "convox",
-		"Rack":       os.Getenv("RACK"),
-		"Version":    p.Release,
+		"Rack":       p.Rack,
+		"Version":    p.Version,
 		"Type":       "app",
 		"Name":       name,
 	}
@@ -105,12 +107,12 @@ func (p *AWSProvider) appCreateGeneration1(name string) (*structs.App, error) {
 }
 
 // AppGet gets an app
-func (p *AWSProvider) AppGet(name string) (*structs.App, error) {
+func (p *Provider) AppGet(name string) (*structs.App, error) {
 	stacks, err := p.describeStacks(&cloudformation.DescribeStacksInput{
 		StackName: aws.String(p.Rack + "-" + name),
 	})
 	if ae, ok := err.(awserr.Error); ok && ae.Code() == "ValidationError" {
-		return nil, errorNotFound(fmt.Sprintf("%s not found", name))
+		return nil, errorNotFound(fmt.Sprintf("app not found: %s", name))
 	}
 	if err != nil {
 		return nil, err
@@ -119,23 +121,29 @@ func (p *AWSProvider) AppGet(name string) (*structs.App, error) {
 		return nil, fmt.Errorf("could not load stack for app: %s", name)
 	}
 
-	app := appFromStack(stacks[0])
+	app, err := p.appFromStack(stacks[0])
+	if ae, ok := err.(awserr.Error); ok && ae.Code() == "ValidationError" {
+		return nil, errorNotFound(fmt.Sprintf("app not found: %s", name))
+	}
+	if err != nil {
+		return nil, err
+	}
 
 	if app.Tags["Rack"] != "" && app.Tags["Rack"] != p.Rack {
 		return nil, errorNotFound(fmt.Sprintf("%s not found", name))
 	}
 
-	return &app, nil
+	return app, nil
 }
 
 // AppDelete deletes an app
-func (p *AWSProvider) AppDelete(name string) error {
+func (p *Provider) AppDelete(name string) error {
 	app, err := p.AppGet(name)
 	if err != nil {
 		return err
 	}
 
-	if app.Tags["Type"] != "app" || app.Tags["System"] != "convox" || app.Tags["Rack"] != os.Getenv("RACK") {
+	if app.Tags["Type"] != "app" || app.Tags["System"] != "convox" || app.Tags["Rack"] != p.Rack {
 		return fmt.Errorf("invalid app: %s", name)
 	}
 
@@ -168,10 +176,12 @@ func (p *AWSProvider) AppDelete(name string) error {
 	return nil
 }
 
-func (p *AWSProvider) AppList() (structs.Apps, error) {
+func (p *Provider) AppList() (structs.Apps, error) {
+	log := p.logger("AppList")
+
 	stacks, err := p.describeStacks(&cloudformation.DescribeStacksInput{})
 	if err != nil {
-		return nil, err
+		return nil, log.Error(err)
 	}
 
 	apps := make(structs.Apps, 0)
@@ -180,14 +190,19 @@ func (p *AWSProvider) AppList() (structs.Apps, error) {
 		tags := stackTags(stack)
 
 		if tags["System"] == "convox" && tags["Type"] == "app" && tags["Rack"] == p.Rack {
-			apps = append(apps, appFromStack(stack))
+			a, err := p.appFromStack(stack)
+			if err != nil {
+				return nil, err
+			}
+
+			apps = append(apps, *a)
 		}
 	}
 
-	return apps, nil
+	return apps, log.Success()
 }
 
-func (p *AWSProvider) AppLogs(app string, opts structs.LogsOptions) (io.ReadCloser, error) {
+func (p *Provider) AppLogs(app string, opts structs.LogsOptions) (io.ReadCloser, error) {
 	group, err := p.appResource(app, "LogGroup")
 	if err != nil {
 		return nil, err
@@ -196,8 +211,102 @@ func (p *AWSProvider) AppLogs(app string, opts structs.LogsOptions) (io.ReadClos
 	return p.subscribeLogs(group, opts)
 }
 
-func (p *AWSProvider) AppUpdate(app string, opts structs.AppUpdateOptions) error {
-	return p.updateStack(p.rackStack(app), "", opts.Parameters)
+func (p *Provider) AppMetrics(name string, opts structs.MetricsOptions) (structs.Metrics, error) {
+	metrics := map[string]bool{}
+
+	if opts.Metrics != nil {
+		for _, m := range opts.Metrics {
+			metrics[m] = true
+		}
+	}
+
+	mds, err := p.appMetricDefinitions(name)
+	if err != nil {
+		return nil, err
+	}
+
+	mms := structs.Metrics{}
+
+	for _, md := range mds {
+		if len(metrics) > 0 && !metrics[md.Name] {
+			continue
+		}
+
+		m, err := p.cloudwatchMetric(md, opts)
+		if err != nil {
+			return nil, err
+		}
+
+		existing := false
+
+		for i, mm := range mms {
+			if mm.Name == m.Name {
+				existing = true
+
+				for j := range mm.Values {
+					mms[i].Values[j].Average += mm.Values[j].Average
+					mms[i].Values[j].Count += mm.Values[j].Count
+					mms[i].Values[j].Maximum += mm.Values[j].Maximum
+					mms[i].Values[j].Minimum += mm.Values[j].Minimum
+					mms[i].Values[j].Sum += mm.Values[j].Sum
+				}
+
+				break
+			}
+		}
+
+		if !existing {
+			mms = append(mms, *m)
+		}
+	}
+
+	return mms, nil
+}
+
+func (p *Provider) AppUpdate(app string, opts structs.AppUpdateOptions) error {
+	params := opts.Parameters
+
+	if params == nil {
+		params = map[string]string{}
+	}
+
+	if opts.Lock != nil {
+		_, err := p.cloudformation().UpdateTerminationProtection(&cloudformation.UpdateTerminationProtectionInput{
+			EnableTerminationProtection: opts.Lock,
+			StackName:                   aws.String(p.rackStack(app)),
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	if opts.Sleep != nil {
+		return fmt.Errorf("sleeping not yet supported on aws racks")
+	}
+
+	return p.updateStack(p.rackStack(app), nil, opts.Parameters, map[string]string{})
+}
+
+func (p *Provider) appFromStack(stack *cloudformation.Stack) (*structs.App, error) {
+	name := *stack.StackName
+	tags := stackTags(stack)
+	if value, ok := tags["Name"]; ok {
+		// StackName probably includes the Rack prefix, prefer Name tag.
+		name = value
+	}
+
+	a := &structs.App{
+		Name:       name,
+		Generation: coalesces(stackTags(stack)["Generation"], "1"),
+		Locked:     cb(stack.EnableTerminationProtection, false),
+		Release:    coalesces(stackOutputs(stack)["Release"], stackParameters(stack)["Release"]),
+		Status:     humanStatus(*stack.StackStatus),
+		Outputs:    stackOutputs(stack),
+		Parameters: stackParameters(stack),
+		Tags:       stackTags(stack),
+	}
+
+	return a, nil
 }
 
 // appRepository defines an image repository for an App
@@ -208,7 +317,7 @@ type appRepository struct {
 }
 
 // appRepository gets an app's repository data
-func (p *AWSProvider) appRepository(name string) (*appRepository, error) {
+func (p *Provider) appRepository(name string) (*appRepository, error) {
 	app, err := p.AppGet(name)
 	if err != nil {
 		return nil, err
@@ -242,7 +351,7 @@ func (p *AWSProvider) appRepository(name string) (*appRepository, error) {
 	return nil, fmt.Errorf("no repo found")
 }
 
-func (p *AWSProvider) appRepository2(app string) (*appRepository, error) {
+func (p *Provider) appRepository2(app string) (*appRepository, error) {
 	reg, err := p.appResource(app, "Registry")
 	if err != nil {
 		return nil, err
@@ -263,7 +372,7 @@ func (p *AWSProvider) appRepository2(app string) (*appRepository, error) {
 }
 
 // cleanup deletes AWS resources that aren't handled by the CloudFormation during stack deletion.
-func (p *AWSProvider) cleanup(app *structs.App) error {
+func (p *Provider) cleanup(app *structs.App) error {
 	settings, err := p.appResource(app.Name, "Settings")
 	if err != nil {
 		return err
@@ -353,7 +462,7 @@ func (p *AWSProvider) cleanup(app *structs.App) error {
 }
 
 // deleteBucket deletes all object versions and delete markers then deletes the bucket.
-func (p *AWSProvider) deleteBucket(bucket string) error {
+func (p *Provider) deleteBucket(bucket string) error {
 	req := &s3.ListObjectVersionsInput{
 		Bucket: aws.String(bucket),
 	}
@@ -431,7 +540,7 @@ func (p *AWSProvider) deleteBucket(bucket string) error {
 	return nil
 }
 
-func (p *AWSProvider) cleanupBucketObject(bucket, key, version string) {
+func (p *Provider) cleanupBucketObject(bucket, key, version string) {
 	req := &s3.DeleteObjectInput{
 		Bucket:    aws.String(bucket),
 		Key:       aws.String(key),
@@ -441,24 +550,5 @@ func (p *AWSProvider) cleanupBucketObject(bucket, key, version string) {
 	_, err := p.s3().DeleteObject(req)
 	if err != nil {
 		fmt.Printf("error: %s\n", err)
-	}
-}
-
-func appFromStack(stack *cloudformation.Stack) structs.App {
-	name := *stack.StackName
-	tags := stackTags(stack)
-	if value, ok := tags["Name"]; ok {
-		// StackName probably includes the Rack prefix, prefer Name tag.
-		name = value
-	}
-
-	return structs.App{
-		Name:       name,
-		Generation: coalesces(stackTags(stack)["Generation"], "1"),
-		Release:    coalesces(stackOutputs(stack)["Release"], stackParameters(stack)["Release"]),
-		Status:     humanStatus(*stack.StackStatus),
-		Outputs:    stackOutputs(stack),
-		Parameters: stackParameters(stack),
-		Tags:       stackTags(stack),
 	}
 }

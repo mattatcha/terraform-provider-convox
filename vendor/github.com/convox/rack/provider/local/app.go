@@ -8,8 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/convox/rack/helpers"
-	"github.com/convox/rack/structs"
+	"github.com/convox/rack/pkg/helpers"
+	"github.com/convox/rack/pkg/options"
+	"github.com/convox/rack/pkg/structs"
 	"github.com/pkg/errors"
 )
 
@@ -67,18 +68,16 @@ func (p *Provider) AppDelete(app string) error {
 }
 
 func (p *Provider) AppGet(name string) (*structs.App, error) {
-	log := p.logger("AppGet").Append("name=%q", name)
-
 	var app structs.App
 
 	if err := p.storageLoad(fmt.Sprintf("apps/%s/app.json", name), &app, AppCacheDuration); err != nil {
 		if strings.HasPrefix(err.Error(), "no such key:") {
 			return nil, fmt.Errorf("no such app: %s", name)
 		}
-		return nil, errors.WithStack(log.Error(err))
+		return nil, errors.WithStack(err)
 	}
 
-	return &app, log.Success()
+	return &app, nil
 }
 
 func (p *Provider) AppList() (structs.Apps, error) {
@@ -108,37 +107,70 @@ func (p *Provider) AppList() (structs.Apps, error) {
 func (p *Provider) AppLogs(app string, opts structs.LogsOptions) (io.ReadCloser, error) {
 	log := p.logger("AppLogs").Append("app=%q", app)
 
-	opts.Prefix = true
-
 	if _, err := p.AppGet(app); err != nil {
 		return nil, log.Error(err)
 	}
 
-	pss, err := p.ProcessList(app, structs.ProcessListOptions{})
-	if err != nil {
-		return nil, errors.WithStack(log.Error(err))
+	var since time.Time
+
+	if opts.Since != nil {
+		since = time.Now().UTC().Add((*opts.Since) * -1)
 	}
 
 	r, w := io.Pipe()
 
-	var wg sync.WaitGroup
-
-	for _, ps := range pss {
-		wg.Add(1)
-		go func(ps structs.Process, wg *sync.WaitGroup) {
-			defer wg.Done()
-			if pr, err := p.ProcessLogs(app, ps.Id, opts); err == nil {
-				helpers.Stream(w, pr)
-			}
-		}(ps, &wg)
-	}
-
 	go func() {
-		wg.Wait()
-		w.Close()
+		pids := map[string]bool{}
+
+		var wg sync.WaitGroup
+		done := false
+
+		go func() {
+			time.Sleep(5 * time.Second)
+			wg.Wait()
+			done = true
+			w.Close()
+		}()
+
+		for {
+			if done {
+				break
+			}
+
+			pss, err := p.ProcessList(app, structs.ProcessListOptions{})
+			if err != nil {
+				log.Error(err)
+				continue
+			}
+
+			for _, ps := range pss {
+				popts := opts
+				popts.Since = options.Duration(time.Since(since))
+				if _, ok := pids[ps.Id]; !ok {
+					go p.streamProcessLogs(app, ps.Id, popts, w, &wg)
+					pids[ps.Id] = true
+				}
+			}
+
+			time.Sleep(1 * time.Second)
+		}
 	}()
 
 	return r, log.Success()
+}
+
+func (p *Provider) streamProcessLogs(app, pid string, opts structs.LogsOptions, w io.Writer, wg *sync.WaitGroup) {
+	wg.Add(1)
+	defer wg.Done()
+	r, err := p.ProcessLogs(app, pid, opts)
+	if err != nil {
+		return
+	}
+	helpers.Stream(w, r)
+}
+
+func (p *Provider) AppMetrics(name string, opts structs.MetricsOptions) (structs.Metrics, error) {
+	return nil, fmt.Errorf("unimplemented")
 }
 
 func (p *Provider) AppRegistry(app string) (*structs.Registry, error) {
@@ -149,7 +181,7 @@ func (p *Provider) AppRegistry(app string) (*structs.Registry, error) {
 	}
 
 	registry := &structs.Registry{
-		Server:   p.Name,
+		Server:   p.Rack,
 		Username: "",
 		Password: "",
 	}
@@ -158,5 +190,28 @@ func (p *Provider) AppRegistry(app string) (*structs.Registry, error) {
 }
 
 func (p *Provider) AppUpdate(app string, opts structs.AppUpdateOptions) error {
-	return fmt.Errorf("cannot set parameters on a local rack")
+	log := p.logger("AppUpdate").Append("app=%q", app)
+
+	if opts.Lock != nil {
+		return fmt.Errorf("locking not supported on local racks")
+	}
+
+	if opts.Sleep != nil {
+		a, err := p.AppGet(app)
+		if err != nil {
+			return errors.WithStack(log.Error(err))
+		}
+
+		a.Sleep = *opts.Sleep
+
+		if err := p.storageStore(fmt.Sprintf("apps/%s/app.json", app), a); err != nil {
+			return errors.WithStack(log.Error(err))
+		}
+
+		if err := p.converge(app); err != nil {
+			return errors.WithStack(log.Error(err))
+		}
+	}
+
+	return log.Success()
 }

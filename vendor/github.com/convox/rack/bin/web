@@ -1,13 +1,9 @@
-#!/bin/sh
+#!/bin/bash
 
 cd $(dirname ${0:-})/..
 
-./bin/gen-cert
-
-haproxy -f /etc/haproxy/haproxy.cfg &
-
 if [ "$DEVELOPMENT" == "true" ]; then
-  $GOPATH/bin/rerun -build github.com/convox/rack
+  exec watchexec -e go -r -s SIGTERM "set -x && go install . && $GOPATH/bin/rack"
 else
-  $GOPATH/bin/rack
+  exec $GOPATH/bin/rack
 fi

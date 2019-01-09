@@ -14,7 +14,7 @@ branches:
 language: go
 
 go:
-  - 1.9
+  - "1.11"
 
 before_install:
   - source ./ci/correct-path.sh
@@ -25,3 +25,4 @@ script:
   - ./ci/set-client-id.sh
   - go get ./cmd/convox
   - make test
+  - curl -s https://codecov.io/bash | bash
