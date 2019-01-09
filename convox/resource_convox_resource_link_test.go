@@ -5,27 +5,25 @@ import (
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
 	"github.com/mattatcha/terraform-provider-convox/convox"
+	"github.com/stretchr/testify/mock"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("ResourceConvoxResourceLink", func() {
-	convoxClient := &MockClient{}
-	var unpacker convox.ClientUnpacker = func(valueGetter convox.ValueGetter, meta interface{}) (convox.Client, error) {
+	convoxClient := &structs.MockProvider{}
+	var unpacker convox.ClientUnpacker = func(valueGetter convox.ValueGetter, meta interface{}) (structs.Provider, error) {
 		return convoxClient, nil
 	}
 
 	var resourceData *schema.ResourceData
 
 	BeforeEach(func() {
-		convoxClient.ResetNoop()
-		convoxClient.GetResourceFunc = func(name string) (*structs.Resource, error) {
-			// for the wait for status
-			return &structs.Resource{
-				Status: "running",
-			}, nil
-		}
+		convoxClient.On("ResourceList").Return(&structs.Resource{
+			Status: "running",
+		}, nil)
+
 		resourceData = convox.ResourceConvoxResourceLink(unpacker).Data(&terraform.InstanceState{
 			Attributes: map[string]string{
 				"rack":          "test",
@@ -55,12 +53,11 @@ var _ = Describe("ResourceConvoxResourceLink", func() {
 			BeforeEach(func() {
 				calledResourceName = ""
 				calledAppName = ""
-				convoxClient.CreateLinkFunc = func(app string, resource string) (*structs.Resource, error) {
-					calledResourceName = resource
-					calledAppName = app
 
-					return nil, nil
-				}
+				convoxClient.On("ResourceLink").Run(func(args mock.Arguments) {
+					calledResourceName = args[0].(string)
+					calledAppName = args[1].(string)
+				})
 
 				Expect(cut(resourceData, "")).To(BeNil())
 			})
@@ -93,12 +90,10 @@ var _ = Describe("ResourceConvoxResourceLink", func() {
 			BeforeEach(func() {
 				calledResourceName = ""
 				calledAppName = ""
-				convoxClient.DeleteLinkFunc = func(app string, resource string) (*structs.Resource, error) {
-					calledResourceName = resource
-					calledAppName = app
-
-					return nil, nil
-				}
+				convoxClient.On("ResourceUnlink").Run(func(args mock.Arguments) {
+					calledResourceName = args[0].(string)
+					calledAppName = args[1].(string)
+				})
 
 				Expect(cut(resourceData, "")).To(BeNil())
 			})
