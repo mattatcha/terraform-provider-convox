@@ -183,20 +183,16 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 		})
 
 		Describe("Deleting", func() {
-			var requestedName string
 
 			BeforeEach(func() {
-				requestedName = ""
 
-				convoxClient.On("ResourceDelete", mock.Anything).Run(func(args mock.Arguments) {
-					requestedName = args[0].(string)
-				})
+				convoxClient.On("ResourceDelete", mock.Anything).Return(nil)
 
 				Expect(cut(resourceData, resourceData)).To(BeNil())
 			})
 
 			It("should delete the right resource", func() {
-				Expect(requestedName).To(Equal("test"))
+				Expect(convoxClient.Calls[0].Arguments.String(0)).To(Equal("test"))
 			})
 		})
 	})

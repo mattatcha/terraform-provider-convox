@@ -74,27 +74,19 @@ var _ = Describe("ResourceConvoxResourceLink", func() {
 		})
 
 		Describe("deleting the resource", func() {
-			var calledResourceName string
-			var calledAppName string
-
 			BeforeEach(func() {
-				calledResourceName = ""
-				calledAppName = ""
-
-				convoxClient.On("ResourceUnlink", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
-					calledResourceName = args[0].(string)
-					calledAppName = args[1].(string)
-				})
+				convoxClient.On("ResourceGet", mock.Anything).Return(&structs.Resource{Status: "running"}, nil)
+				convoxClient.On("ResourceUnlink", mock.Anything, mock.Anything).Return(nil, nil)
 
 				Expect(cut(resourceData, "")).To(BeNil())
 			})
 
 			It("should call delete with the specified resource name", func() {
-				Expect(calledResourceName).To(Equal("test_resource"))
+				Expect(convoxClient.Calls[0].Arguments.String(0)).To(Equal("test_resource"))
 			})
 
 			It("should call delete with the specified app name", func() {
-				Expect(calledAppName).To(Equal("test_app"))
+				Expect(convoxClient.Calls[0].Arguments.String(1)).To(Equal("test_app"))
 			})
 		})
 	})
