@@ -19,9 +19,7 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 	var resourceData *schema.ResourceData
 
 	BeforeEach(func() {
-		convoxClient.On("ResourceGet", mock.Anything).Return(&structs.Resource{
-			Status: "running",
-		}, nil)
+		convoxClient = &structs.MockProvider{}
 
 		resourceData = convox.ResourceConvoxSyslog(unpacker).Data(&terraform.InstanceState{
 			Attributes: map[string]string{
@@ -47,20 +45,17 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 		})
 
 		Describe("creating the resource", func() {
-			var createdKind string
-			var createdOptions structs.ResourceCreateOptions
 
 			BeforeEach(func() {
-				createdKind = ""
+				convoxClient.On("ResourceGet", mock.Anything).Return(&structs.Resource{
+					Status: "running",
+				}, nil)
 
 				convoxClient.On("ResourceCreate", mock.Anything, mock.Anything).Return(&structs.Resource{
 					Name:   "test",
 					Status: "running",
 					Url:    "tcp://1.1.1.1:1111",
-				}, nil).Run(func(args mock.Arguments) {
-					createdKind = args[0].(string)
-					createdOptions = args[1].(structs.ResourceCreateOptions)
-				})
+				}, nil)
 
 				Expect(cut(resourceData, resourceData)).To(BeNil())
 			})
@@ -70,19 +65,27 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 			})
 
 			It("should call the convox API with the right kind", func() {
-				Expect(createdKind).To(Equal("syslog"))
+				Expect(convoxClient.Calls[0].Arguments.String(0)).To(Equal("syslog"))
 			})
 
-			It("should call the convox API with the right name", func() {
-				Expect(createdOptions.Name).To(BeEquivalentTo("test"))
-			})
+			Describe("Options", func() {
+				var opts structs.ResourceCreateOptions
 
-			It("should call the convox API with the right URL", func() {
-				Expect(createdOptions.Parameters["Url"]).To(Equal("tcp+tls://logs.foo.com:12345"))
-			})
+				JustBeforeEach(func() {
+					opts = convoxClient.Calls[0].Arguments[1].(structs.ResourceCreateOptions)
+				})
 
-			It("should call the convox API with the right Private value", func() {
-				Expect(createdOptions.Parameters["Private"]).To(Equal("true"))
+				It("should call the convox API with the right name", func() {
+					Expect(*opts.Name).To(Equal("test"))
+				})
+
+				It("should call the convox API with the right URL", func() {
+					Expect(opts.Parameters["Url"]).To(Equal("tcp+tls://logs.foo.com:12345"))
+				})
+
+				It("should call the convox API with the right Private value", func() {
+					Expect(opts.Parameters["Private"]).To(Equal("true"))
+				})
 			})
 		})
 	})
@@ -100,22 +103,18 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 		})
 
 		Describe("Reading state", func() {
-			var requestedName string
-
 			BeforeEach(func() {
-				convoxClient.On("ResourceGet").Return(&structs.Resource{
+				convoxClient.On("ResourceGet", mock.Anything).Return(&structs.Resource{
 					Name:   "test",
 					Status: "running",
 					Url:    "tcp://192.168.1.23:4567",
-				}, nil).Run(func(args mock.Arguments) {
-					requestedName = args[0].(string)
-				})
+				}, nil)
 
 				Expect(cut(resourceData, resourceData)).To(BeNil())
 			})
 
 			It("should ask for the resource by name", func() {
-				Expect(requestedName).To(Equal("test"))
+				Expect(convoxClient.Calls[0].Arguments.String(0)).To(Equal("test"))
 			})
 
 			It("should read the URL", func() {
@@ -142,7 +141,11 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 			BeforeEach(func() {
 				requestedName = ""
 
-				convoxClient.On("ResourceUpdate").Return(&structs.Resource{
+				convoxClient.On("ResourceGet", mock.Anything).Return(&structs.Resource{
+					Status: "running",
+				}, nil)
+
+				convoxClient.On("ResourceUpdate", mock.Anything, mock.Anything).Return(&structs.Resource{
 					Name:   "test",
 					Status: "running",
 					Url:    "tcp://192.168.1.23:4567",
@@ -184,6 +187,7 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 
 			BeforeEach(func() {
 				requestedName = ""
+
 				convoxClient.On("ResourceDelete", mock.Anything).Run(func(args mock.Arguments) {
 					requestedName = args[0].(string)
 				})
