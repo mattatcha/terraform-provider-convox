@@ -17,11 +17,6 @@ import (
 func ResourceConvoxApp(clientUnpacker ClientUnpacker) *schema.Resource {
 	return &schema.Resource{
 		Schema: map[string]*schema.Schema{
-			"rack": &schema.Schema{
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: true,
-			},
 			"name": &schema.Schema{
 				Type:     schema.TypeString,
 				Required: true,
