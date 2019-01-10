@@ -40,6 +40,10 @@ func Provider() terraform.ResourceProvider {
 				Sensitive:   true,
 				DefaultFunc: schema.EnvDefaultFunc("CONVOX_PASSWORD", ""),
 			},
+			"rack": &schema.Schema{
+				Type:     schema.TypeString,
+				Required: true,
+			},
 			"config_path": &schema.Schema{
 				Type:        schema.TypeString,
 				Optional:    true,
@@ -59,13 +63,15 @@ func Provider() terraform.ResourceProvider {
 func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	host := getHost(d)
 	pass := getPassword(d, host)
-	fmt.Print(pass)
+	rack := d.Get("rack").(string)
+
 	c, err := sdk.New(host)
 	if err != nil {
 		return nil, err
 	}
 	info := url.User(pass)
 	c.Endpoint.User = info
+	c.Rack = rack
 
 	return c, nil
 }
@@ -102,16 +108,12 @@ func UnpackRackClient(d ValueGetter, meta interface{}) (structs.Provider, error)
 		return nil, fmt.Errorf("meta is nil")
 	}
 
-	//c := meta.(*sdk.Client)
-	//if c == nil {
-	//return nil, fmt.Errorf("Could not convert meta to rack Client: %#v", meta)
-	//}
+	c := meta.(structs.Provider)
+	if c == nil {
+		return nil, fmt.Errorf("Could not convert meta to rack Client: %#v", meta)
+	}
 
-	//if v, ok := d.GetOk("rack"); ok {
-	//c.Rack = v.(string)
-	//}
-
-	return nil, nil //TODO: this wont work obviously...
+	return c, nil
 }
 
 func getHost(d *schema.ResourceData) string {
