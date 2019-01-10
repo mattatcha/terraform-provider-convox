@@ -65,12 +65,10 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	pass := getPassword(d, host)
 	rack := d.Get("rack").(string)
 
-	c, err := sdk.New(host)
+	c, err := sdk.New(fmt.Sprintf("https://convox:%s@%s", url.QueryEscape(pass), host))
 	if err != nil {
 		return nil, err
 	}
-	info := url.User(pass)
-	c.Endpoint.User = info
 	c.Rack = rack
 
 	return c, nil
