@@ -1,3 +1,19 @@
+/*
+   Copyright The containerd Authors.
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
 package fs
 
 import (
@@ -106,6 +122,26 @@ func TestRemoveDirectoryTree(t *testing.T) {
 		fstest.CreateDir("/dir1/dir2/dir3", 0755),
 		fstest.CreateFile("/dir1/f1", []byte("f1"), 0644),
 		fstest.CreateFile("/dir1/dir2/f2", []byte("f2"), 0644),
+	)
+	l2 := fstest.Apply(
+		fstest.RemoveAll("/dir1"),
+	)
+	diff := []TestChange{
+		Delete("/dir1"),
+	}
+
+	if err := testDiffWithBase(l1, l2, diff); err != nil {
+		t.Fatalf("Failed diff with base: %+v", err)
+	}
+}
+
+func TestRemoveDirectoryTreeWithDash(t *testing.T) {
+	l1 := fstest.Apply(
+		fstest.CreateDir("/dir1/dir2/dir3", 0755),
+		fstest.CreateFile("/dir1/f1", []byte("f1"), 0644),
+		fstest.CreateFile("/dir1/dir2/f2", []byte("f2"), 0644),
+		fstest.CreateDir("/dir1-before", 0755),
+		fstest.CreateFile("/dir1-before/f2", []byte("f2"), 0644),
 	)
 	l2 := fstest.Apply(
 		fstest.RemoveAll("/dir1"),

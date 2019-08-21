@@ -12,8 +12,8 @@ const opAddAttachmentsToSet = "AddAttachmentsToSet"
 
 // AddAttachmentsToSetRequest generates a "aws/request.Request" representing the
 // client's request for the AddAttachmentsToSet operation. The "output" return
-// value will be populated with the request's response once the request complets
-// successfuly.
+// value will be populated with the request's response once the request completes
+// successfully.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
 // the "output" return value is not valid until after Send returns without error.
@@ -115,8 +115,8 @@ const opAddCommunicationToCase = "AddCommunicationToCase"
 
 // AddCommunicationToCaseRequest generates a "aws/request.Request" representing the
 // client's request for the AddCommunicationToCase operation. The "output" return
-// value will be populated with the request's response once the request complets
-// successfuly.
+// value will be populated with the request's response once the request completes
+// successfully.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
 // the "output" return value is not valid until after Send returns without error.
@@ -211,8 +211,8 @@ const opCreateCase = "CreateCase"
 
 // CreateCaseRequest generates a "aws/request.Request" representing the
 // client's request for the CreateCase operation. The "output" return
-// value will be populated with the request's response once the request complets
-// successfuly.
+// value will be populated with the request's response once the request completes
+// successfully.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
 // the "output" return value is not valid until after Send returns without error.
@@ -258,7 +258,6 @@ func (c *Support) CreateCaseRequest(input *CreateCaseInput) (req *request.Reques
 //    * issueType. The type of issue for the case. You can specify either "customer-service"
 //    or "technical." If you do not indicate a value, the default is "technical."
 //
-//
 //    * serviceCode. The code for an AWS service. You obtain the serviceCode
 //    by calling DescribeServices.
 //
@@ -288,7 +287,6 @@ func (c *Support) CreateCaseRequest(input *CreateCaseInput) (req *request.Reques
 //    The account that opens the case is already identified by passing the AWS
 //    Credentials in the HTTP POST method or in a method or function call from
 //    one of the programming languages supported by an AWS SDK (http://aws.amazon.com/tools/).
-//
 //
 // To add additional communication or attachments to an existing case, use AddCommunicationToCase.
 //
@@ -343,8 +341,8 @@ const opDescribeAttachment = "DescribeAttachment"
 
 // DescribeAttachmentRequest generates a "aws/request.Request" representing the
 // client's request for the DescribeAttachment operation. The "output" return
-// value will be populated with the request's response once the request complets
-// successfuly.
+// value will be populated with the request's response once the request completes
+// successfully.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
 // the "output" return value is not valid until after Send returns without error.
@@ -432,8 +430,8 @@ const opDescribeCases = "DescribeCases"
 
 // DescribeCasesRequest generates a "aws/request.Request" representing the
 // client's request for the DescribeCases operation. The "output" return
-// value will be populated with the request's response once the request complets
-// successfuly.
+// value will be populated with the request's response once the request completes
+// successfully.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
 // the "output" return value is not valid until after Send returns without error.
@@ -541,7 +539,7 @@ func (c *Support) DescribeCasesWithContext(ctx aws.Context, input *DescribeCases
 //    // Example iterating over at most 3 pages of a DescribeCases operation.
 //    pageNum := 0
 //    err := client.DescribeCasesPages(params,
-//        func(page *DescribeCasesOutput, lastPage bool) bool {
+//        func(page *support.DescribeCasesOutput, lastPage bool) bool {
 //            pageNum++
 //            fmt.Println(page)
 //            return pageNum <= 3
@@ -584,8 +582,8 @@ const opDescribeCommunications = "DescribeCommunications"
 
 // DescribeCommunicationsRequest generates a "aws/request.Request" representing the
 // client's request for the DescribeCommunications operation. The "output" return
-// value will be populated with the request's response once the request complets
-// successfuly.
+// value will be populated with the request's response once the request completes
+// successfully.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
 // the "output" return value is not valid until after Send returns without error.
@@ -688,7 +686,7 @@ func (c *Support) DescribeCommunicationsWithContext(ctx aws.Context, input *Desc
 //    // Example iterating over at most 3 pages of a DescribeCommunications operation.
 //    pageNum := 0
 //    err := client.DescribeCommunicationsPages(params,
-//        func(page *DescribeCommunicationsOutput, lastPage bool) bool {
+//        func(page *support.DescribeCommunicationsOutput, lastPage bool) bool {
 //            pageNum++
 //            fmt.Println(page)
 //            return pageNum <= 3
@@ -731,8 +729,8 @@ const opDescribeServices = "DescribeServices"
 
 // DescribeServicesRequest generates a "aws/request.Request" representing the
 // client's request for the DescribeServices operation. The "output" return
-// value will be populated with the request's response once the request complets
-// successfuly.
+// value will be populated with the request's response once the request completes
+// successfully.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
 // the "output" return value is not valid until after Send returns without error.
@@ -820,8 +818,8 @@ const opDescribeSeverityLevels = "DescribeSeverityLevels"
 
 // DescribeSeverityLevelsRequest generates a "aws/request.Request" representing the
 // client's request for the DescribeSeverityLevels operation. The "output" return
-// value will be populated with the request's response once the request complets
-// successfuly.
+// value will be populated with the request's response once the request completes
+// successfully.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
 // the "output" return value is not valid until after Send returns without error.
@@ -901,8 +899,8 @@ const opDescribeTrustedAdvisorCheckRefreshStatuses = "DescribeTrustedAdvisorChec
 
 // DescribeTrustedAdvisorCheckRefreshStatusesRequest generates a "aws/request.Request" representing the
 // client's request for the DescribeTrustedAdvisorCheckRefreshStatuses operation. The "output" return
-// value will be populated with the request's response once the request complets
-// successfuly.
+// value will be populated with the request's response once the request completes
+// successfully.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
 // the "output" return value is not valid until after Send returns without error.
@@ -985,8 +983,8 @@ const opDescribeTrustedAdvisorCheckResult = "DescribeTrustedAdvisorCheckResult"
 
 // DescribeTrustedAdvisorCheckResultRequest generates a "aws/request.Request" representing the
 // client's request for the DescribeTrustedAdvisorCheckResult operation. The "output" return
-// value will be populated with the request's response once the request complets
-// successfuly.
+// value will be populated with the request's response once the request completes
+// successfully.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
 // the "output" return value is not valid until after Send returns without error.
@@ -1083,8 +1081,8 @@ const opDescribeTrustedAdvisorCheckSummaries = "DescribeTrustedAdvisorCheckSumma
 
 // DescribeTrustedAdvisorCheckSummariesRequest generates a "aws/request.Request" representing the
 // client's request for the DescribeTrustedAdvisorCheckSummaries operation. The "output" return
-// value will be populated with the request's response once the request complets
-// successfuly.
+// value will be populated with the request's response once the request completes
+// successfully.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
 // the "output" return value is not valid until after Send returns without error.
@@ -1165,8 +1163,8 @@ const opDescribeTrustedAdvisorChecks = "DescribeTrustedAdvisorChecks"
 
 // DescribeTrustedAdvisorChecksRequest generates a "aws/request.Request" representing the
 // client's request for the DescribeTrustedAdvisorChecks operation. The "output" return
-// value will be populated with the request's response once the request complets
-// successfuly.
+// value will be populated with the request's response once the request completes
+// successfully.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
 // the "output" return value is not valid until after Send returns without error.
@@ -1247,8 +1245,8 @@ const opRefreshTrustedAdvisorCheck = "RefreshTrustedAdvisorCheck"
 
 // RefreshTrustedAdvisorCheckRequest generates a "aws/request.Request" representing the
 // client's request for the RefreshTrustedAdvisorCheck operation. The "output" return
-// value will be populated with the request's response once the request complets
-// successfuly.
+// value will be populated with the request's response once the request completes
+// successfully.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
 // the "output" return value is not valid until after Send returns without error.
@@ -1342,8 +1340,8 @@ const opResolveCase = "ResolveCase"
 
 // ResolveCaseRequest generates a "aws/request.Request" representing the
 // client's request for the ResolveCase operation. The "output" return
-// value will be populated with the request's response once the request complets
-// successfuly.
+// value will be populated with the request's response once the request completes
+// successfully.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
 // the "output" return value is not valid until after Send returns without error.

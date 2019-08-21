@@ -4,8 +4,12 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-make test
+if [[ $TRAVIS_OS_NAME == "windows" ]]; then
+	export SKIP_FMT_CHECK=1
+fi
 
-if [[ $TRAVIS_OS_NAME == "linux" ]]; then
+make staticcheck fmtcheck gotest
+
+if [[ $TRAVIS_OS_NAME == "linux" || $TRAVIS_OS_NAME == "windows" ]]; then
 	make integration
 fi

@@ -13,7 +13,7 @@ import (
 	"github.com/docker/docker/daemon/logger"
 	"github.com/docker/docker/daemon/logger/jsonfilelog/jsonlog"
 	"github.com/docker/docker/daemon/logger/loggerutils"
-	units "github.com/docker/go-units"
+	"github.com/docker/go-units"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -50,7 +50,7 @@ func New(info logger.Info) (logger.Logger, error) {
 			return nil, err
 		}
 		if capval <= 0 {
-			return nil, fmt.Errorf("max-size should be a positive numbler")
+			return nil, fmt.Errorf("max-size must be a positive number")
 		}
 	}
 	var maxFiles = 1
@@ -110,7 +110,7 @@ func New(info logger.Info) (logger.Logger, error) {
 		return b, nil
 	}
 
-	writer, err := loggerutils.NewLogFile(info.LogPath, capval, maxFiles, compress, marshalFunc, decodeFunc, 0640)
+	writer, err := loggerutils.NewLogFile(info.LogPath, capval, maxFiles, compress, marshalFunc, decodeFunc, 0640, getTailReader)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +132,7 @@ func (l *JSONFileLogger) Log(msg *logger.Message) error {
 
 func marshalMessage(msg *logger.Message, extra json.RawMessage, buf *bytes.Buffer) error {
 	logLine := msg.Line
-	if !msg.Partial {
+	if msg.PLogMetaData == nil || (msg.PLogMetaData != nil && msg.PLogMetaData.Last) {
 		logLine = append(msg.Line, '\n')
 	}
 	err := (&jsonlog.JSONLogs{
@@ -156,6 +156,7 @@ func ValidateLogOpt(cfg map[string]string) error {
 		case "max-size":
 		case "compress":
 		case "labels":
+		case "labels-regex":
 		case "env":
 		case "env-regex":
 		case "tag":
@@ -166,13 +167,14 @@ func ValidateLogOpt(cfg map[string]string) error {
 	return nil
 }
 
-// Close closes underlying file and signals all readers to stop.
+// Close closes underlying file and signals all the readers
+// that the logs producer is gone.
 func (l *JSONFileLogger) Close() error {
 	l.mu.Lock()
 	l.closed = true
 	err := l.writer.Close()
 	for r := range l.readers {
-		r.Close()
+		r.ProducerGone()
 		delete(l.readers, r)
 	}
 	l.mu.Unlock()

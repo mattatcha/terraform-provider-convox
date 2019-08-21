@@ -121,7 +121,7 @@ func TestResourceProvider_linuxInstallChefClient(t *testing.T) {
 			Commands: map[string]bool{
 				"curl -LO https://omnitruck.chef.io/install.sh": true,
 				"bash ./install.sh -v \"11.18.6\" -c stable":    true,
-				"rm -f install.sh":                              true,
+				"rm -f install.sh": true,
 			},
 		},
 
@@ -140,7 +140,7 @@ func TestResourceProvider_linuxInstallChefClient(t *testing.T) {
 			Commands: map[string]bool{
 				"curl -LO https://omnitruck.chef.io/install.sh": true,
 				"bash ./install.sh -v \"11.18.6\" -c current":   true,
-				"rm -f install.sh":                              true,
+				"rm -f install.sh": true,
 			},
 		},
 	}
@@ -175,7 +175,7 @@ func TestResourceProvider_linuxCreateConfigFiles(t *testing.T) {
 	}{
 		"Sudo": {
 			Config: map[string]interface{}{
-				"ohai_hints": []interface{}{"test-fixtures/ohaihint.json"},
+				"ohai_hints": []interface{}{"testdata/ohaihint.json"},
 				"node_name":  "nodename1",
 				"run_list":   []interface{}{"cookbook::recipe"},
 				"secret_key": "SECRET-KEY",
@@ -193,10 +193,10 @@ func TestResourceProvider_linuxCreateConfigFiles(t *testing.T) {
 				"sudo " + fmt.Sprintf(chmod, path.Join(linuxConfDir, "ohai/hints"), 666): true,
 				"sudo chmod 755 " + path.Join(linuxConfDir, "ohai/hints"):                true,
 				"sudo " + fmt.Sprintf(chmod, path.Join(linuxConfDir, "ohai/hints"), 600): true,
-				"sudo chown -R root.root " + path.Join(linuxConfDir, "ohai/hints"):       true,
+				"sudo chown -R root:root " + path.Join(linuxConfDir, "ohai/hints"):       true,
 				"sudo chmod 755 " + linuxConfDir:                                         true,
 				"sudo " + fmt.Sprintf(chmod, linuxConfDir, 600):                          true,
-				"sudo chown -R root.root " + linuxConfDir:                                true,
+				"sudo chown -R root:root " + linuxConfDir:                                true,
 			},
 
 			Uploads: map[string]string{

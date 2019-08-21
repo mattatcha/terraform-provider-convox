@@ -3,6 +3,7 @@ package distribution // import "github.com/docker/docker/distribution"
 import (
 	"bufio"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
 
@@ -11,7 +12,6 @@ import (
 	"github.com/docker/docker/pkg/progress"
 	"github.com/docker/docker/registry"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/net/context"
 )
 
 // Pusher is an interface that abstracts pushing for different API versions.
@@ -41,13 +41,7 @@ func NewPusher(ref reference.Named, endpoint registry.APIEndpoint, repoInfo *reg
 			config:            imagePushConfig,
 		}, nil
 	case registry.APIVersion1:
-		return &v1Pusher{
-			v1IDService: metadata.NewV1IDService(imagePushConfig.MetadataStore),
-			ref:         ref,
-			endpoint:    endpoint,
-			repoInfo:    repoInfo,
-			config:      imagePushConfig,
-		}, nil
+		return nil, fmt.Errorf("protocol version %d no longer supported. Please contact admins of registry %s", endpoint.Version, endpoint.URL)
 	}
 	return nil, fmt.Errorf("unknown version %d for registry %s", endpoint.Version, endpoint.URL)
 }

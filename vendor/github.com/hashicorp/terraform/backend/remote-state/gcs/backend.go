@@ -18,10 +18,10 @@ import (
 	"google.golang.org/api/option"
 )
 
-// gcsBackend implements "backend".Backend for GCS.
+// Backend implements "backend".Backend for GCS.
 // Input(), Validate() and Configure() are implemented by embedding *schema.Backend.
 // State(), DeleteState() and States() are implemented explicitly.
-type gcsBackend struct {
+type Backend struct {
 	*schema.Backend
 
 	storageClient  *storage.Client
@@ -32,15 +32,12 @@ type gcsBackend struct {
 	defaultStateFile string
 
 	encryptionKey []byte
-
-	projectID string
-	region    string
 }
 
 func New() backend.Backend {
-	be := &gcsBackend{}
-	be.Backend = &schema.Backend{
-		ConfigureFunc: be.configure,
+	b := &Backend{}
+	b.Backend = &schema.Backend{
+		ConfigureFunc: b.configure,
 		Schema: map[string]*schema.Schema{
 			"bucket": {
 				Type:        schema.TypeString,
@@ -80,6 +77,7 @@ func New() backend.Backend {
 				Optional:    true,
 				Description: "Google Cloud Project ID",
 				Default:     "",
+				Removed:     "Please remove this attribute. It is not used since the backend no longer creates the bucket if it does not yet exist.",
 			},
 
 			"region": {
@@ -87,14 +85,15 @@ func New() backend.Backend {
 				Optional:    true,
 				Description: "Region / location in which to create the bucket",
 				Default:     "",
+				Removed:     "Please remove this attribute. It is not used since the backend no longer creates the bucket if it does not yet exist.",
 			},
 		},
 	}
 
-	return be
+	return b
 }
 
-func (b *gcsBackend) configure(ctx context.Context) error {
+func (b *Backend) configure(ctx context.Context) error {
 	if b.storageClient != nil {
 		return nil
 	}
@@ -114,15 +113,6 @@ func (b *gcsBackend) configure(ctx context.Context) error {
 	}
 
 	b.defaultStateFile = strings.TrimLeft(data.Get("path").(string), "/")
-
-	b.projectID = data.Get("project").(string)
-	if id := os.Getenv("GOOGLE_PROJECT"); b.projectID == "" && id != "" {
-		b.projectID = id
-	}
-	b.region = data.Get("region").(string)
-	if r := os.Getenv("GOOGLE_REGION"); b.projectID == "" && r != "" {
-		b.region = r
-	}
 
 	var opts []option.ClientOption
 

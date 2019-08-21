@@ -1,6 +1,7 @@
 package distribution // import "github.com/docker/docker/distribution"
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -16,12 +17,13 @@ import (
 	"github.com/docker/docker/dockerversion"
 	"github.com/docker/docker/registry"
 	"github.com/docker/go-connections/sockets"
-	"golang.org/x/net/context"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 // ImageTypes represents the schema2 config types for images
 var ImageTypes = []string{
 	schema2.MediaTypeImageConfig,
+	ocispec.MediaTypeImageConfig,
 	// Handle unexpected values from https://github.com/docker/distribution/issues/1621
 	// (see also https://github.com/docker/docker/issues/22378,
 	// https://github.com/docker/docker/issues/30083)
@@ -131,7 +133,7 @@ func NewV2Repository(ctx context.Context, repoInfo *registry.RepositoryInfo, end
 		}
 	}
 
-	repo, err = client.NewRepository(ctx, repoNameRef, endpoint.URL.String(), tr)
+	repo, err = client.NewRepository(repoNameRef, endpoint.URL.String(), tr)
 	if err != nil {
 		err = fallbackError{
 			err:         err,
@@ -153,4 +155,8 @@ func (th *existingTokenHandler) Scheme() string {
 func (th *existingTokenHandler) AuthorizeRequest(req *http.Request, params map[string]string) error {
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", th.token))
 	return nil
+}
+
+func schema1DeprecationMessage(ref reference.Named) string {
+	return fmt.Sprintf("[DEPRECATION NOTICE] registry v2 schema1 support will be removed in an upcoming release. Please contact admins of the %s registry NOW to avoid future disruption.", reference.Domain(ref))
 }

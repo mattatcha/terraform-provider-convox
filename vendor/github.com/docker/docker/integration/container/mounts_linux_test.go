@@ -1,101 +1,31 @@
 package container // import "github.com/docker/docker/integration/container"
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/mount"
+	containertypes "github.com/docker/docker/api/types/container"
+	mounttypes "github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/versions"
 	"github.com/docker/docker/client"
-	"github.com/docker/docker/integration-cli/daemon"
-	"github.com/docker/docker/integration/internal/request"
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/docker/docker/integration/internal/container"
+	"github.com/docker/docker/pkg/mount"
 	"github.com/docker/docker/pkg/system"
-	"github.com/gotestyourself/gotestyourself/assert"
-	is "github.com/gotestyourself/gotestyourself/assert/cmp"
-	"github.com/gotestyourself/gotestyourself/fs"
-	"github.com/gotestyourself/gotestyourself/skip"
+	"gotest.tools/assert"
+	is "gotest.tools/assert/cmp"
+	"gotest.tools/fs"
+	"gotest.tools/poll"
+	"gotest.tools/skip"
 )
-
-func TestContainerShmNoLeak(t *testing.T) {
-	skip.If(t, testEnv.IsRemoteDaemon(), "cannot start daemon on remote test run")
-	t.Parallel()
-	d := daemon.New(t, "docker", "dockerd", daemon.Config{})
-	client, err := d.NewClient()
-	if err != nil {
-		t.Fatal(err)
-	}
-	d.StartWithBusybox(t, "--iptables=false")
-	defer d.Stop(t)
-
-	ctx := context.Background()
-	cfg := container.Config{
-		Image: "busybox",
-		Cmd:   []string{"top"},
-	}
-
-	ctr, err := client.ContainerCreate(ctx, &cfg, nil, nil, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.ContainerRemove(ctx, ctr.ID, types.ContainerRemoveOptions{Force: true})
-
-	if err := client.ContainerStart(ctx, ctr.ID, types.ContainerStartOptions{}); err != nil {
-		t.Fatal(err)
-	}
-
-	// this should recursively bind mount everything in the test daemons root
-	// except of course we are hoping that the previous containers /dev/shm mount did not leak into this new container
-	hc := container.HostConfig{
-		Mounts: []mount.Mount{
-			{
-				Type:   mount.TypeBind,
-				Source: d.Root,
-				Target: "/testdaemonroot",
-			},
-		},
-	}
-	cfg.Cmd = []string{"/bin/sh", "-c", fmt.Sprintf("mount | grep testdaemonroot | grep containers | grep %s", ctr.ID)}
-	cfg.AttachStdout = true
-	cfg.AttachStderr = true
-	ctrLeak, err := client.ContainerCreate(ctx, &cfg, &hc, nil, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	attach, err := client.ContainerAttach(ctx, ctrLeak.ID, types.ContainerAttachOptions{
-		Stream: true,
-		Stdout: true,
-		Stderr: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := client.ContainerStart(ctx, ctrLeak.ID, types.ContainerStartOptions{}); err != nil {
-		t.Fatal(err)
-	}
-
-	buf := bytes.NewBuffer(nil)
-
-	if _, err := stdcopy.StdCopy(buf, buf, attach.Reader); err != nil {
-		t.Fatal(err)
-	}
-
-	out := bytes.TrimSpace(buf.Bytes())
-	if !bytes.Equal(out, []byte{}) {
-		t.Fatalf("mount leaked: %s", string(out))
-	}
-}
 
 func TestContainerNetworkMountsNoChown(t *testing.T) {
 	// chown only applies to Linux bind mounted volumes; must be same host to verify
-	skip.If(t, testEnv.DaemonInfo.OSType != "linux" || testEnv.IsRemoteDaemon())
+	skip.If(t, testEnv.IsRemoteDaemon)
 
 	defer setupTest(t)()
 
@@ -106,11 +36,11 @@ func TestContainerNetworkMountsNoChown(t *testing.T) {
 
 	tmpNWFileMount := tmpDir.Join("nwfile")
 
-	config := container.Config{
+	config := containertypes.Config{
 		Image: "busybox",
 	}
-	hostConfig := container.HostConfig{
-		Mounts: []mount.Mount{
+	hostConfig := containertypes.HostConfig{
+		Mounts: []mounttypes.Mount{
 			{
 				Type:   "bind",
 				Source: tmpNWFileMount,
@@ -129,7 +59,7 @@ func TestContainerNetworkMountsNoChown(t *testing.T) {
 		},
 	}
 
-	cli, err := client.NewEnvClient()
+	cli, err := client.NewClientWithOpts(client.FromEnv)
 	assert.NilError(t, err)
 	defer cli.Close()
 
@@ -155,9 +85,10 @@ func TestContainerNetworkMountsNoChown(t *testing.T) {
 }
 
 func TestMountDaemonRoot(t *testing.T) {
-	t.Parallel()
+	skip.If(t, testEnv.IsRemoteDaemon)
 
-	client := request.NewAPIClient(t)
+	defer setupTest(t)()
+	client := testEnv.APIClient()
 	ctx := context.Background()
 	info, err := client.Info(ctx)
 	if err != nil {
@@ -166,39 +97,39 @@ func TestMountDaemonRoot(t *testing.T) {
 
 	for _, test := range []struct {
 		desc        string
-		propagation mount.Propagation
-		expected    mount.Propagation
+		propagation mounttypes.Propagation
+		expected    mounttypes.Propagation
 	}{
 		{
 			desc:        "default",
 			propagation: "",
-			expected:    mount.PropagationRSlave,
+			expected:    mounttypes.PropagationRSlave,
 		},
 		{
 			desc:        "private",
-			propagation: mount.PropagationPrivate,
+			propagation: mounttypes.PropagationPrivate,
 		},
 		{
 			desc:        "rprivate",
-			propagation: mount.PropagationRPrivate,
+			propagation: mounttypes.PropagationRPrivate,
 		},
 		{
 			desc:        "slave",
-			propagation: mount.PropagationSlave,
+			propagation: mounttypes.PropagationSlave,
 		},
 		{
 			desc:        "rslave",
-			propagation: mount.PropagationRSlave,
-			expected:    mount.PropagationRSlave,
+			propagation: mounttypes.PropagationRSlave,
+			expected:    mounttypes.PropagationRSlave,
 		},
 		{
 			desc:        "shared",
-			propagation: mount.PropagationShared,
+			propagation: mounttypes.PropagationShared,
 		},
 		{
 			desc:        "rshared",
-			propagation: mount.PropagationRShared,
-			expected:    mount.PropagationRShared,
+			propagation: mounttypes.PropagationRShared,
+			expected:    mounttypes.PropagationRShared,
 		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
@@ -212,26 +143,26 @@ func TestMountDaemonRoot(t *testing.T) {
 			bindSpecRoot := info.DockerRootDir + ":" + "/foo" + propagationSpec
 			bindSpecSub := filepath.Join(info.DockerRootDir, "containers") + ":/foo" + propagationSpec
 
-			for name, hc := range map[string]*container.HostConfig{
+			for name, hc := range map[string]*containertypes.HostConfig{
 				"bind root":    {Binds: []string{bindSpecRoot}},
 				"bind subpath": {Binds: []string{bindSpecSub}},
 				"mount root": {
-					Mounts: []mount.Mount{
+					Mounts: []mounttypes.Mount{
 						{
-							Type:        mount.TypeBind,
+							Type:        mounttypes.TypeBind,
 							Source:      info.DockerRootDir,
 							Target:      "/foo",
-							BindOptions: &mount.BindOptions{Propagation: test.propagation},
+							BindOptions: &mounttypes.BindOptions{Propagation: test.propagation},
 						},
 					},
 				},
 				"mount subpath": {
-					Mounts: []mount.Mount{
+					Mounts: []mounttypes.Mount{
 						{
-							Type:        mount.TypeBind,
+							Type:        mounttypes.TypeBind,
 							Source:      filepath.Join(info.DockerRootDir, "containers"),
 							Target:      "/foo",
-							BindOptions: &mount.BindOptions{Propagation: test.propagation},
+							BindOptions: &mounttypes.BindOptions{Propagation: test.propagation},
 						},
 					},
 				},
@@ -240,7 +171,7 @@ func TestMountDaemonRoot(t *testing.T) {
 					hc := hc
 					t.Parallel()
 
-					c, err := client.ContainerCreate(ctx, &container.Config{
+					c, err := client.ContainerCreate(ctx, &containertypes.Config{
 						Image: "busybox",
 						Cmd:   []string{"true"},
 					}, hc, nil, "")
@@ -277,5 +208,60 @@ func TestMountDaemonRoot(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func TestContainerBindMountNonRecursive(t *testing.T) {
+	skip.If(t, testEnv.IsRemoteDaemon)
+	skip.If(t, versions.LessThan(testEnv.DaemonAPIVersion(), "1.40"), "BindOptions.NonRecursive requires API v1.40")
+
+	defer setupTest(t)()
+
+	tmpDir1 := fs.NewDir(t, "tmpdir1", fs.WithMode(0755),
+		fs.WithDir("mnt", fs.WithMode(0755)))
+	defer tmpDir1.Remove()
+	tmpDir1Mnt := filepath.Join(tmpDir1.Path(), "mnt")
+	tmpDir2 := fs.NewDir(t, "tmpdir2", fs.WithMode(0755),
+		fs.WithFile("file", "should not be visible when NonRecursive", fs.WithMode(0644)))
+	defer tmpDir2.Remove()
+
+	err := mount.Mount(tmpDir2.Path(), tmpDir1Mnt, "none", "bind,ro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := mount.Unmount(tmpDir1Mnt); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	// implicit is recursive (NonRecursive: false)
+	implicit := mounttypes.Mount{
+		Type:     "bind",
+		Source:   tmpDir1.Path(),
+		Target:   "/foo",
+		ReadOnly: true,
+	}
+	recursive := implicit
+	recursive.BindOptions = &mounttypes.BindOptions{
+		NonRecursive: false,
+	}
+	recursiveVerifier := []string{"test", "-f", "/foo/mnt/file"}
+	nonRecursive := implicit
+	nonRecursive.BindOptions = &mounttypes.BindOptions{
+		NonRecursive: true,
+	}
+	nonRecursiveVerifier := []string{"test", "!", "-f", "/foo/mnt/file"}
+
+	ctx := context.Background()
+	client := testEnv.APIClient()
+	containers := []string{
+		container.Run(ctx, t, client, container.WithMount(implicit), container.WithCmd(recursiveVerifier...)),
+		container.Run(ctx, t, client, container.WithMount(recursive), container.WithCmd(recursiveVerifier...)),
+		container.Run(ctx, t, client, container.WithMount(nonRecursive), container.WithCmd(nonRecursiveVerifier...)),
+	}
+
+	for _, c := range containers {
+		poll.WaitOn(t, container.IsSuccessful(ctx, client, c), poll.WithDelay(100*time.Millisecond))
 	}
 }

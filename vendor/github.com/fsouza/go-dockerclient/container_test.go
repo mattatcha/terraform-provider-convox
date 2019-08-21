@@ -5,53 +5,54 @@
 package docker
 
 import (
-	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
-
-	"golang.org/x/net/context"
 )
 
 func TestStateString(t *testing.T) {
 	t.Parallel()
 	started := time.Now().Add(-3 * time.Hour)
-	var tests = []struct {
+	tests := []struct {
+		name     string
 		input    State
 		expected string
 	}{
-		{State{Running: true, Paused: true, StartedAt: started}, "Up 3 hours (Paused)"},
-		{State{Running: true, Restarting: true, ExitCode: 7, FinishedAt: started}, "Restarting (7) 3 hours ago"},
-		{State{Running: true, StartedAt: started}, "Up 3 hours"},
-		{State{RemovalInProgress: true}, "Removal In Progress"},
-		{State{Dead: true}, "Dead"},
-		{State{}, "Created"},
-		{State{StartedAt: started}, ""},
-		{State{ExitCode: 7, StartedAt: started, FinishedAt: started}, "Exited (7) 3 hours ago"},
+		{"paused", State{Running: true, Paused: true, StartedAt: started}, "Up 3 hours (Paused)"},
+		{"restarting", State{Running: true, Restarting: true, ExitCode: 7, FinishedAt: started}, "Restarting (7) 3 hours ago"},
+		{"up", State{Running: true, StartedAt: started}, "Up 3 hours"},
+		{"being removed", State{RemovalInProgress: true}, "Removal In Progress"},
+		{"dead", State{Dead: true}, "Dead"},
+		{"created", State{}, "Created"},
+		{"no creation info", State{StartedAt: started}, ""},
+		{"erro code", State{ExitCode: 7, StartedAt: started, FinishedAt: started}, "Exited (7) 3 hours ago"},
 	}
 	for _, tt := range tests {
-		if got := tt.input.String(); got != tt.expected {
-			t.Errorf("State.String(): wrong result. Want %q. Got %q.", tt.expected, got)
-		}
+		test := tt
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := test.input.String(); got != test.expected {
+				t.Errorf("State.String(): wrong result. Want %q. Got %q.", test.expected, got)
+			}
+		})
 	}
 }
 
 func TestStateStateString(t *testing.T) {
 	t.Parallel()
 	started := time.Now().Add(-3 * time.Hour)
-	var tests = []struct {
+	tests := []struct {
 		input    State
 		expected string
 	}{
@@ -63,9 +64,13 @@ func TestStateStateString(t *testing.T) {
 		{State{StartedAt: started}, "exited"},
 	}
 	for _, tt := range tests {
-		if got := tt.input.StateString(); got != tt.expected {
-			t.Errorf("State.String(): wrong result. Want %q. Got %q.", tt.expected, got)
-		}
+		test := tt
+		t.Run(test.expected, func(t *testing.T) {
+			t.Parallel()
+			if got := test.input.StateString(); got != test.expected {
+				t.Errorf("State.String(): wrong result. Want %q. Got %q.", test.expected, got)
+			}
+		})
 	}
 }
 
@@ -122,7 +127,7 @@ func TestListContainers(t *testing.T) {
 
 func TestListContainersParams(t *testing.T) {
 	t.Parallel()
-	var tests = []struct {
+	tests := []struct {
 		input  ListContainersOptions
 		params map[string][]string
 	}{
@@ -142,30 +147,33 @@ func TestListContainersParams(t *testing.T) {
 			map[string][]string{"all": {"1"}, "filters": {"{\"exited\":[\"0\"],\"status\":[\"exited\"]}"}},
 		},
 	}
-	fakeRT := &FakeRoundTripper{message: "[]", status: http.StatusOK}
-	client := newTestClient(fakeRT)
-	u, _ := url.Parse(client.getURL("/containers/json"))
+	const expectedPath = "/containers/json"
 	for _, tt := range tests {
-		if _, err := client.ListContainers(tt.input); err != nil {
-			t.Error(err)
-		}
-		got := map[string][]string(fakeRT.requests[0].URL.Query())
-		if !reflect.DeepEqual(got, tt.params) {
-			t.Errorf("Expected %#v, got %#v.", tt.params, got)
-		}
-		if path := fakeRT.requests[0].URL.Path; path != u.Path {
-			t.Errorf("Wrong path on request. Want %q. Got %q.", u.Path, path)
-		}
-		if meth := fakeRT.requests[0].Method; meth != "GET" {
-			t.Errorf("Wrong HTTP method. Want GET. Got %s.", meth)
-		}
-		fakeRT.Reset()
+		test := tt
+		t.Run("", func(t *testing.T) {
+			t.Parallel()
+			fakeRT := &FakeRoundTripper{message: "[]", status: http.StatusOK}
+			client := newTestClient(fakeRT)
+			if _, err := client.ListContainers(test.input); err != nil {
+				t.Error(err)
+			}
+			got := map[string][]string(fakeRT.requests[0].URL.Query())
+			if !reflect.DeepEqual(got, test.params) {
+				t.Errorf("Expected %#v, got %#v.", test.params, got)
+			}
+			if path := fakeRT.requests[0].URL.Path; path != expectedPath {
+				t.Errorf("Wrong path on request. Want %q. Got %q.", expectedPath, path)
+			}
+			if meth := fakeRT.requests[0].Method; meth != "GET" {
+				t.Errorf("Wrong HTTP method. Want GET. Got %s.", meth)
+			}
+		})
 	}
 }
 
 func TestListContainersFailure(t *testing.T) {
 	t.Parallel()
-	var tests = []struct {
+	tests := []struct {
 		status  int
 		message string
 	}{
@@ -173,15 +181,19 @@ func TestListContainersFailure(t *testing.T) {
 		{500, "internal server error"},
 	}
 	for _, tt := range tests {
-		client := newTestClient(&FakeRoundTripper{message: tt.message, status: tt.status})
-		expected := Error{Status: tt.status, Message: tt.message}
-		containers, err := client.ListContainers(ListContainersOptions{})
-		if !reflect.DeepEqual(expected, *err.(*Error)) {
-			t.Errorf("Wrong error in ListContainers. Want %#v. Got %#v.", expected, err)
-		}
-		if len(containers) > 0 {
-			t.Errorf("ListContainers failure. Expected empty list. Got %#v.", containers)
-		}
+		test := tt
+		t.Run(strconv.Itoa(test.status), func(t *testing.T) {
+			t.Parallel()
+			client := newTestClient(&FakeRoundTripper{message: test.message, status: test.status})
+			expected := Error{Status: test.status, Message: test.message}
+			containers, err := client.ListContainers(ListContainersOptions{})
+			if !reflect.DeepEqual(expected, *err.(*Error)) {
+				t.Errorf("Wrong error in ListContainers. Want %#v. Got %#v.", expected, err)
+			}
+			if len(containers) > 0 {
+				t.Errorf("ListContainers failure. Expected empty list. Got %#v.", containers)
+			}
+		})
 	}
 }
 
@@ -217,7 +229,10 @@ func TestInspectContainer(t *testing.T) {
                       ],
                       "Ulimits": [
                           { "Name": "nofile", "Soft": 1024, "Hard": 2048 }
-                      ]
+											],
+											"Shell": [
+                         "/bin/sh", "-c"
+											]
              },
              "State": {
                      "Running": false,
@@ -682,7 +697,6 @@ func TestInspectContainerNetwork(t *testing.T) {
 	} else {
 		t.Errorf("InspectContainerNetworks(%q): No method Networks for NetworkSettings", id)
 	}
-
 }
 
 func TestInspectContainerNegativeSwap(t *testing.T) {
@@ -897,7 +911,7 @@ func TestCreateContainer(t *testing.T) {
 
 func TestCreateContainerImageNotFound(t *testing.T) {
 	t.Parallel()
-	client := newTestClient(&FakeRoundTripper{message: "No such image", status: http.StatusNotFound})
+	client := newTestClient(&FakeRoundTripper{message: "No such image: whatever", status: http.StatusNotFound})
 	config := Config{AttachStdout: true, AttachStdin: true}
 	container, err := client.CreateContainer(CreateContainerOptions{Config: &config})
 	if container != nil {
@@ -1504,7 +1518,7 @@ func TestCommitContainerParams(t *testing.T) {
 	t.Parallel()
 	cfg := Config{Memory: 67108864}
 	json, _ := json.Marshal(&cfg)
-	var tests = []struct {
+	tests := []struct {
 		input  CommitContainerOptions
 		params map[string][]string
 		body   []byte
@@ -1522,33 +1536,36 @@ func TestCommitContainerParams(t *testing.T) {
 			json,
 		},
 	}
-	fakeRT := &FakeRoundTripper{message: "{}", status: http.StatusOK}
-	client := newTestClient(fakeRT)
-	u, _ := url.Parse(client.getURL("/commit"))
+	const expectedPath = "/commit"
 	for _, tt := range tests {
-		if _, err := client.CommitContainer(tt.input); err != nil {
-			t.Error(err)
-		}
-		got := map[string][]string(fakeRT.requests[0].URL.Query())
-		if !reflect.DeepEqual(got, tt.params) {
-			t.Errorf("Expected %#v, got %#v.", tt.params, got)
-		}
-		if path := fakeRT.requests[0].URL.Path; path != u.Path {
-			t.Errorf("Wrong path on request. Want %q. Got %q.", u.Path, path)
-		}
-		if meth := fakeRT.requests[0].Method; meth != "POST" {
-			t.Errorf("Wrong HTTP method. Want POST. Got %s.", meth)
-		}
-		if tt.body != nil {
-			if requestBody, err := ioutil.ReadAll(fakeRT.requests[0].Body); err == nil {
-				if !bytes.Equal(requestBody, tt.body) {
-					t.Errorf("Expected body %#v, got %#v", tt.body, requestBody)
-				}
-			} else {
-				t.Errorf("Error reading request body: %#v", err)
+		test := tt
+		t.Run("", func(t *testing.T) {
+			t.Parallel()
+			fakeRT := &FakeRoundTripper{message: "{}", status: http.StatusOK}
+			client := newTestClient(fakeRT)
+			if _, err := client.CommitContainer(test.input); err != nil {
+				t.Error(err)
 			}
-		}
-		fakeRT.Reset()
+			got := map[string][]string(fakeRT.requests[0].URL.Query())
+			if !reflect.DeepEqual(got, test.params) {
+				t.Errorf("Expected %#v, got %#v.", test.params, got)
+			}
+			if path := fakeRT.requests[0].URL.Path; path != expectedPath {
+				t.Errorf("Wrong path on request. Want %q. Got %q.", expectedPath, path)
+			}
+			if meth := fakeRT.requests[0].Method; meth != "POST" {
+				t.Errorf("Wrong HTTP method. Want POST. Got %s.", meth)
+			}
+			if test.body != nil {
+				if requestBody, err := ioutil.ReadAll(fakeRT.requests[0].Body); err == nil {
+					if !bytes.Equal(requestBody, test.body) {
+						t.Errorf("Expected body %#v, got %#v", test.body, requestBody)
+					}
+				} else {
+					t.Errorf("Error reading request body: %#v", err)
+				}
+			}
+		})
 	}
 }
 
@@ -1618,7 +1635,7 @@ func TestAttachToContainerLogs(t *testing.T) {
 
 func TestAttachToContainer(t *testing.T) {
 	t.Parallel()
-	var reader = strings.NewReader("send value")
+	reader := strings.NewReader("send value")
 	var req http.Request
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte{1, 0, 0, 0, 0, 0, 0, 5})
@@ -1658,7 +1675,7 @@ func TestAttachToContainer(t *testing.T) {
 
 func TestAttachToContainerSentinel(t *testing.T) {
 	t.Parallel()
-	var reader = strings.NewReader("send value")
+	reader := strings.NewReader("send value")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte{1, 0, 0, 0, 0, 0, 0, 5})
 		w.Write([]byte("hello"))
@@ -1692,7 +1709,7 @@ func TestAttachToContainerSentinel(t *testing.T) {
 
 func TestAttachToContainerNilStdout(t *testing.T) {
 	t.Parallel()
-	var reader = strings.NewReader("send value")
+	reader := strings.NewReader("send value")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte{1, 0, 0, 0, 0, 0, 0, 5})
 		w.Write([]byte("hello"))
@@ -1720,7 +1737,7 @@ func TestAttachToContainerNilStdout(t *testing.T) {
 
 func TestAttachToContainerNilStderr(t *testing.T) {
 	t.Parallel()
-	var reader = strings.NewReader("send value")
+	reader := strings.NewReader("send value")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte{1, 0, 0, 0, 0, 0, 0, 5})
 		w.Write([]byte("hello"))
@@ -1747,7 +1764,7 @@ func TestAttachToContainerNilStderr(t *testing.T) {
 
 func TestAttachToContainerStdinOnly(t *testing.T) {
 	t.Parallel()
-	var reader = strings.NewReader("send value")
+	reader := strings.NewReader("send value")
 	serverFinished := make(chan struct{})
 	clientFinished := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2044,7 +2061,7 @@ func TestLogsNoContainer(t *testing.T) {
 
 func TestNoSuchContainerError(t *testing.T) {
 	t.Parallel()
-	var err = &NoSuchContainer{ID: "i345"}
+	err := &NoSuchContainer{ID: "i345"}
 	expected := "No such container: i345"
 	if got := err.Error(); got != expected {
 		t.Errorf("NoSuchContainer: wrong message. Want %q. Got %q.", expected, got)
@@ -2053,7 +2070,7 @@ func TestNoSuchContainerError(t *testing.T) {
 
 func TestNoSuchContainerErrorMessage(t *testing.T) {
 	t.Parallel()
-	var err = &NoSuchContainer{ID: "i345", Err: errors.New("some advanced error info")}
+	err := &NoSuchContainer{ID: "i345", Err: errors.New("some advanced error info")}
 	expected := "some advanced error info"
 	if got := err.Error(); got != expected {
 		t.Errorf("NoSuchContainer: wrong message. Want %q. Got %q.", expected, got)
@@ -2073,38 +2090,6 @@ func TestExportContainer(t *testing.T) {
 	if out.String() != content {
 		t.Errorf("ExportContainer: wrong stdout. Want %#v. Got %#v.", content, out.String())
 	}
-}
-
-func runStreamConnServer(t *testing.T, network, laddr string, listening chan<- string, done chan<- int, containerID string) {
-	defer close(done)
-	l, err := net.Listen(network, laddr)
-	if err != nil {
-		t.Errorf("Listen(%q, %q) failed: %v", network, laddr, err)
-		listening <- "<nil>"
-		return
-	}
-	defer l.Close()
-	listening <- l.Addr().String()
-	c, err := l.Accept()
-	if err != nil {
-		t.Logf("Accept failed: %v", err)
-		return
-	}
-	defer c.Close()
-	breader := bufio.NewReader(c)
-	req, err := http.ReadRequest(breader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if path := "/containers/" + containerID + "/export"; req.URL.Path != path {
-		t.Errorf("wrong path. Want %q. Got %q", path, req.URL.Path)
-		return
-	}
-	c.Write([]byte("HTTP/1.1 200 OK\n\nexported container tar content"))
-}
-
-func tempfile(filename string) string {
-	return os.TempDir() + "/" + filename + "." + strconv.Itoa(os.Getpid())
 }
 
 func TestExportContainerNoId(t *testing.T) {
@@ -2145,7 +2130,6 @@ func TestUploadToContainer(t *testing.T) {
 	if pathParam := req.URL.Query().Get("path"); pathParam != "abc" {
 		t.Errorf("ListImages({Path:abc}): Wrong parameter. Want path=abc.  Got path=%s", pathParam)
 	}
-
 }
 
 func TestDownloadFromContainer(t *testing.T) {

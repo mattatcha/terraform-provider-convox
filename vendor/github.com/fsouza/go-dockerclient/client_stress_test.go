@@ -36,7 +36,7 @@ func TestClientDoConcurrentStress(t *testing.T) {
 		defer cleanup()
 		nativeSrvs = append(nativeSrvs, srv)
 	}
-	var tests = []struct {
+	tests := []struct {
 		testCase      string
 		srv           *httptest.Server
 		scheme        string
@@ -52,6 +52,7 @@ func TestClientDoConcurrentStress(t *testing.T) {
 		{testCase: "native with client-only tls", srv: nativeSrvs[2], scheme: nativeProtocol, withTLSServer: false, withTLSClient: nativeProtocol == unixProtocol}, // TLS client only works with unix protocol
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.testCase, func(t *testing.T) {
 			reqs = nil
 			var client *Client

@@ -2,6 +2,7 @@ package client // import "github.com/docker/docker/client"
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -12,8 +13,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/container"
-
-	"golang.org/x/net/context"
+	"github.com/docker/docker/errdefs"
 )
 
 func TestContainerWaitError(t *testing.T) {
@@ -27,6 +27,9 @@ func TestContainerWaitError(t *testing.T) {
 	case err := <-errC:
 		if err.Error() != "Error response from daemon: Server error" {
 			t.Fatalf("expected a Server Error, got %v", err)
+		}
+		if !errdefs.IsSystem(err) {
+			t.Fatalf("expected a Server Error, got %T", err)
 		}
 	}
 }
@@ -66,7 +69,7 @@ func ExampleClient_ContainerWait_withTimeout() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	client, _ := NewEnvClient()
+	client, _ := NewClientWithOpts(FromEnv)
 	_, errC := client.ContainerWait(ctx, "container_id", "")
 	if err := <-errC; err != nil {
 		log.Fatal(err)

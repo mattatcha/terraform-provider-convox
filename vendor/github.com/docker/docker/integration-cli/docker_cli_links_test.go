@@ -10,6 +10,7 @@ import (
 	"github.com/docker/docker/integration-cli/checker"
 	"github.com/docker/docker/runconfig"
 	"github.com/go-check/check"
+	"gotest.tools/assert"
 )
 
 func (s *DockerSuite) TestLinksPingUnlinkedContainers(c *check.C) {
@@ -28,7 +29,9 @@ func (s *DockerSuite) TestLinksInvalidContainerTarget(c *check.C) {
 	// an invalid container target should produce an error
 	c.Assert(err, checker.NotNil, check.Commentf("out: %s", out))
 	// an invalid container target should produce an error
-	c.Assert(out, checker.Contains, "could not get container")
+	// note: convert the output to lowercase first as the error string
+	// capitalization was changed after API version 1.32
+	c.Assert(strings.ToLower(out), checker.Contains, "could not get container")
 }
 
 func (s *DockerSuite) TestLinksPingLinkedContainers(c *check.C) {
@@ -97,14 +100,14 @@ func (s *DockerSuite) TestLinksInspectLinksStarted(c *check.C) {
 
 	var result []string
 	err := json.Unmarshal([]byte(links), &result)
-	c.Assert(err, checker.IsNil)
+	assert.NilError(c, err)
 
 	var expected = []string{
 		"/container1:/testinspectlink/alias1",
 		"/container2:/testinspectlink/alias2",
 	}
 	sort.Strings(result)
-	c.Assert(result, checker.DeepEquals, expected)
+	assert.DeepEqual(c, result, expected)
 }
 
 func (s *DockerSuite) TestLinksInspectLinksStopped(c *check.C) {
@@ -117,14 +120,14 @@ func (s *DockerSuite) TestLinksInspectLinksStopped(c *check.C) {
 
 	var result []string
 	err := json.Unmarshal([]byte(links), &result)
-	c.Assert(err, checker.IsNil)
+	assert.NilError(c, err)
 
 	var expected = []string{
 		"/container1:/testinspectlink/alias1",
 		"/container2:/testinspectlink/alias2",
 	}
 	sort.Strings(result)
-	c.Assert(result, checker.DeepEquals, expected)
+	assert.DeepEqual(c, result, expected)
 }
 
 func (s *DockerSuite) TestLinksNotStartedParentNotFail(c *check.C) {
@@ -137,7 +140,7 @@ func (s *DockerSuite) TestLinksNotStartedParentNotFail(c *check.C) {
 
 func (s *DockerSuite) TestLinksHostsFilesInject(c *check.C) {
 	testRequires(c, DaemonIsLinux)
-	testRequires(c, SameHostDaemon, ExecSupport)
+	testRequires(c, testEnv.IsLocalDaemon)
 
 	out, _ := dockerCmd(c, "run", "-itd", "--name", "one", "busybox", "top")
 	idOne := strings.TrimSpace(out)
@@ -155,7 +158,7 @@ func (s *DockerSuite) TestLinksHostsFilesInject(c *check.C) {
 
 func (s *DockerSuite) TestLinksUpdateOnRestart(c *check.C) {
 	testRequires(c, DaemonIsLinux)
-	testRequires(c, SameHostDaemon, ExecSupport)
+	testRequires(c, testEnv.IsLocalDaemon)
 	dockerCmd(c, "run", "-d", "--name", "one", "busybox", "top")
 	out, _ := dockerCmd(c, "run", "-d", "--name", "two", "--link", "one:onetwo", "--link", "one:one", "busybox", "top")
 	id := strings.TrimSpace(string(out))

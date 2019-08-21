@@ -12,8 +12,11 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/swarm"
+	"github.com/docker/docker/api/types/versions"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/integration-cli/requirement"
+	"github.com/docker/docker/internal/test/registry"
 )
 
 func ArchitectureIsNot(arch string) bool {
@@ -39,8 +42,14 @@ func DaemonIsLinux() bool {
 	return testEnv.OSType == "linux"
 }
 
+func MinimumAPIVersion(version string) func() bool {
+	return func() bool {
+		return versions.GreaterThanOrEqualTo(testEnv.DaemonAPIVersion(), version)
+	}
+}
+
 func OnlyDefaultNetworks() bool {
-	cli, err := client.NewEnvClient()
+	cli, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
 		return false
 	}
@@ -49,11 +58,6 @@ func OnlyDefaultNetworks() bool {
 		return false
 	}
 	return true
-}
-
-// Deprecated: use skip.IfCondition(t, !testEnv.DaemonInfo.ExperimentalBuild)
-func ExperimentalDaemon() bool {
-	return testEnv.DaemonInfo.ExperimentalBuild
 }
 
 func IsAmd64() bool {
@@ -72,20 +76,8 @@ func NotPpc64le() bool {
 	return ArchitectureIsNot("ppc64le")
 }
 
-func NotS390X() bool {
-	return ArchitectureIsNot("s390x")
-}
-
-func SameHostDaemon() bool {
-	return testEnv.IsLocalDaemon()
-}
-
 func UnixCli() bool {
 	return isUnixCli
-}
-
-func ExecSupport() bool {
-	return supportsExec
 }
 
 func Network() bool {
@@ -108,6 +100,9 @@ func Network() bool {
 }
 
 func Apparmor() bool {
+	if strings.HasPrefix(testEnv.DaemonInfo.OperatingSystem, "SUSE Linux Enterprise Server ") {
+		return false
+	}
 	buf, err := ioutil.ReadFile("/sys/module/apparmor/parameters/enabled")
 	return err == nil && len(buf) > 1 && buf[0] == 'Y'
 }
@@ -164,13 +159,6 @@ func IsPausable() bool {
 	return true
 }
 
-func NotPausable() bool {
-	if testEnv.OSType == "windows" {
-		return testEnv.DaemonInfo.Isolation == "process"
-	}
-	return false
-}
-
 func IsolationIs(expectedIsolation string) bool {
 	return testEnv.OSType == "windows" && string(testEnv.DaemonInfo.Isolation) == expectedIsolation
 }
@@ -181,6 +169,23 @@ func IsolationIsHyperv() bool {
 
 func IsolationIsProcess() bool {
 	return IsolationIs("process")
+}
+
+// RegistryHosting returns whether the host can host a registry (v2) or not
+func RegistryHosting() bool {
+	// for now registry binary is built only if we're running inside
+	// container through `make test`. Figure that out by testing if
+	// registry binary is in PATH.
+	_, err := exec.LookPath(registry.V2binary)
+	return err == nil
+}
+
+func SwarmInactive() bool {
+	return testEnv.DaemonInfo.Swarm.LocalNodeState == swarm.LocalNodeStateInactive
+}
+
+func TODOBuildkit() bool {
+	return os.Getenv("DOCKER_BUILDKIT") == ""
 }
 
 // testRequires checks if the environment satisfies the requirements

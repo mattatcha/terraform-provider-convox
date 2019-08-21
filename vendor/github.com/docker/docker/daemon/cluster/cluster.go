@@ -39,7 +39,9 @@ package cluster // import "github.com/docker/docker/daemon/cluster"
 //
 
 import (
+	"context"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -56,7 +58,7 @@ import (
 	swarmnode "github.com/docker/swarmkit/node"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 )
 
 const swarmDirName = "swarm"
@@ -67,9 +69,10 @@ const stateFile = "docker-state.json"
 const defaultAddr = "0.0.0.0:2377"
 
 const (
-	initialReconnectDelay = 100 * time.Millisecond
-	maxReconnectDelay     = 30 * time.Second
-	contextPrefix         = "com.docker.swarm"
+	initialReconnectDelay          = 100 * time.Millisecond
+	maxReconnectDelay              = 30 * time.Second
+	contextPrefix                  = "com.docker.swarm"
+	defaultRecvSizeForListResponse = math.MaxInt32 // the max recv limit grpc <1.4.0
 )
 
 // NetworkSubnetsProvider exposes functions for retrieving the subnets
@@ -85,6 +88,7 @@ type Config struct {
 	Backend                executorpkg.Backend
 	ImageBackend           executorpkg.ImageBackend
 	PluginBackend          plugin.Backend
+	VolumeBackend          executorpkg.VolumeBackend
 	NetworkSubnetsProvider NetworkSubnetsProvider
 
 	// DefaultAdvertiseAddr is the default host/IP or network interface to use
@@ -96,6 +100,13 @@ type Config struct {
 
 	// WatchStream is a channel to pass watch API notifications to daemon
 	WatchStream chan *swarmapi.WatchMessage
+
+	// RaftHeartbeatTick is the number of ticks for heartbeat of quorum members
+	RaftHeartbeatTick uint32
+
+	// RaftElectionTick is the number of ticks to elapse before followers propose a new round of leader election
+	// This value should be 10x that of RaftHeartbeatTick
+	RaftElectionTick uint32
 }
 
 // Cluster provides capabilities to participate in a cluster as a worker or a
@@ -134,6 +145,14 @@ func New(config Config) (*Cluster, error) {
 	if config.RuntimeRoot == "" {
 		config.RuntimeRoot = root
 	}
+	if config.RaftHeartbeatTick == 0 {
+		config.RaftHeartbeatTick = 1
+	}
+	if config.RaftElectionTick == 0 {
+		// 10X heartbeat tick is the recommended ratio according to etcd docs.
+		config.RaftElectionTick = 10 * config.RaftHeartbeatTick
+	}
+
 	if err := os.MkdirAll(config.RuntimeRoot, 0700); err != nil {
 		return nil, err
 	}
@@ -168,8 +187,11 @@ func (c *Cluster) Start() error {
 	}
 	c.nr = nr
 
+	timer := time.NewTimer(swarmConnectTimeout)
+	defer timer.Stop()
+
 	select {
-	case <-time.After(swarmConnectTimeout):
+	case <-timer.C:
 		logrus.Error("swarm component could not be started before timeout was reached")
 	case err := <-nr.Ready():
 		if err != nil {
@@ -290,6 +312,13 @@ func (c *Cluster) GetRemoteAddressList() []string {
 	return c.getRemoteAddressList()
 }
 
+// GetWatchStream returns the channel to pass changes from store watch API
+func (c *Cluster) GetWatchStream() chan *swarmapi.WatchMessage {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.watchStream
+}
+
 func (c *Cluster) getRemoteAddressList() []string {
 	state := c.currentNodeState()
 	if state.swarmNode == nil {
@@ -374,7 +403,10 @@ func (c *Cluster) Cleanup() {
 func managerStats(client swarmapi.ControlClient, currentNodeID string) (current bool, reachable int, unreachable int, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	nodes, err := client.ListNodes(ctx, &swarmapi.ListNodesRequest{})
+	nodes, err := client.ListNodes(
+		ctx, &swarmapi.ListNodesRequest{},
+		grpc.MaxCallRecvMsgSize(defaultRecvSizeForListResponse),
+	)
 	if err != nil {
 		return false, 0, 0, err
 	}

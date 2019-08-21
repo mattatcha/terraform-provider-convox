@@ -1,5 +1,5 @@
 ---
-layout: "guides"
+layout: "extend"
 page_title: "Terraform Provider Development Program"
 sidebar_current: "guides-terraform-provider-development-program"
 description: This guide is intended for vendors who're interested in having their platform supported by Teraform. The guide walks vendors through the steps involved in creating a provider and applying for it to be included with Terraform.
@@ -14,9 +14,9 @@ self-serve, with links to information sources, clearly defined steps, and
 checkpoints.
 
 -> **Building your own provider?** If you're building your own provider and
-aren't interested in having HashiCorp officially approve and regularly test
-the provider, refer to the
-[Writing Custom Providers guide](/guides/writing-custom-terraform-providers.html).
+aren't interested in having HashiCorp officially approve and regularly test the
+provider, refer to the [Writing Custom Providers guide][writing] and the
+[Extending Terraform][extending] section.
 
 ## What is a Terraform Provider?
 
@@ -26,7 +26,7 @@ Almost any infrastructure noun can be represented as a resource in Terraform.
 
 A provider is responsible for understanding API interactions with the underlying
 infrastructure like a cloud (AWS, GCP, Azure), a PaaS service (Heroku), a SaaS
-(service DNSimple, CloudFlare), or on-prem resources (vSphere). It then exposes
+service (DNSimple, CloudFlare), or on-prem resources (vSphere). It then exposes
 these as resources users can code to. Terraform presently supports more than
 70 providers, a number that has more than doubled in the past 12 months.
 
@@ -39,7 +39,7 @@ and tests a particular provider.
 -> **Note:** This document is primarily intended for the "HashiCorp/Vendors" row in
 the table above. Community contributors who’re interested in contributing to
 existing providers or building new providers should refer to the
-[Writing Custom Providers guide](/guides/writing-custom-terraform-providers.html).
+[Writing Custom Providers guide][writing].
 
 ## Provider Development Process
 
@@ -71,11 +71,11 @@ connect similar parties to avoid duplicate work.
 
 ### 2. Enable
 
-We’ve found the provider development to be fairly straightforward and simple
+We’ve found the provider development process to be fairly straightforward and simple
 when vendors pay close attention and follow to the resources below. Adopting
 the same structure and coding patterns helps expedite the review and release cycles.
 
-* Writing custom providers [guide](https://www.terraform.io/guides/writing-custom-terraform-providers.html)
+* [Writing custom providers guide][writing]
 * How-to build a provider [video](https://www.youtube.com/watch?v=2BvpqmFpchI)
 * Sample provider developed by [partner](http://container-solutions.com/write-terraform-provider-part-1/)
 * Example providers for reference: [AWS](https://github.com/terraform-providers/terraform-provider-aws), [OPC](https://github.com/terraform-providers/terraform-provider-opc)
@@ -86,13 +86,19 @@ the same structure and coding patterns helps expedite the review and release cyc
 
 Terraform providers are written in the [Go](https://golang.org/) programming
 language. The
-[Writing Custom Providers guide](/guides/writing-custom-terraform-providers.html)
+[Writing Custom Providers guide][writing]
 is a good resource for developers to begin writing a new provider.
 
-The best approach to building a new provider project is to use the
-[AWS provider](https://github.com/terraform-providers/terraform-provider-aws)
-as a reference.  Given the wide surface area of this provider, almost all
-resource types and preferred code constructs are covered in it.
+The best approach to building a new provider is to be familiar with both the
+[Writing Custom Providers][writing] guide and [Extending Terraform][extending]
+section. The guide will give you an introduction in code structure and the
+basics of authoring a plugin that Terraform can interact with. The Extending
+Terraform section contains guides, best practices, and API reference for
+developers writing Terraform plugins. Additionally developers are encouraged to
+use the [AWS
+provider](https://github.com/terraform-providers/terraform-provider-aws) as an
+implementation reference.  Given the wide surface area of this provider, almost
+all resource types and preferred code constructs are covered in it.
 
 It is recommended for vendors to first develop support for one or two resources
 and go through an initial review cycle before developing the code for the
@@ -112,6 +118,8 @@ to parallelize the test execution.
 Each provider has a section in the Terraform documentation. You'll want to add
 new index file and individual pages for each resource supported by the provider.
 
+All Terraform providers are required to contain a MPL-2.0 open source license.
+
 While developing the provider code yourself is certainly possible, you can also
 choose to leverage one of the following development agencies who’ve developed
 Terraform providers in the past and are familiar with the requirements and process.
@@ -120,7 +128,7 @@ Terraform providers in the past and are familiar with the requirements and proce
 |--------------------|:-----------------------------|:---------------------|
 | Crest Data Systems | malhar@crestdatasys.com      | www.crestdatasys.com |
 | DigitalOnUs        | hashicorp@digitalonus.com    | www.digitalonus.com  |
-| MustWin            | bd@mustwin.com               | www.mustwin.com      |
+| Akava              | bd@akava.io                  | www.akava.io         |
 | OpenCredo          | hashicorp@opencredo.com      | www.opencredo.com    |
 
 ### 4. Review
@@ -217,10 +225,14 @@ in the section above.
 
 * Address all review feedback, ensure that each resource has a corresponding  acceptance test, and the documentation is complete
 
-* Create a PR for the provider against the HashiCorp provided empty repo.
-
 * Plan to continue supporting the provider with additional functionality as well as addressing any open issues.
+
+* All Terraform providers are required to contain a MPL-2.0 open source license.
 
 ## Contact Us
 
 For any questions or feedback please contact us at <terraform-provider-dev@hashicorp.com>.
+
+[writing]: /docs/extend/writing-custom-providers.html
+[extending]: /docs/extend/index.html
+

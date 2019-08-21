@@ -148,12 +148,12 @@ You can use the `TESTDIRS` environment variable to run unit tests for
 a single package.
 
 ```bash
-$ TESTDIRS='opts' make test-unit
+$ TESTDIRS='github.com/docker/docker/opts' make test-unit
 ```
 
 You can also use the `TESTFLAGS` environment variable to run a single test. The
 flag's value is passed as arguments to the `go test` command. For example, from
-your local host you can run the `TestBuild` test with this command:
+your local host you can run the `TestValidateIPAddress` test with this command:
 
 ```bash
 $ TESTFLAGS='-test.run ^TestValidateIPAddress$' make test-unit
@@ -163,7 +163,7 @@ On unit tests, it's better to use `TESTFLAGS` in combination with
 `TESTDIRS` to make it quicker to run a specific test.
 
 ```bash
-$ TESTDIRS='opts' TESTFLAGS='-test.run ^TestValidateIPAddress$' make test-unit
+$ TESTDIRS='github.com/docker/docker/opts' TESTFLAGS='-test.run ^TestValidateIPAddress$' make test-unit
 ```
 
 ## Run integration tests
@@ -237,6 +237,14 @@ run a Bash terminal on Windows.
 
 You can now choose to make changes to the Moby source or the tests. If you
 make any changes, just run these commands again.
+
+## [Public CI infrastructure](ci.docker.com/public)
+
+The current infrastructure is maintained here: [Moby ci job](https://ci.docker.com/public/job/moby).  The Jenkins infrastructure is for the Moby project is maintained and
+managed by Docker Inc.  All contributions against the Jenkinsfile are
+appreciated and welcomed!  However we might not be able to fully provide the
+infrastructure to test against various architectures in our CI pipelines.  All
+jobs can be triggered and re-ran by the Moby maintainers
 
 ## Where to go next
 

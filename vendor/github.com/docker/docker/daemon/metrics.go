@@ -3,8 +3,10 @@ package daemon // import "github.com/docker/docker/daemon"
 import (
 	"sync"
 
+	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/plugingetter"
-	metrics "github.com/docker/go-metrics"
+	"github.com/docker/docker/pkg/plugins"
+	"github.com/docker/go-metrics"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
@@ -15,6 +17,7 @@ const metricsPluginType = "MetricsCollector"
 var (
 	containerActions          metrics.LabeledTimer
 	networkActions            metrics.LabeledTimer
+	hostInfoFunctions         metrics.LabeledTimer
 	engineInfo                metrics.LabeledGauge
 	engineCpus                metrics.Gauge
 	engineMemory              metrics.Gauge
@@ -36,6 +39,7 @@ func init() {
 	} {
 		containerActions.WithValues(a).Update(0)
 	}
+	hostInfoFunctions = ns.NewLabeledTimer("host_info_functions", "The number of seconds it takes to call functions gathering info about the host", "function")
 
 	networkActions = ns.NewLabeledTimer("network_actions", "The number of seconds it takes to process each network action", "action")
 	engineInfo = ns.NewLabeledGauge("engine", "The information related to the engine and the OS it is running on", metrics.Unit("info"),
@@ -43,8 +47,10 @@ func init() {
 		"commit",
 		"architecture",
 		"graphdriver",
-		"kernel", "os",
+		"kernel",
+		"os",
 		"os_type",
+		"os_version",
 		"daemon_id", // ID is a randomly generated unique identifier (e.g. UUID4)
 	)
 	engineCpus = ns.NewGauge("engine_cpus", "The number of cpus that the host system of the engine has", metrics.Unit("cpus"))
@@ -118,7 +124,15 @@ func (d *Daemon) cleanupMetricsPlugins() {
 		p := plugin
 		go func() {
 			defer wg.Done()
-			pluginStopMetricsCollection(p)
+
+			adapter, err := makePluginAdapter(p)
+			if err != nil {
+				logrus.WithError(err).WithField("plugin", p.Name()).Error("Error creating metrics plugin adapter")
+				return
+			}
+			if err := adapter.StopMetrics(); err != nil {
+				logrus.WithError(err).WithField("plugin", p.Name()).Error("Error stopping plugin metrics collection")
+			}
 		}()
 	}
 	wg.Wait()
@@ -128,12 +142,44 @@ func (d *Daemon) cleanupMetricsPlugins() {
 	}
 }
 
-func pluginStartMetricsCollection(p plugingetter.CompatPlugin) error {
+type metricsPlugin interface {
+	StartMetrics() error
+	StopMetrics() error
+}
+
+func makePluginAdapter(p plugingetter.CompatPlugin) (metricsPlugin, error) {
+	if pc, ok := p.(plugingetter.PluginWithV1Client); ok {
+		return &metricsPluginAdapter{pc.Client(), p.Name()}, nil
+	}
+
+	pa, ok := p.(plugingetter.PluginAddr)
+	if !ok {
+		return nil, errdefs.System(errors.Errorf("got unknown plugin type %T", p))
+	}
+
+	if pa.Protocol() != plugins.ProtocolSchemeHTTPV1 {
+		return nil, errors.Errorf("plugin protocol not supported: %s", pa.Protocol())
+	}
+
+	addr := pa.Addr()
+	client, err := plugins.NewClientWithTimeout(addr.Network()+"://"+addr.String(), nil, pa.Timeout())
+	if err != nil {
+		return nil, errors.Wrap(err, "error creating metrics plugin client")
+	}
+	return &metricsPluginAdapter{client, p.Name()}, nil
+}
+
+type metricsPluginAdapter struct {
+	c    *plugins.Client
+	name string
+}
+
+func (a *metricsPluginAdapter) StartMetrics() error {
 	type metricsPluginResponse struct {
 		Err string
 	}
 	var res metricsPluginResponse
-	if err := p.Client().Call(metricsPluginType+".StartMetrics", nil, &res); err != nil {
+	if err := a.c.Call(metricsPluginType+".StartMetrics", nil, &res); err != nil {
 		return errors.Wrap(err, "could not start metrics plugin")
 	}
 	if res.Err != "" {
@@ -142,8 +188,9 @@ func pluginStartMetricsCollection(p plugingetter.CompatPlugin) error {
 	return nil
 }
 
-func pluginStopMetricsCollection(p plugingetter.CompatPlugin) {
-	if err := p.Client().Call(metricsPluginType+".StopMetrics", nil, nil); err != nil {
-		logrus.WithError(err).WithField("name", p.Name()).Error("error stopping metrics collector")
+func (a *metricsPluginAdapter) StopMetrics() error {
+	if err := a.c.Call(metricsPluginType+".StopMetrics", nil, nil); err != nil {
+		return errors.Wrap(err, "error stopping metrics collector")
 	}
+	return nil
 }

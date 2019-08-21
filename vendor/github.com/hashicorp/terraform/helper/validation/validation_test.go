@@ -13,6 +13,69 @@ type testCase struct {
 	expectedErr *regexp.Regexp
 }
 
+func TestValidationAll(t *testing.T) {
+	runTestCases(t, []testCase{
+		{
+			val: "valid",
+			f: All(
+				StringLenBetween(5, 42),
+				StringMatch(regexp.MustCompile(`[a-zA-Z0-9]+`), "value must be alphanumeric"),
+			),
+		},
+		{
+			val: "foo",
+			f: All(
+				StringLenBetween(5, 42),
+				StringMatch(regexp.MustCompile(`[a-zA-Z0-9]+`), "value must be alphanumeric"),
+			),
+			expectedErr: regexp.MustCompile("expected length of [\\w]+ to be in the range \\(5 - 42\\), got foo"),
+		},
+		{
+			val: "!!!!!",
+			f: All(
+				StringLenBetween(5, 42),
+				StringMatch(regexp.MustCompile(`[a-zA-Z0-9]+`), "value must be alphanumeric"),
+			),
+			expectedErr: regexp.MustCompile("value must be alphanumeric"),
+		},
+	})
+}
+
+func TestValidationAny(t *testing.T) {
+	runTestCases(t, []testCase{
+		{
+			val: 43,
+			f: Any(
+				IntAtLeast(42),
+				IntAtMost(5),
+			),
+		},
+		{
+			val: 4,
+			f: Any(
+				IntAtLeast(42),
+				IntAtMost(5),
+			),
+		},
+		{
+			val: 7,
+			f: Any(
+				IntAtLeast(42),
+				IntAtMost(5),
+			),
+			expectedErr: regexp.MustCompile("expected [\\w]+ to be at least \\(42\\), got 7"),
+		},
+		{
+			val: 7,
+			f: Any(
+				IntAtLeast(42),
+				IntAtMost(5),
+			),
+			expectedErr: regexp.MustCompile("expected [\\w]+ to be at most \\(5\\), got 7"),
+		},
+	})
+}
+
 func TestValidationIntBetween(t *testing.T) {
 	runTestCases(t, []testCase{
 		{
@@ -82,6 +145,25 @@ func TestValidationIntAtMost(t *testing.T) {
 	})
 }
 
+func TestValidationIntInSlice(t *testing.T) {
+	runTestCases(t, []testCase{
+		{
+			val: 42,
+			f:   IntInSlice([]int{1, 42}),
+		},
+		{
+			val:         42,
+			f:           IntInSlice([]int{10, 20}),
+			expectedErr: regexp.MustCompile("expected [\\w]+ to be one of \\[10 20\\], got 42"),
+		},
+		{
+			val:         "InvalidValue",
+			f:           IntInSlice([]int{10, 20}),
+			expectedErr: regexp.MustCompile("expected type of [\\w]+ to be an integer"),
+		},
+	})
+}
+
 func TestValidationStringInSlice(t *testing.T) {
 	runTestCases(t, []testCase{
 		{
@@ -140,6 +222,49 @@ func TestValidationRegexp(t *testing.T) {
 			val:         "foo(bar",
 			f:           ValidateRegexp,
 			expectedErr: regexp.MustCompile(regexp.QuoteMeta("error parsing regexp: missing closing ): `foo(bar`")),
+		},
+	})
+}
+
+func TestValidationSingleIP(t *testing.T) {
+	runTestCases(t, []testCase{
+		{
+			val: "172.10.10.10",
+			f:   SingleIP(),
+		},
+		{
+			val:         "1.1.1",
+			f:           SingleIP(),
+			expectedErr: regexp.MustCompile(regexp.QuoteMeta("expected test_property to contain a valid IP, got:")),
+		},
+		{
+			val:         "1.1.1.0/20",
+			f:           SingleIP(),
+			expectedErr: regexp.MustCompile(regexp.QuoteMeta("expected test_property to contain a valid IP, got:")),
+		},
+		{
+			val:         "256.1.1.1",
+			f:           SingleIP(),
+			expectedErr: regexp.MustCompile(regexp.QuoteMeta("expected test_property to contain a valid IP, got:")),
+		},
+	})
+}
+
+func TestValidationIPRange(t *testing.T) {
+	runTestCases(t, []testCase{
+		{
+			val: "172.10.10.10-172.10.10.12",
+			f:   IPRange(),
+		},
+		{
+			val:         "172.10.10.20",
+			f:           IPRange(),
+			expectedErr: regexp.MustCompile(regexp.QuoteMeta("expected test_property to contain a valid IP range, got:")),
+		},
+		{
+			val:         "172.10.10.20-172.10.10.12",
+			f:           IPRange(),
+			expectedErr: regexp.MustCompile(regexp.QuoteMeta("expected test_property to contain a valid IP range, got:")),
 		},
 	})
 }
@@ -327,6 +452,49 @@ func runTestCases(t *testing.T, cases []testCase) {
 
 		if !matchErr(errs, tc.expectedErr) {
 			t.Fatalf("expected test case %d to produce error matching \"%s\", got %v", i, tc.expectedErr, errs)
+		}
+	}
+}
+
+func TestFloatBetween(t *testing.T) {
+	cases := map[string]struct {
+		Value                  interface{}
+		ValidateFunc           schema.SchemaValidateFunc
+		ExpectValidationErrors bool
+	}{
+		"accept valid value": {
+			Value:                  1.5,
+			ValidateFunc:           FloatBetween(1.0, 2.0),
+			ExpectValidationErrors: false,
+		},
+		"accept valid value inclusive upper bound": {
+			Value:                  1.0,
+			ValidateFunc:           FloatBetween(0.0, 1.0),
+			ExpectValidationErrors: false,
+		},
+		"accept valid value inclusive lower bound": {
+			Value:                  0.0,
+			ValidateFunc:           FloatBetween(0.0, 1.0),
+			ExpectValidationErrors: false,
+		},
+		"reject out of range value": {
+			Value:                  -1.0,
+			ValidateFunc:           FloatBetween(0.0, 1.0),
+			ExpectValidationErrors: true,
+		},
+		"reject incorrectly typed value": {
+			Value:                  1,
+			ValidateFunc:           FloatBetween(0.0, 1.0),
+			ExpectValidationErrors: true,
+		},
+	}
+
+	for tn, tc := range cases {
+		_, errors := tc.ValidateFunc(tc.Value, tn)
+		if len(errors) > 0 && !tc.ExpectValidationErrors {
+			t.Errorf("%s: unexpected errors %s", tn, errors)
+		} else if len(errors) == 0 && tc.ExpectValidationErrors {
+			t.Errorf("%s: expected errors but got none", tn)
 		}
 	}
 }

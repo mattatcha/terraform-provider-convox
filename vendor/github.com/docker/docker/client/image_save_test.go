@@ -2,15 +2,15 @@ package client // import "github.com/docker/docker/client"
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
-	"golang.org/x/net/context"
-
-	"strings"
+	"github.com/docker/docker/errdefs"
 )
 
 func TestImageSaveError(t *testing.T) {
@@ -20,6 +20,9 @@ func TestImageSaveError(t *testing.T) {
 	_, err := client.ImageSave(context.Background(), []string{"nothing"})
 	if err == nil || err.Error() != "Error response from daemon: Server error" {
 		t.Fatalf("expected a Server error, got %v", err)
+	}
+	if !errdefs.IsSystem(err) {
+		t.Fatalf("expected a Server Error, got %T", err)
 	}
 }
 

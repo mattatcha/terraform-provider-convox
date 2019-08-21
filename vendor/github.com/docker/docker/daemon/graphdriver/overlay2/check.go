@@ -12,7 +12,6 @@ import (
 
 	"github.com/docker/docker/pkg/system"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 )
 
@@ -27,7 +26,7 @@ func doesSupportNativeDiff(d string) error {
 	}
 	defer func() {
 		if err := os.RemoveAll(td); err != nil {
-			logrus.Warnf("Failed to remove check directory %v: %v", td, err)
+			logger.Warnf("Failed to remove check directory %v: %v", td, err)
 		}
 	}()
 
@@ -44,10 +43,10 @@ func doesSupportNativeDiff(d string) error {
 	if err := os.Mkdir(filepath.Join(td, "l3"), 0755); err != nil {
 		return err
 	}
-	if err := os.Mkdir(filepath.Join(td, "work"), 0755); err != nil {
+	if err := os.Mkdir(filepath.Join(td, workDirName), 0755); err != nil {
 		return err
 	}
-	if err := os.Mkdir(filepath.Join(td, "merged"), 0755); err != nil {
+	if err := os.Mkdir(filepath.Join(td, mergedDirName), 0755); err != nil {
 		return err
 	}
 
@@ -56,18 +55,18 @@ func doesSupportNativeDiff(d string) error {
 		return errors.Wrap(err, "failed to set opaque flag on middle layer")
 	}
 
-	opts := fmt.Sprintf("lowerdir=%s:%s,upperdir=%s,workdir=%s", path.Join(td, "l2"), path.Join(td, "l1"), path.Join(td, "l3"), path.Join(td, "work"))
-	if err := unix.Mount("overlay", filepath.Join(td, "merged"), "overlay", 0, opts); err != nil {
+	opts := fmt.Sprintf("lowerdir=%s:%s,upperdir=%s,workdir=%s", path.Join(td, "l2"), path.Join(td, "l1"), path.Join(td, "l3"), path.Join(td, workDirName))
+	if err := unix.Mount("overlay", filepath.Join(td, mergedDirName), "overlay", 0, opts); err != nil {
 		return errors.Wrap(err, "failed to mount overlay")
 	}
 	defer func() {
-		if err := unix.Unmount(filepath.Join(td, "merged"), 0); err != nil {
-			logrus.Warnf("Failed to unmount check directory %v: %v", filepath.Join(td, "merged"), err)
+		if err := unix.Unmount(filepath.Join(td, mergedDirName), 0); err != nil {
+			logger.Warnf("Failed to unmount check directory %v: %v", filepath.Join(td, mergedDirName), err)
 		}
 	}()
 
 	// Touch file in d to force copy up of opaque directory "d" from "l2" to "l3"
-	if err := ioutil.WriteFile(filepath.Join(td, "merged", "d", "f"), []byte{}, 0644); err != nil {
+	if err := ioutil.WriteFile(filepath.Join(td, mergedDirName, "d", "f"), []byte{}, 0644); err != nil {
 		return errors.Wrap(err, "failed to write to merged directory")
 	}
 
@@ -81,7 +80,7 @@ func doesSupportNativeDiff(d string) error {
 	}
 
 	// rename "d1" to "d2"
-	if err := os.Rename(filepath.Join(td, "merged", "d1"), filepath.Join(td, "merged", "d2")); err != nil {
+	if err := os.Rename(filepath.Join(td, mergedDirName, "d1"), filepath.Join(td, mergedDirName, "d2")); err != nil {
 		// if rename failed with syscall.EXDEV, the kernel doesn't have CONFIG_OVERLAY_FS_REDIRECT_DIR enabled
 		if err.(*os.LinkError).Err == syscall.EXDEV {
 			return nil
@@ -113,22 +112,22 @@ func supportsMultipleLowerDir(d string) error {
 	}
 	defer func() {
 		if err := os.RemoveAll(td); err != nil {
-			logrus.Warnf("Failed to remove check directory %v: %v", td, err)
+			logger.Warnf("Failed to remove check directory %v: %v", td, err)
 		}
 	}()
 
-	for _, dir := range []string{"lower1", "lower2", "upper", "work", "merged"} {
+	for _, dir := range []string{"lower1", "lower2", "upper", workDirName, mergedDirName} {
 		if err := os.Mkdir(filepath.Join(td, dir), 0755); err != nil {
 			return err
 		}
 	}
 
-	opts := fmt.Sprintf("lowerdir=%s:%s,upperdir=%s,workdir=%s", path.Join(td, "lower2"), path.Join(td, "lower1"), path.Join(td, "upper"), path.Join(td, "work"))
-	if err := unix.Mount("overlay", filepath.Join(td, "merged"), "overlay", 0, opts); err != nil {
+	opts := fmt.Sprintf("lowerdir=%s:%s,upperdir=%s,workdir=%s", path.Join(td, "lower2"), path.Join(td, "lower1"), path.Join(td, "upper"), path.Join(td, workDirName))
+	if err := unix.Mount("overlay", filepath.Join(td, mergedDirName), "overlay", 0, opts); err != nil {
 		return errors.Wrap(err, "failed to mount overlay")
 	}
-	if err := unix.Unmount(filepath.Join(td, "merged"), 0); err != nil {
-		logrus.Warnf("Failed to unmount check directory %v: %v", filepath.Join(td, "merged"), err)
+	if err := unix.Unmount(filepath.Join(td, mergedDirName), 0); err != nil {
+		logger.Warnf("Failed to unmount check directory %v: %v", filepath.Join(td, mergedDirName), err)
 	}
 	return nil
 }

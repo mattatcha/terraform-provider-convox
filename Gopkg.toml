@@ -29,10 +29,6 @@
   name = "github.com/hashicorp/errwrap"
 
 [[constraint]]
-  name = "github.com/hashicorp/terraform"
-  version = "0.11.1"
-
-[[constraint]]
   branch = "master"
   name = "github.com/mitchellh/go-homedir"
 
@@ -43,3 +39,24 @@
 [[constraint]]
   branch = "master"
   name = "github.com/onsi/gomega"
+  
+[[override]]
+  source = "https://github.com/fsnotify/fsnotify/archive/v1.4.7.tar.gz"
+  name = "gopkg.in/fsnotify.v1"
+
+[[override]]
+  name = "github.com/fsouza/go-dockerclient"
+  branch = "master"
+  # version = "v1.2.2"
+
+# This seem to be required due to a problem in either docker or go-dockerclient
+# issue is https://github.com/fsouza/go-dockerclient/issues/736#issuecomment-398217187
+[[override]]
+  name = "github.com/docker/docker"
+  branch = "master"
+  # revision = "a422774e593b33bd287d9890544ad9e09b380d8c"
+
+[[override]]
+  name = "github.com/docker/libnetwork"
+  branch = "master"
+

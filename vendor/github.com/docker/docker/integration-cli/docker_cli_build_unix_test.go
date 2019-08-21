@@ -18,10 +18,11 @@ import (
 	"github.com/docker/docker/integration-cli/checker"
 	"github.com/docker/docker/integration-cli/cli"
 	"github.com/docker/docker/integration-cli/cli/build"
-	"github.com/docker/docker/integration-cli/cli/build/fakecontext"
-	units "github.com/docker/go-units"
+	"github.com/docker/docker/internal/test/fakecontext"
+	"github.com/docker/go-units"
 	"github.com/go-check/check"
-	"github.com/gotestyourself/gotestyourself/icmd"
+	"gotest.tools/assert"
+	"gotest.tools/icmd"
 )
 
 func (s *DockerSuite) TestBuildResourceConstraintsAreUsed(c *check.C) {
@@ -96,7 +97,7 @@ func (s *DockerSuite) TestBuildAddChangeOwnership(c *check.C) {
 			RUN [ $(stat -c %U:%G "/bar/foo") = 'root:root' ]
 			`
 		tmpDir, err := ioutil.TempDir("", "fake-context")
-		c.Assert(err, check.IsNil)
+		assert.NilError(c, err)
 		testFile, err := os.Create(filepath.Join(tmpDir, "foo"))
 		if err != nil {
 			c.Fatalf("failed to create foo file: %v", err)
@@ -126,14 +127,18 @@ func (s *DockerSuite) TestBuildAddChangeOwnership(c *check.C) {
 // * Run a 1-year-long sleep from a docker build.
 // * When docker events sees container start, close the "docker build" command
 // * Wait for docker events to emit a dying event.
+//
+// TODO(buildkit): this test needs to be rewritten for buildkit.
+// It has been manually tested positive. Confirmed issue: docker build output parsing.
+// Potential issue: newEventObserver uses docker events, which is not hooked up to buildkit.
 func (s *DockerSuite) TestBuildCancellationKillsSleep(c *check.C) {
-	testRequires(c, DaemonIsLinux)
+	testRequires(c, DaemonIsLinux, TODOBuildkit)
 	name := "testbuildcancellation"
 
 	observer, err := newEventObserver(c)
-	c.Assert(err, checker.IsNil)
+	assert.NilError(c, err)
 	err = observer.Start()
-	c.Assert(err, checker.IsNil)
+	assert.NilError(c, err)
 	defer observer.Stop()
 
 	// (Note: one year, will never finish)
@@ -144,7 +149,7 @@ func (s *DockerSuite) TestBuildCancellationKillsSleep(c *check.C) {
 	buildCmd.Dir = ctx.Dir
 
 	stdoutBuild, err := buildCmd.StdoutPipe()
-	c.Assert(err, checker.IsNil)
+	assert.NilError(c, err)
 
 	if err := buildCmd.Start(); err != nil {
 		c.Fatalf("failed to run build: %s", err)

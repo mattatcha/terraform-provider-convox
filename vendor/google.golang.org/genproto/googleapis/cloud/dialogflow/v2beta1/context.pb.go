@@ -3,16 +3,16 @@
 
 package dialogflow
 
-import proto "github.com/golang/protobuf/proto"
-import fmt "fmt"
-import math "math"
-import _ "google.golang.org/genproto/googleapis/api/annotations"
-import google_protobuf2 "github.com/golang/protobuf/ptypes/empty"
-import google_protobuf3 "google.golang.org/genproto/protobuf/field_mask"
-import google_protobuf4 "github.com/golang/protobuf/ptypes/struct"
-
 import (
-	context "golang.org/x/net/context"
+	context "context"
+	fmt "fmt"
+	math "math"
+
+	proto "github.com/golang/protobuf/proto"
+	empty "github.com/golang/protobuf/ptypes/empty"
+	_struct "github.com/golang/protobuf/ptypes/struct"
+	_ "google.golang.org/genproto/googleapis/api/annotations"
+	field_mask "google.golang.org/genproto/protobuf/field_mask"
 	grpc "google.golang.org/grpc"
 )
 
@@ -21,32 +21,64 @@ var _ = proto.Marshal
 var _ = fmt.Errorf
 var _ = math.Inf
 
+// This is a compile-time assertion to ensure that this generated file
+// is compatible with the proto package it is being compiled against.
+// A compilation error at this line likely means your copy of the
+// proto package needs to be updated.
+const _ = proto.ProtoPackageIsVersion3 // please upgrade the proto package
+
 // Represents a context.
 type Context struct {
 	// Required. The unique identifier of the context. Format:
 	// `projects/<Project ID>/agent/sessions/<Session ID>/contexts/<Context ID>`,
-	// or
-	// `projects/<Project ID>/agent/runtimes/<Runtime ID>/sessions/<Session
-	// ID>/contexts/<Context ID>`.
-	// Note: Runtimes are under construction and will be available soon.
-	// The Context ID is always converted to lowercase.
-	// If <Runtime ID> is not specified, we assume default 'sandbox' runtime.
-	Name string `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
+	// or `projects/<Project ID>/agent/environments/<Environment ID>/users/<User
+	// ID>/sessions/<Session ID>/contexts/<Context ID>`.
+	//
+	// The `Context ID` is always converted to lowercase, may only contain
+	// characters in a-zA-Z0-9_-% and may be at most 250 bytes long.
+	//
+	// If `Environment ID` is not specified, we assume default 'draft'
+	// environment. If `User ID` is not specified, we assume default '-' user.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// Optional. The number of conversational query requests after which the
 	// context expires. If set to `0` (the default) the context expires
-	// immediately. Contexts expire automatically after 10 minutes even if there
+	// immediately. Contexts expire automatically after 20 minutes if there
 	// are no matching queries.
-	LifespanCount int32 `protobuf:"varint,2,opt,name=lifespan_count,json=lifespanCount" json:"lifespan_count,omitempty"`
+	LifespanCount int32 `protobuf:"varint,2,opt,name=lifespan_count,json=lifespanCount,proto3" json:"lifespan_count,omitempty"`
 	// Optional. The collection of parameters associated with this context.
-	// Refer to [this doc](https://dialogflow.com/docs/actions-and-parameters) for
-	// syntax.
-	Parameters *google_protobuf4.Struct `protobuf:"bytes,3,opt,name=parameters" json:"parameters,omitempty"`
+	// Refer to [this
+	// doc](https://cloud.google.com/dialogflow/docs/intents-actions-parameters)
+	// for syntax.
+	Parameters           *_struct.Struct `protobuf:"bytes,3,opt,name=parameters,proto3" json:"parameters,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}        `json:"-"`
+	XXX_unrecognized     []byte          `json:"-"`
+	XXX_sizecache        int32           `json:"-"`
 }
 
-func (m *Context) Reset()                    { *m = Context{} }
-func (m *Context) String() string            { return proto.CompactTextString(m) }
-func (*Context) ProtoMessage()               {}
-func (*Context) Descriptor() ([]byte, []int) { return fileDescriptor1, []int{0} }
+func (m *Context) Reset()         { *m = Context{} }
+func (m *Context) String() string { return proto.CompactTextString(m) }
+func (*Context) ProtoMessage()    {}
+func (*Context) Descriptor() ([]byte, []int) {
+	return fileDescriptor_ff2c900db64d4fc9, []int{0}
+}
+
+func (m *Context) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_Context.Unmarshal(m, b)
+}
+func (m *Context) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_Context.Marshal(b, m, deterministic)
+}
+func (m *Context) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Context.Merge(m, src)
+}
+func (m *Context) XXX_Size() int {
+	return xxx_messageInfo_Context.Size(m)
+}
+func (m *Context) XXX_DiscardUnknown() {
+	xxx_messageInfo_Context.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Context proto.InternalMessageInfo
 
 func (m *Context) GetName() string {
 	if m != nil {
@@ -62,7 +94,7 @@ func (m *Context) GetLifespanCount() int32 {
 	return 0
 }
 
-func (m *Context) GetParameters() *google_protobuf4.Struct {
+func (m *Context) GetParameters() *_struct.Struct {
 	if m != nil {
 		return m.Parameters
 	}
@@ -73,21 +105,45 @@ func (m *Context) GetParameters() *google_protobuf4.Struct {
 type ListContextsRequest struct {
 	// Required. The session to list all contexts from.
 	// Format: `projects/<Project ID>/agent/sessions/<Session ID>` or
-	// `projects/<Project ID>/agent/runtimes/<Runtime ID>/sessions/<Session ID>`.
-	// Note: Runtimes are under construction and will be available soon.
-	// If <Runtime ID> is not specified, we assume default 'sandbox' runtime.
-	Parent string `protobuf:"bytes,1,opt,name=parent" json:"parent,omitempty"`
+	// `projects/<Project ID>/agent/environments/<Environment ID>/users/<User
+	// ID>/sessions/<Session ID>`. If `Environment ID` is not specified, we assume
+	// default 'draft' environment. If `User ID` is not specified, we assume
+	// default '-' user.
+	Parent string `protobuf:"bytes,1,opt,name=parent,proto3" json:"parent,omitempty"`
 	// Optional. The maximum number of items to return in a single page. By
 	// default 100 and at most 1000.
-	PageSize int32 `protobuf:"varint,2,opt,name=page_size,json=pageSize" json:"page_size,omitempty"`
+	PageSize int32 `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	// Optional. The next_page_token value returned from a previous list request.
-	PageToken string `protobuf:"bytes,3,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
+	PageToken            string   `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *ListContextsRequest) Reset()                    { *m = ListContextsRequest{} }
-func (m *ListContextsRequest) String() string            { return proto.CompactTextString(m) }
-func (*ListContextsRequest) ProtoMessage()               {}
-func (*ListContextsRequest) Descriptor() ([]byte, []int) { return fileDescriptor1, []int{1} }
+func (m *ListContextsRequest) Reset()         { *m = ListContextsRequest{} }
+func (m *ListContextsRequest) String() string { return proto.CompactTextString(m) }
+func (*ListContextsRequest) ProtoMessage()    {}
+func (*ListContextsRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_ff2c900db64d4fc9, []int{1}
+}
+
+func (m *ListContextsRequest) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_ListContextsRequest.Unmarshal(m, b)
+}
+func (m *ListContextsRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_ListContextsRequest.Marshal(b, m, deterministic)
+}
+func (m *ListContextsRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ListContextsRequest.Merge(m, src)
+}
+func (m *ListContextsRequest) XXX_Size() int {
+	return xxx_messageInfo_ListContextsRequest.Size(m)
+}
+func (m *ListContextsRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_ListContextsRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ListContextsRequest proto.InternalMessageInfo
 
 func (m *ListContextsRequest) GetParent() string {
 	if m != nil {
@@ -114,16 +170,39 @@ func (m *ListContextsRequest) GetPageToken() string {
 type ListContextsResponse struct {
 	// The list of contexts. There will be a maximum number of items
 	// returned based on the page_size field in the request.
-	Contexts []*Context `protobuf:"bytes,1,rep,name=contexts" json:"contexts,omitempty"`
+	Contexts []*Context `protobuf:"bytes,1,rep,name=contexts,proto3" json:"contexts,omitempty"`
 	// Token to retrieve the next page of results, or empty if there are no
 	// more results in the list.
-	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken" json:"next_page_token,omitempty"`
+	NextPageToken        string   `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *ListContextsResponse) Reset()                    { *m = ListContextsResponse{} }
-func (m *ListContextsResponse) String() string            { return proto.CompactTextString(m) }
-func (*ListContextsResponse) ProtoMessage()               {}
-func (*ListContextsResponse) Descriptor() ([]byte, []int) { return fileDescriptor1, []int{2} }
+func (m *ListContextsResponse) Reset()         { *m = ListContextsResponse{} }
+func (m *ListContextsResponse) String() string { return proto.CompactTextString(m) }
+func (*ListContextsResponse) ProtoMessage()    {}
+func (*ListContextsResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_ff2c900db64d4fc9, []int{2}
+}
+
+func (m *ListContextsResponse) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_ListContextsResponse.Unmarshal(m, b)
+}
+func (m *ListContextsResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_ListContextsResponse.Marshal(b, m, deterministic)
+}
+func (m *ListContextsResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ListContextsResponse.Merge(m, src)
+}
+func (m *ListContextsResponse) XXX_Size() int {
+	return xxx_messageInfo_ListContextsResponse.Size(m)
+}
+func (m *ListContextsResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_ListContextsResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ListContextsResponse proto.InternalMessageInfo
 
 func (m *ListContextsResponse) GetContexts() []*Context {
 	if m != nil {
@@ -143,17 +222,40 @@ func (m *ListContextsResponse) GetNextPageToken() string {
 type GetContextRequest struct {
 	// Required. The name of the context. Format:
 	// `projects/<Project ID>/agent/sessions/<Session ID>/contexts/<Context ID>`
-	// or `projects/<Project ID>/agent/runtimes/<Runtime ID>/sessions/<Session
-	// ID>/contexts/<Context ID>`. Note: Runtimes are under construction and will
-	// be available soon. If <Runtime ID> is not specified, we assume default
-	// 'sandbox' runtime.
-	Name string `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
+	// or `projects/<Project ID>/agent/environments/<Environment ID>/users/<User
+	// ID>/sessions/<Session ID>/contexts/<Context ID>`. If `Environment ID` is
+	// not specified, we assume default 'draft' environment. If `User ID` is not
+	// specified, we assume default '-' user.
+	Name                 string   `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *GetContextRequest) Reset()                    { *m = GetContextRequest{} }
-func (m *GetContextRequest) String() string            { return proto.CompactTextString(m) }
-func (*GetContextRequest) ProtoMessage()               {}
-func (*GetContextRequest) Descriptor() ([]byte, []int) { return fileDescriptor1, []int{3} }
+func (m *GetContextRequest) Reset()         { *m = GetContextRequest{} }
+func (m *GetContextRequest) String() string { return proto.CompactTextString(m) }
+func (*GetContextRequest) ProtoMessage()    {}
+func (*GetContextRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_ff2c900db64d4fc9, []int{3}
+}
+
+func (m *GetContextRequest) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_GetContextRequest.Unmarshal(m, b)
+}
+func (m *GetContextRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_GetContextRequest.Marshal(b, m, deterministic)
+}
+func (m *GetContextRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_GetContextRequest.Merge(m, src)
+}
+func (m *GetContextRequest) XXX_Size() int {
+	return xxx_messageInfo_GetContextRequest.Size(m)
+}
+func (m *GetContextRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_GetContextRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_GetContextRequest proto.InternalMessageInfo
 
 func (m *GetContextRequest) GetName() string {
 	if m != nil {
@@ -166,18 +268,42 @@ func (m *GetContextRequest) GetName() string {
 type CreateContextRequest struct {
 	// Required. The session to create a context for.
 	// Format: `projects/<Project ID>/agent/sessions/<Session ID>` or
-	// `projects/<Project ID>/agent/runtimes/<Runtime ID>/sessions/<Session ID>`.
-	// Note: Runtimes are under construction and will be available soon.
-	// If <Runtime ID> is not specified, we assume default 'sandbox' runtime.
-	Parent string `protobuf:"bytes,1,opt,name=parent" json:"parent,omitempty"`
+	// `projects/<Project ID>/agent/environments/<Environment ID>/users/<User
+	// ID>/sessions/<Session ID>`. If `Environment ID` is not specified, we assume
+	// default 'draft' environment. If `User ID` is not specified, we assume
+	// default '-' user.
+	Parent string `protobuf:"bytes,1,opt,name=parent,proto3" json:"parent,omitempty"`
 	// Required. The context to create.
-	Context *Context `protobuf:"bytes,2,opt,name=context" json:"context,omitempty"`
+	Context              *Context `protobuf:"bytes,2,opt,name=context,proto3" json:"context,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *CreateContextRequest) Reset()                    { *m = CreateContextRequest{} }
-func (m *CreateContextRequest) String() string            { return proto.CompactTextString(m) }
-func (*CreateContextRequest) ProtoMessage()               {}
-func (*CreateContextRequest) Descriptor() ([]byte, []int) { return fileDescriptor1, []int{4} }
+func (m *CreateContextRequest) Reset()         { *m = CreateContextRequest{} }
+func (m *CreateContextRequest) String() string { return proto.CompactTextString(m) }
+func (*CreateContextRequest) ProtoMessage()    {}
+func (*CreateContextRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_ff2c900db64d4fc9, []int{4}
+}
+
+func (m *CreateContextRequest) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_CreateContextRequest.Unmarshal(m, b)
+}
+func (m *CreateContextRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_CreateContextRequest.Marshal(b, m, deterministic)
+}
+func (m *CreateContextRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_CreateContextRequest.Merge(m, src)
+}
+func (m *CreateContextRequest) XXX_Size() int {
+	return xxx_messageInfo_CreateContextRequest.Size(m)
+}
+func (m *CreateContextRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_CreateContextRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_CreateContextRequest proto.InternalMessageInfo
 
 func (m *CreateContextRequest) GetParent() string {
 	if m != nil {
@@ -196,15 +322,38 @@ func (m *CreateContextRequest) GetContext() *Context {
 // The request message for [Contexts.UpdateContext][google.cloud.dialogflow.v2beta1.Contexts.UpdateContext].
 type UpdateContextRequest struct {
 	// Required. The context to update.
-	Context *Context `protobuf:"bytes,1,opt,name=context" json:"context,omitempty"`
+	Context *Context `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
 	// Optional. The mask to control which fields get updated.
-	UpdateMask *google_protobuf3.FieldMask `protobuf:"bytes,2,opt,name=update_mask,json=updateMask" json:"update_mask,omitempty"`
+	UpdateMask           *field_mask.FieldMask `protobuf:"bytes,2,opt,name=update_mask,json=updateMask,proto3" json:"update_mask,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}              `json:"-"`
+	XXX_unrecognized     []byte                `json:"-"`
+	XXX_sizecache        int32                 `json:"-"`
 }
 
-func (m *UpdateContextRequest) Reset()                    { *m = UpdateContextRequest{} }
-func (m *UpdateContextRequest) String() string            { return proto.CompactTextString(m) }
-func (*UpdateContextRequest) ProtoMessage()               {}
-func (*UpdateContextRequest) Descriptor() ([]byte, []int) { return fileDescriptor1, []int{5} }
+func (m *UpdateContextRequest) Reset()         { *m = UpdateContextRequest{} }
+func (m *UpdateContextRequest) String() string { return proto.CompactTextString(m) }
+func (*UpdateContextRequest) ProtoMessage()    {}
+func (*UpdateContextRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_ff2c900db64d4fc9, []int{5}
+}
+
+func (m *UpdateContextRequest) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_UpdateContextRequest.Unmarshal(m, b)
+}
+func (m *UpdateContextRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_UpdateContextRequest.Marshal(b, m, deterministic)
+}
+func (m *UpdateContextRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_UpdateContextRequest.Merge(m, src)
+}
+func (m *UpdateContextRequest) XXX_Size() int {
+	return xxx_messageInfo_UpdateContextRequest.Size(m)
+}
+func (m *UpdateContextRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_UpdateContextRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_UpdateContextRequest proto.InternalMessageInfo
 
 func (m *UpdateContextRequest) GetContext() *Context {
 	if m != nil {
@@ -213,7 +362,7 @@ func (m *UpdateContextRequest) GetContext() *Context {
 	return nil
 }
 
-func (m *UpdateContextRequest) GetUpdateMask() *google_protobuf3.FieldMask {
+func (m *UpdateContextRequest) GetUpdateMask() *field_mask.FieldMask {
 	if m != nil {
 		return m.UpdateMask
 	}
@@ -224,17 +373,40 @@ func (m *UpdateContextRequest) GetUpdateMask() *google_protobuf3.FieldMask {
 type DeleteContextRequest struct {
 	// Required. The name of the context to delete. Format:
 	// `projects/<Project ID>/agent/sessions/<Session ID>/contexts/<Context ID>`
-	// or `projects/<Project ID>/agent/runtimes/<Runtime ID>/sessions/<Session
-	// ID>/contexts/<Context ID>`. Note: Runtimes are under construction and will
-	// be available soon. If <Runtime ID> is not specified, we assume default
-	// 'sandbox' runtime.
-	Name string `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
+	// or `projects/<Project ID>/agent/environments/<Environment ID>/users/<User
+	// ID>/sessions/<Session ID>/contexts/<Context ID>`. If `Environment ID` is
+	// not specified, we assume default 'draft' environment. If `User ID` is not
+	// specified, we assume default '-' user.
+	Name                 string   `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *DeleteContextRequest) Reset()                    { *m = DeleteContextRequest{} }
-func (m *DeleteContextRequest) String() string            { return proto.CompactTextString(m) }
-func (*DeleteContextRequest) ProtoMessage()               {}
-func (*DeleteContextRequest) Descriptor() ([]byte, []int) { return fileDescriptor1, []int{6} }
+func (m *DeleteContextRequest) Reset()         { *m = DeleteContextRequest{} }
+func (m *DeleteContextRequest) String() string { return proto.CompactTextString(m) }
+func (*DeleteContextRequest) ProtoMessage()    {}
+func (*DeleteContextRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_ff2c900db64d4fc9, []int{6}
+}
+
+func (m *DeleteContextRequest) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_DeleteContextRequest.Unmarshal(m, b)
+}
+func (m *DeleteContextRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_DeleteContextRequest.Marshal(b, m, deterministic)
+}
+func (m *DeleteContextRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_DeleteContextRequest.Merge(m, src)
+}
+func (m *DeleteContextRequest) XXX_Size() int {
+	return xxx_messageInfo_DeleteContextRequest.Size(m)
+}
+func (m *DeleteContextRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_DeleteContextRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_DeleteContextRequest proto.InternalMessageInfo
 
 func (m *DeleteContextRequest) GetName() string {
 	if m != nil {
@@ -247,16 +419,39 @@ func (m *DeleteContextRequest) GetName() string {
 type DeleteAllContextsRequest struct {
 	// Required. The name of the session to delete all contexts from. Format:
 	// `projects/<Project ID>/agent/sessions/<Session ID>` or `projects/<Project
-	// ID>/agent/runtimes/<Runtime ID>/sessions/<Session ID>`. Note: Runtimes are
-	// under construction and will be available soon. If <Runtime ID> is not
-	// specified we assume default 'sandbox' runtime.
-	Parent string `protobuf:"bytes,1,opt,name=parent" json:"parent,omitempty"`
+	// ID>/agent/environments/<Environment ID>/users/<User ID>/sessions/<Session
+	// ID>`. If `Environment ID` is not specified we assume default 'draft'
+	// environment. If `User ID` is not specified, we assume default '-' user.
+	Parent               string   `protobuf:"bytes,1,opt,name=parent,proto3" json:"parent,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *DeleteAllContextsRequest) Reset()                    { *m = DeleteAllContextsRequest{} }
-func (m *DeleteAllContextsRequest) String() string            { return proto.CompactTextString(m) }
-func (*DeleteAllContextsRequest) ProtoMessage()               {}
-func (*DeleteAllContextsRequest) Descriptor() ([]byte, []int) { return fileDescriptor1, []int{7} }
+func (m *DeleteAllContextsRequest) Reset()         { *m = DeleteAllContextsRequest{} }
+func (m *DeleteAllContextsRequest) String() string { return proto.CompactTextString(m) }
+func (*DeleteAllContextsRequest) ProtoMessage()    {}
+func (*DeleteAllContextsRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_ff2c900db64d4fc9, []int{7}
+}
+
+func (m *DeleteAllContextsRequest) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_DeleteAllContextsRequest.Unmarshal(m, b)
+}
+func (m *DeleteAllContextsRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_DeleteAllContextsRequest.Marshal(b, m, deterministic)
+}
+func (m *DeleteAllContextsRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_DeleteAllContextsRequest.Merge(m, src)
+}
+func (m *DeleteAllContextsRequest) XXX_Size() int {
+	return xxx_messageInfo_DeleteAllContextsRequest.Size(m)
+}
+func (m *DeleteAllContextsRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_DeleteAllContextsRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_DeleteAllContextsRequest proto.InternalMessageInfo
 
 func (m *DeleteAllContextsRequest) GetParent() string {
 	if m != nil {
@@ -276,6 +471,74 @@ func init() {
 	proto.RegisterType((*DeleteAllContextsRequest)(nil), "google.cloud.dialogflow.v2beta1.DeleteAllContextsRequest")
 }
 
+func init() {
+	proto.RegisterFile("google/cloud/dialogflow/v2beta1/context.proto", fileDescriptor_ff2c900db64d4fc9)
+}
+
+var fileDescriptor_ff2c900db64d4fc9 = []byte{
+	// 952 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xb4, 0x57, 0x4f, 0x8f, 0xdb, 0x44,
+	0x14, 0x97, 0x1d, 0x68, 0x77, 0x67, 0x1b, 0x50, 0x87, 0xa5, 0x0d, 0x69, 0x51, 0x23, 0x23, 0x20,
+	0xb2, 0xa8, 0x47, 0x98, 0x7f, 0xa2, 0x15, 0x48, 0xbb, 0x1b, 0x5a, 0x81, 0x58, 0xb1, 0x4a, 0x59,
+	0x44, 0x97, 0x43, 0x98, 0x75, 0x5e, 0x5c, 0xb3, 0xce, 0x8c, 0xf1, 0x4c, 0xba, 0x4b, 0xd1, 0x5e,
+	0x10, 0xdf, 0x00, 0x24, 0x2e, 0x1c, 0x10, 0xc7, 0x8a, 0x0b, 0xe2, 0x5b, 0x94, 0x0b, 0x82, 0x03,
+	0x5f, 0x80, 0x13, 0x27, 0x6e, 0x70, 0x44, 0xb6, 0xc7, 0x71, 0x9c, 0x78, 0xd7, 0x71, 0x94, 0x3d,
+	0x25, 0x99, 0x79, 0xef, 0xf7, 0x7e, 0xf3, 0x7e, 0xef, 0xbd, 0x99, 0xa0, 0xeb, 0x2e, 0xe7, 0xae,
+	0x0f, 0xc4, 0xf1, 0xf9, 0xa8, 0x4f, 0xfa, 0x1e, 0xf5, 0xb9, 0x3b, 0xf0, 0xf9, 0x21, 0xb9, 0x6f,
+	0xef, 0x83, 0xa4, 0x2f, 0x13, 0x87, 0x33, 0x09, 0x47, 0xd2, 0x0a, 0x42, 0x2e, 0x39, 0xbe, 0x96,
+	0x98, 0x5b, 0xb1, 0xb9, 0x95, 0x99, 0x5b, 0xca, 0xbc, 0x79, 0x55, 0xe1, 0xd1, 0xc0, 0x23, 0x94,
+	0x31, 0x2e, 0xa9, 0xf4, 0x38, 0x13, 0x89, 0x7b, 0xf3, 0x8a, 0xda, 0x8d, 0x7f, 0xed, 0x8f, 0x06,
+	0x04, 0x86, 0x81, 0xfc, 0x42, 0x6d, 0xb6, 0xa6, 0x37, 0x07, 0x1e, 0xf8, 0xfd, 0xde, 0x90, 0x8a,
+	0x03, 0x65, 0x71, 0x75, 0xda, 0x42, 0xc8, 0x70, 0xe4, 0x28, 0x6e, 0xcd, 0xcb, 0x13, 0xa1, 0x1d,
+	0xdf, 0x03, 0xa6, 0x36, 0x8c, 0x63, 0x74, 0x7e, 0x2b, 0x39, 0x05, 0xc6, 0xe8, 0x31, 0x46, 0x87,
+	0xd0, 0xd0, 0x5a, 0x5a, 0x7b, 0xb5, 0x1b, 0x7f, 0xc7, 0xcf, 0xa3, 0x27, 0x7c, 0x6f, 0x00, 0x22,
+	0xa0, 0xac, 0xe7, 0xf0, 0x11, 0x93, 0x0d, 0xbd, 0xa5, 0xb5, 0x1f, 0xef, 0xd6, 0xd3, 0xd5, 0xad,
+	0x68, 0x11, 0xbf, 0x81, 0x50, 0x40, 0x43, 0x3a, 0x04, 0x09, 0xa1, 0x68, 0xd4, 0x5a, 0x5a, 0x7b,
+	0xcd, 0xbe, 0x6c, 0xa9, 0x7c, 0xa4, 0x8c, 0xac, 0x3b, 0x31, 0xa3, 0xee, 0x84, 0xa9, 0xe1, 0xa1,
+	0xa7, 0xde, 0xf7, 0x84, 0x54, 0x14, 0x44, 0x17, 0x3e, 0x1f, 0x81, 0x90, 0xf8, 0x12, 0x3a, 0x17,
+	0xd0, 0x10, 0x98, 0x54, 0x64, 0xd4, 0x2f, 0x7c, 0x05, 0xad, 0x06, 0xd4, 0x85, 0x9e, 0xf0, 0x1e,
+	0x80, 0x62, 0xb2, 0x12, 0x2d, 0xdc, 0xf1, 0x1e, 0x00, 0x7e, 0x36, 0x22, 0xe1, 0x42, 0x4f, 0xf2,
+	0x03, 0x60, 0x31, 0x89, 0xd5, 0x6e, 0x6c, 0xfe, 0x61, 0xb4, 0x60, 0x7c, 0xad, 0xa1, 0xf5, 0x7c,
+	0x2c, 0x11, 0x70, 0x26, 0x00, 0x77, 0xd0, 0x8a, 0x12, 0x52, 0x34, 0xb4, 0x56, 0xad, 0xbd, 0x66,
+	0xb7, 0xad, 0x12, 0x29, 0x2d, 0x05, 0xd2, 0x1d, 0x7b, 0xe2, 0x17, 0xd0, 0x93, 0x0c, 0x8e, 0x64,
+	0x6f, 0x82, 0x82, 0x1e, 0x53, 0xa8, 0x47, 0xcb, 0x3b, 0x63, 0x1a, 0x2f, 0xa2, 0x8b, 0xb7, 0x21,
+	0x25, 0x91, 0x9e, 0xb7, 0x20, 0xf5, 0x46, 0x88, 0xd6, 0xb7, 0x42, 0xa0, 0x12, 0xa6, 0x6c, 0x4f,
+	0xca, 0xcd, 0x26, 0x3a, 0xaf, 0xc8, 0xc4, 0x81, 0xab, 0x9c, 0x22, 0x75, 0x34, 0xbe, 0xd3, 0xd0,
+	0xfa, 0x6e, 0xd0, 0x9f, 0x0d, 0x3a, 0x01, 0xae, 0x2d, 0x08, 0x8e, 0x6f, 0xa2, 0xb5, 0x51, 0x8c,
+	0x1d, 0x97, 0xad, 0x22, 0xd9, 0x9c, 0xa9, 0x92, 0x5b, 0x51, 0x65, 0x6f, 0x53, 0x71, 0xd0, 0x45,
+	0x89, 0x79, 0xf4, 0xdd, 0x30, 0xd1, 0x7a, 0x07, 0x7c, 0x98, 0x21, 0x56, 0x94, 0x39, 0x1b, 0x35,
+	0x12, 0xdb, 0x0d, 0xdf, 0x9f, 0xb3, 0xb2, 0xec, 0x5f, 0x9f, 0x46, 0x2b, 0xa9, 0x2d, 0xfe, 0xb9,
+	0x86, 0x2e, 0x4c, 0x96, 0x0a, 0x7e, 0xb5, 0xf4, 0xb4, 0x05, 0x55, 0xdc, 0x7c, 0xad, 0xa2, 0x57,
+	0x52, 0x8f, 0xc6, 0x2f, 0xfa, 0x57, 0x7f, 0xfc, 0xf5, 0x8d, 0xfe, 0x93, 0x8e, 0x5f, 0x1f, 0x4f,
+	0x9a, 0x2f, 0x13, 0x9a, 0x6f, 0x05, 0x21, 0xff, 0x0c, 0x1c, 0x29, 0x88, 0x49, 0xa8, 0x0b, 0x4c,
+	0x12, 0x01, 0x42, 0x44, 0x43, 0x84, 0x98, 0xc7, 0xe9, 0x38, 0x12, 0x7b, 0x1f, 0xe0, 0xed, 0x72,
+	0x4f, 0x60, 0xf7, 0xbd, 0x90, 0xb3, 0x21, 0xb0, 0x78, 0x71, 0x24, 0x20, 0x8c, 0x3e, 0x0b, 0x01,
+	0x3b, 0x78, 0xf3, 0x34, 0x40, 0x9f, 0x3b, 0xc9, 0x28, 0x3b, 0x9d, 0xd6, 0x27, 0xf8, 0x6e, 0x35,
+	0x94, 0x0a, 0x14, 0xf1, 0x0f, 0x35, 0x84, 0xb2, 0xc6, 0xc2, 0x76, 0x69, 0xee, 0x67, 0xba, 0xb0,
+	0x39, 0x77, 0x4d, 0x17, 0x4b, 0x14, 0xd5, 0xde, 0x69, 0x02, 0x8d, 0xb9, 0x12, 0xf3, 0x38, 0x2f,
+	0x51, 0xb1, 0x67, 0xe9, 0xe9, 0x73, 0x80, 0x39, 0x89, 0xa6, 0x01, 0x4f, 0x13, 0x28, 0x87, 0x92,
+	0x93, 0xa8, 0x1c, 0xa5, 0x12, 0x45, 0xfc, 0xa8, 0x86, 0xea, 0xb9, 0x91, 0x86, 0xcb, 0x3b, 0xa4,
+	0x68, 0x04, 0x56, 0x10, 0xea, 0xcf, 0x44, 0xa8, 0xdf, 0x74, 0x63, 0xc1, 0x5e, 0xba, 0x91, 0x8e,
+	0xaf, 0xbd, 0x8f, 0x8d, 0xe5, 0x36, 0x55, 0x86, 0xbc, 0x6d, 0x2c, 0xa1, 0xbb, 0x32, 0xb8, 0xbe,
+	0x71, 0x76, 0x6d, 0x36, 0x8e, 0x82, 0xff, 0xae, 0xa1, 0x7a, 0xee, 0xaa, 0x98, 0x43, 0xcc, 0xa2,
+	0xab, 0xa5, 0x82, 0x98, 0xff, 0x26, 0x62, 0xfe, 0xa3, 0xdb, 0x6f, 0x67, 0x07, 0x4c, 0xdf, 0x60,
+	0x55, 0xba, 0x2f, 0xcb, 0xd5, 0xa7, 0xf6, 0xee, 0xbc, 0x50, 0x95, 0x6a, 0x3d, 0x8b, 0xb0, 0x6b,
+	0xbf, 0x57, 0x1e, 0x61, 0xde, 0xfe, 0xcc, 0x60, 0x7d, 0x9b, 0x2e, 0x02, 0xbb, 0xd8, 0x21, 0xf0,
+	0xb7, 0x35, 0x54, 0xcf, 0x5d, 0xbf, 0x73, 0x88, 0x5d, 0x74, 0x5d, 0x37, 0x2f, 0xcd, 0x5c, 0xf7,
+	0xef, 0x44, 0xaf, 0xdc, 0x6c, 0xa0, 0x9a, 0x0b, 0x0f, 0x54, 0x73, 0xd9, 0x03, 0xd5, 0x5c, 0xca,
+	0x40, 0x35, 0xcf, 0x70, 0xa0, 0x7e, 0x5f, 0x43, 0x17, 0x67, 0x5e, 0x3a, 0xf8, 0xcd, 0x39, 0xa5,
+	0x99, 0x7d, 0x1d, 0x55, 0x93, 0xa7, 0xda, 0x93, 0xc4, 0x5c, 0xf6, 0x93, 0xc4, 0x5c, 0xca, 0x93,
+	0xc4, 0x3c, 0xbb, 0x59, 0xd9, 0x3c, 0x7a, 0xb4, 0xf1, 0xcc, 0x44, 0xf6, 0x93, 0xd4, 0xd2, 0xc0,
+	0x13, 0x96, 0xc3, 0x87, 0xbf, 0x6f, 0xdc, 0xbd, 0x27, 0x65, 0x20, 0x6e, 0x10, 0x72, 0x78, 0x38,
+	0xbd, 0x49, 0xe8, 0x48, 0xde, 0x4b, 0xfe, 0x77, 0x5e, 0x0f, 0x7c, 0x2a, 0x07, 0x3c, 0x1c, 0xbe,
+	0x54, 0x66, 0x9e, 0x85, 0xda, 0x7c, 0xa8, 0xa1, 0xe7, 0x1c, 0x3e, 0x2c, 0x2b, 0x84, 0xcd, 0x0b,
+	0xaa, 0x00, 0x76, 0x22, 0xb9, 0x77, 0xb4, 0xbd, 0x77, 0x95, 0x83, 0xcb, 0x7d, 0xca, 0x5c, 0x8b,
+	0x87, 0x2e, 0x71, 0x81, 0xc5, 0xc5, 0x40, 0xb2, 0x90, 0x27, 0xfe, 0x21, 0xbe, 0x99, 0x2d, 0xfd,
+	0xa7, 0x69, 0x3f, 0xea, 0x7a, 0xe7, 0xd6, 0x43, 0xfd, 0xda, 0xed, 0x04, 0x73, 0x2b, 0x26, 0xd1,
+	0xc9, 0x48, 0x7c, 0x94, 0x38, 0xed, 0x9f, 0x8b, 0xf1, 0x5f, 0xf9, 0x3f, 0x00, 0x00, 0xff, 0xff,
+	0x00, 0x9e, 0x2f, 0x1e, 0x6f, 0x0f, 0x00, 0x00,
+}
+
 // Reference imports to suppress errors if they are not otherwise used.
 var _ context.Context
 var _ grpc.ClientConn
@@ -284,21 +547,24 @@ var _ grpc.ClientConn
 // is compatible with the grpc package it is being compiled against.
 const _ = grpc.SupportPackageIsVersion4
 
-// Client API for Contexts service
-
+// ContextsClient is the client API for Contexts service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type ContextsClient interface {
 	// Returns the list of all contexts in the specified session.
 	ListContexts(ctx context.Context, in *ListContextsRequest, opts ...grpc.CallOption) (*ListContextsResponse, error)
 	// Retrieves the specified context.
 	GetContext(ctx context.Context, in *GetContextRequest, opts ...grpc.CallOption) (*Context, error)
 	// Creates a context.
+	//
+	// If the specified context already exists, overrides the context.
 	CreateContext(ctx context.Context, in *CreateContextRequest, opts ...grpc.CallOption) (*Context, error)
 	// Updates the specified context.
 	UpdateContext(ctx context.Context, in *UpdateContextRequest, opts ...grpc.CallOption) (*Context, error)
 	// Deletes the specified context.
-	DeleteContext(ctx context.Context, in *DeleteContextRequest, opts ...grpc.CallOption) (*google_protobuf2.Empty, error)
+	DeleteContext(ctx context.Context, in *DeleteContextRequest, opts ...grpc.CallOption) (*empty.Empty, error)
 	// Deletes all active contexts in the specified session.
-	DeleteAllContexts(ctx context.Context, in *DeleteAllContextsRequest, opts ...grpc.CallOption) (*google_protobuf2.Empty, error)
+	DeleteAllContexts(ctx context.Context, in *DeleteAllContextsRequest, opts ...grpc.CallOption) (*empty.Empty, error)
 }
 
 type contextsClient struct {
@@ -311,7 +577,7 @@ func NewContextsClient(cc *grpc.ClientConn) ContextsClient {
 
 func (c *contextsClient) ListContexts(ctx context.Context, in *ListContextsRequest, opts ...grpc.CallOption) (*ListContextsResponse, error) {
 	out := new(ListContextsResponse)
-	err := grpc.Invoke(ctx, "/google.cloud.dialogflow.v2beta1.Contexts/ListContexts", in, out, c.cc, opts...)
+	err := c.cc.Invoke(ctx, "/google.cloud.dialogflow.v2beta1.Contexts/ListContexts", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -320,7 +586,7 @@ func (c *contextsClient) ListContexts(ctx context.Context, in *ListContextsReque
 
 func (c *contextsClient) GetContext(ctx context.Context, in *GetContextRequest, opts ...grpc.CallOption) (*Context, error) {
 	out := new(Context)
-	err := grpc.Invoke(ctx, "/google.cloud.dialogflow.v2beta1.Contexts/GetContext", in, out, c.cc, opts...)
+	err := c.cc.Invoke(ctx, "/google.cloud.dialogflow.v2beta1.Contexts/GetContext", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +595,7 @@ func (c *contextsClient) GetContext(ctx context.Context, in *GetContextRequest, 
 
 func (c *contextsClient) CreateContext(ctx context.Context, in *CreateContextRequest, opts ...grpc.CallOption) (*Context, error) {
 	out := new(Context)
-	err := grpc.Invoke(ctx, "/google.cloud.dialogflow.v2beta1.Contexts/CreateContext", in, out, c.cc, opts...)
+	err := c.cc.Invoke(ctx, "/google.cloud.dialogflow.v2beta1.Contexts/CreateContext", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -338,46 +604,47 @@ func (c *contextsClient) CreateContext(ctx context.Context, in *CreateContextReq
 
 func (c *contextsClient) UpdateContext(ctx context.Context, in *UpdateContextRequest, opts ...grpc.CallOption) (*Context, error) {
 	out := new(Context)
-	err := grpc.Invoke(ctx, "/google.cloud.dialogflow.v2beta1.Contexts/UpdateContext", in, out, c.cc, opts...)
+	err := c.cc.Invoke(ctx, "/google.cloud.dialogflow.v2beta1.Contexts/UpdateContext", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *contextsClient) DeleteContext(ctx context.Context, in *DeleteContextRequest, opts ...grpc.CallOption) (*google_protobuf2.Empty, error) {
-	out := new(google_protobuf2.Empty)
-	err := grpc.Invoke(ctx, "/google.cloud.dialogflow.v2beta1.Contexts/DeleteContext", in, out, c.cc, opts...)
+func (c *contextsClient) DeleteContext(ctx context.Context, in *DeleteContextRequest, opts ...grpc.CallOption) (*empty.Empty, error) {
+	out := new(empty.Empty)
+	err := c.cc.Invoke(ctx, "/google.cloud.dialogflow.v2beta1.Contexts/DeleteContext", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *contextsClient) DeleteAllContexts(ctx context.Context, in *DeleteAllContextsRequest, opts ...grpc.CallOption) (*google_protobuf2.Empty, error) {
-	out := new(google_protobuf2.Empty)
-	err := grpc.Invoke(ctx, "/google.cloud.dialogflow.v2beta1.Contexts/DeleteAllContexts", in, out, c.cc, opts...)
+func (c *contextsClient) DeleteAllContexts(ctx context.Context, in *DeleteAllContextsRequest, opts ...grpc.CallOption) (*empty.Empty, error) {
+	out := new(empty.Empty)
+	err := c.cc.Invoke(ctx, "/google.cloud.dialogflow.v2beta1.Contexts/DeleteAllContexts", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// Server API for Contexts service
-
+// ContextsServer is the server API for Contexts service.
 type ContextsServer interface {
 	// Returns the list of all contexts in the specified session.
 	ListContexts(context.Context, *ListContextsRequest) (*ListContextsResponse, error)
 	// Retrieves the specified context.
 	GetContext(context.Context, *GetContextRequest) (*Context, error)
 	// Creates a context.
+	//
+	// If the specified context already exists, overrides the context.
 	CreateContext(context.Context, *CreateContextRequest) (*Context, error)
 	// Updates the specified context.
 	UpdateContext(context.Context, *UpdateContextRequest) (*Context, error)
 	// Deletes the specified context.
-	DeleteContext(context.Context, *DeleteContextRequest) (*google_protobuf2.Empty, error)
+	DeleteContext(context.Context, *DeleteContextRequest) (*empty.Empty, error)
 	// Deletes all active contexts in the specified session.
-	DeleteAllContexts(context.Context, *DeleteAllContextsRequest) (*google_protobuf2.Empty, error)
+	DeleteAllContexts(context.Context, *DeleteAllContextsRequest) (*empty.Empty, error)
 }
 
 func RegisterContextsServer(s *grpc.Server, srv ContextsServer) {
@@ -523,60 +790,4 @@ var _Contexts_serviceDesc = grpc.ServiceDesc{
 	},
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "google/cloud/dialogflow/v2beta1/context.proto",
-}
-
-func init() { proto.RegisterFile("google/cloud/dialogflow/v2beta1/context.proto", fileDescriptor1) }
-
-var fileDescriptor1 = []byte{
-	// 793 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x56, 0xcd, 0x6f, 0xd3, 0x48,
-	0x14, 0xd7, 0xb8, 0xbb, 0xfd, 0x98, 0x34, 0xbb, 0xea, 0x6c, 0xd4, 0x8d, 0xd2, 0xae, 0x1a, 0x79,
-	0xb5, 0x4b, 0x14, 0x09, 0x5b, 0x98, 0x2f, 0x41, 0x05, 0x52, 0x9b, 0xd0, 0xaa, 0x52, 0x91, 0xaa,
-	0xb4, 0x70, 0xe8, 0x25, 0x9a, 0x26, 0x2f, 0x96, 0xa9, 0x33, 0x63, 0x3c, 0x13, 0x28, 0x45, 0x39,
-	0xf0, 0x71, 0xe1, 0xc4, 0x01, 0x09, 0xc4, 0x09, 0x89, 0x03, 0x87, 0xfe, 0x3b, 0xfc, 0x0b, 0x3d,
-	0x72, 0xe0, 0xc8, 0x0d, 0x64, 0x7b, 0x9c, 0x8f, 0xc6, 0x25, 0x49, 0xcb, 0xcd, 0x7e, 0xf3, 0x7b,
-	0x6f, 0x7e, 0xbf, 0x37, 0xbf, 0x79, 0x36, 0xbe, 0x68, 0x73, 0x6e, 0xbb, 0x60, 0xd6, 0x5c, 0xde,
-	0xaa, 0x9b, 0x75, 0x87, 0xba, 0xdc, 0x6e, 0xb8, 0xfc, 0xb1, 0xf9, 0xc8, 0xda, 0x03, 0x49, 0x2f,
-	0x99, 0x35, 0xce, 0x24, 0x1c, 0x48, 0xc3, 0xf3, 0xb9, 0xe4, 0x64, 0x29, 0x82, 0x1b, 0x21, 0xdc,
-	0xe8, 0xc2, 0x0d, 0x05, 0xcf, 0x2d, 0xaa, 0x7a, 0xd4, 0x73, 0x4c, 0xca, 0x18, 0x97, 0x54, 0x3a,
-	0x9c, 0x89, 0x28, 0x3d, 0xb7, 0xa0, 0x56, 0xc3, 0xb7, 0xbd, 0x56, 0xc3, 0x84, 0xa6, 0x27, 0x9f,
-	0xa8, 0xc5, 0xfc, 0xc9, 0xc5, 0x86, 0x03, 0x6e, 0xbd, 0xda, 0xa4, 0x62, 0x5f, 0x21, 0x16, 0x4f,
-	0x22, 0x84, 0xf4, 0x5b, 0x35, 0xc5, 0x4d, 0x6f, 0xe3, 0xa9, 0x52, 0x44, 0x96, 0x10, 0xfc, 0x1b,
-	0xa3, 0x4d, 0xc8, 0xa2, 0x3c, 0x2a, 0xcc, 0x54, 0xc2, 0x67, 0xf2, 0x1f, 0xfe, 0xc3, 0x75, 0x1a,
-	0x20, 0x3c, 0xca, 0xaa, 0x35, 0xde, 0x62, 0x32, 0xab, 0xe5, 0x51, 0xe1, 0xf7, 0x4a, 0x3a, 0x8e,
-	0x96, 0x82, 0x20, 0xb9, 0x8e, 0xb1, 0x47, 0x7d, 0xda, 0x04, 0x09, 0xbe, 0xc8, 0x4e, 0xe4, 0x51,
-	0x21, 0x65, 0xfd, 0x6d, 0x28, 0xd9, 0xf1, 0xc6, 0xc6, 0x76, 0xb8, 0x71, 0xa5, 0x07, 0xaa, 0x3b,
-	0xf8, 0xaf, 0x4d, 0x47, 0x48, 0x45, 0x41, 0x54, 0xe0, 0x61, 0x0b, 0x84, 0x24, 0xf3, 0x78, 0xd2,
-	0xa3, 0x3e, 0x30, 0xa9, 0xc8, 0xa8, 0x37, 0xb2, 0x80, 0x67, 0x3c, 0x6a, 0x43, 0x55, 0x38, 0x87,
-	0xa0, 0x98, 0x4c, 0x07, 0x81, 0x6d, 0xe7, 0x10, 0xc8, 0x3f, 0x01, 0x09, 0x1b, 0xaa, 0x92, 0xef,
-	0x03, 0x0b, 0x49, 0xcc, 0x54, 0x42, 0xf8, 0x4e, 0x10, 0xd0, 0x5f, 0x22, 0x9c, 0xe9, 0xdf, 0x4b,
-	0x78, 0x9c, 0x09, 0x20, 0x65, 0x3c, 0xad, 0xce, 0x4b, 0x64, 0x51, 0x7e, 0xa2, 0x90, 0xb2, 0x0a,
-	0xc6, 0x90, 0x13, 0x33, 0x54, 0x91, 0x4a, 0x27, 0x93, 0xfc, 0x8f, 0xff, 0x64, 0x70, 0x20, 0xab,
-	0x3d, 0x14, 0xb4, 0x90, 0x42, 0x3a, 0x08, 0x6f, 0x75, 0x68, 0x5c, 0xc0, 0x73, 0xeb, 0x10, 0x93,
-	0x88, 0xf5, 0x26, 0xb4, 0x5e, 0xf7, 0x71, 0xa6, 0xe4, 0x03, 0x95, 0x70, 0x02, 0x7b, 0x5a, 0x6f,
-	0x56, 0xf1, 0x94, 0x22, 0x13, 0x6e, 0x3c, 0x8e, 0x8a, 0x38, 0x51, 0x7f, 0x87, 0x70, 0xe6, 0x9e,
-	0x57, 0x1f, 0xdc, 0xb4, 0xa7, 0x38, 0x3a, 0x63, 0x71, 0xb2, 0x8c, 0x53, 0xad, 0xb0, 0x76, 0xe8,
-	0x4e, 0x45, 0x32, 0x37, 0xe0, 0x92, 0xb5, 0xc0, 0xc0, 0x77, 0xa9, 0xd8, 0xaf, 0xe0, 0x08, 0x1e,
-	0x3c, 0xeb, 0x45, 0x9c, 0x29, 0x83, 0x0b, 0x03, 0xc4, 0x92, 0x3a, 0x67, 0xe1, 0x6c, 0x84, 0x5d,
-	0x71, 0xdd, 0x11, 0x9d, 0x65, 0x7d, 0x4f, 0xe1, 0xe9, 0x18, 0x4b, 0x9e, 0x69, 0x78, 0xb6, 0xd7,
-	0x2a, 0xe4, 0xca, 0x50, 0xb5, 0x09, 0x2e, 0xce, 0x5d, 0x1d, 0x33, 0x2b, 0xf2, 0xa3, 0xfe, 0x02,
-	0x3d, 0xff, 0x7c, 0xfc, 0x46, 0x6b, 0x93, 0x6b, 0x9d, 0x79, 0xf2, 0x34, 0x62, 0x79, 0xcb, 0xf3,
-	0xf9, 0x03, 0xa8, 0x49, 0x61, 0x16, 0x4d, 0x6a, 0x03, 0x93, 0xa6, 0x00, 0x21, 0x82, 0x51, 0x61,
-	0x16, 0xdb, 0xf1, 0xd0, 0x11, 0xbb, 0x25, 0xb2, 0x32, 0x3c, 0xd3, 0x6f, 0x31, 0xe9, 0x34, 0x21,
-	0x08, 0x24, 0x15, 0x21, 0x5f, 0x11, 0xc6, 0x5d, 0xa3, 0x12, 0x6b, 0xa8, 0x96, 0x01, 0x57, 0xe7,
-	0x46, 0xf6, 0x48, 0xa2, 0xe4, 0xe0, 0x28, 0x7f, 0x26, 0xb8, 0x43, 0xd5, 0x2c, 0xb6, 0xfb, 0x25,
-	0x27, 0x67, 0x26, 0x0a, 0xee, 0x2d, 0x42, 0x5e, 0x69, 0x38, 0xdd, 0x77, 0xe5, 0xc8, 0xf0, 0x13,
-	0x4c, 0xba, 0xa2, 0x63, 0x08, 0x7f, 0x1b, 0x09, 0x7f, 0x8d, 0xf4, 0x33, 0x1e, 0xf6, 0xcd, 0xf8,
-	0x7a, 0xed, 0x6e, 0xea, 0xe7, 0x3f, 0xf5, 0x4e, 0x35, 0xf2, 0x5e, 0xc3, 0xe9, 0xbe, 0x49, 0x30,
-	0x42, 0x2f, 0x92, 0x26, 0xc7, 0x18, 0xbd, 0xf8, 0x14, 0xf5, 0xe2, 0x03, 0xb2, 0x6e, 0x77, 0x85,
-	0xc4, 0x5f, 0xd2, 0x71, 0xdc, 0xd0, 0xed, 0xc9, 0x8e, 0xb5, 0x31, 0x6a, 0xa9, 0xa1, 0xf6, 0xe8,
-	0xf6, 0xe6, 0x18, 0xe1, 0x74, 0xdf, 0x30, 0x1a, 0xa1, 0x37, 0x49, 0xc3, 0x2b, 0x37, 0x3f, 0x30,
-	0xfc, 0xee, 0x04, 0x9f, 0xf6, 0xce, 0x75, 0x28, 0x9e, 0xf9, 0x3a, 0x14, 0x7f, 0xc1, 0x75, 0xf8,
-	0x82, 0xf0, 0xdc, 0xc0, 0x1c, 0x25, 0x37, 0x46, 0x94, 0x3a, 0x38, 0x7b, 0xc7, 0x92, 0x3b, 0xde,
-	0xc0, 0x2b, 0x9e, 0xdf, 0xfa, 0xab, 0x47, 0x08, 0xff, 0x5b, 0xe3, 0xcd, 0x61, 0xf2, 0x56, 0x67,
-	0x95, 0xac, 0xad, 0x40, 0xc4, 0x16, 0xda, 0xdd, 0x50, 0x09, 0x36, 0x77, 0x29, 0xb3, 0x0d, 0xee,
-	0xdb, 0xa6, 0x0d, 0x2c, 0x94, 0x68, 0x46, 0x4b, 0xd4, 0x73, 0xc4, 0xa9, 0xff, 0x8a, 0xcb, 0xdd,
-	0xd0, 0x37, 0x84, 0x3e, 0x6a, 0x5a, 0x79, 0xed, 0x48, 0x5b, 0x5a, 0x8f, 0x6a, 0x96, 0x42, 0x12,
-	0xe5, 0x2e, 0x89, 0xfb, 0x51, 0xd2, 0xde, 0x64, 0x58, 0xff, 0xf2, 0x8f, 0x00, 0x00, 0x00, 0xff,
-	0xff, 0x61, 0xec, 0x01, 0x66, 0x8a, 0x0a, 0x00, 0x00,
 }

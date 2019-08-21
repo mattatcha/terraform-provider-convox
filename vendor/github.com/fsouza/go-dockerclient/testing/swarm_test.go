@@ -12,12 +12,13 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/docker/docker/api/types/swarm"
-	"github.com/fsouza/go-dockerclient"
+	docker "github.com/fsouza/go-dockerclient"
 )
 
 func TestSwarmInit(t *testing.T) {
@@ -363,8 +364,7 @@ func TestServiceCreate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ServiceCreate error: %s", err.Error())
 	}
-	var params io.Reader
-	params = bytes.NewBuffer(buf)
+	var params io.Reader = bytes.NewBuffer(buf)
 	request, _ := http.NewRequest("POST", "/services/create", params)
 	server.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
@@ -373,7 +373,7 @@ func TestServiceCreate(t *testing.T) {
 	if len(server.services) != 1 || len(server.tasks) != 1 || len(server.containers) != 1 {
 		t.Fatalf("ServiceCreate: wrong item count. Want 1. Got services: %d, tasks: %d, containers: %d.", len(server.services), len(server.tasks), len(server.containers))
 	}
-	cont := server.containers[0]
+	cont := getContainer(server)
 	expectedContainer := &docker.Container{
 		ID:      cont.ID,
 		Created: cont.Created,
@@ -459,8 +459,7 @@ func TestServiceCreateDynamicPort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ServiceCreate error: %s", err.Error())
 	}
-	var params io.Reader
-	params = bytes.NewBuffer(buf)
+	var params io.Reader = bytes.NewBuffer(buf)
 	request, _ := http.NewRequest("POST", "/services/create", params)
 	server.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
@@ -524,8 +523,7 @@ func TestServiceCreateNoContainers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ServiceCreate error: %s", err.Error())
 	}
-	var params io.Reader
-	params = bytes.NewBuffer(buf)
+	var params io.Reader = bytes.NewBuffer(buf)
 	request, _ := http.NewRequest("POST", "/services/create", params)
 	server.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
@@ -731,7 +729,7 @@ func TestServiceListFilterEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	recorder := httptest.NewRecorder()
-	request, _ := http.NewRequest("GET", `/services?filters={"id":["something"]}`, nil)
+	request, _ := http.NewRequest("GET", "/services?filters="+url.QueryEscape(`{"id":["something"]}`), nil)
 	server.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("ServiceList: wrong status code. Want %d. Got %d.", http.StatusOK, recorder.Code)
@@ -880,7 +878,8 @@ func TestTaskListFilterMultipleFieldsNotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 	recorder := httptest.NewRecorder()
-	request, _ := http.NewRequest("GET", fmt.Sprintf(`/tasks?filters={"service":[%q], "id":["abc"]}`, srv.Spec.Name), nil)
+	filterParam := url.QueryEscape(fmt.Sprintf(`{"service":[%q], "id":["abc"]}`, srv.Spec.Name))
+	request, _ := http.NewRequest("GET", "/tasks?filters="+filterParam, nil)
 	server.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("TaskList: wrong status code. Want %d. Got %d.", http.StatusOK, recorder.Code)
@@ -904,7 +903,8 @@ func TestTaskListFilterNotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 	recorder := httptest.NewRecorder()
-	request, _ := http.NewRequest("GET", `/tasks?filters={"id":["something"]}`, nil)
+	filter := url.QueryEscape(`{"id":["something"]}`)
+	request, _ := http.NewRequest("GET", "/tasks?filters="+filter, nil)
 	server.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("TaskList: wrong status code. Want %d. Got %d.", http.StatusOK, recorder.Code)
@@ -929,7 +929,8 @@ func TestTaskListFilterLabel(t *testing.T) {
 	}
 	task := server.tasks[0]
 	recorder := httptest.NewRecorder()
-	request, _ := http.NewRequest("GET", `/tasks?filters={"label":["mykey=myvalue"]}`, nil)
+	filter := url.QueryEscape(`{"label":["mykey=myvalue"]}`)
+	request, _ := http.NewRequest("GET", "/tasks?filters="+filter, nil)
 	server.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("TaskList: wrong status code. Want %d. Got %d.", http.StatusOK, recorder.Code)
@@ -942,7 +943,8 @@ func TestTaskListFilterLabel(t *testing.T) {
 	if !compareTasks(task, &taskInspect[0]) {
 		t.Fatalf("TaskList: wrong task. Want\n%#v\nGot\n%#v", task, &taskInspect)
 	}
-	request, _ = http.NewRequest("GET", `/tasks?filters={"label":["mykey"]}`, nil)
+	filter = url.QueryEscape(`{"label":["mykey"]}`)
+	request, _ = http.NewRequest("GET", "/tasks?filters="+filter, nil)
 	recorder = httptest.NewRecorder()
 	server.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
@@ -955,7 +957,8 @@ func TestTaskListFilterLabel(t *testing.T) {
 	if !compareTasks(task, &taskInspect[0]) {
 		t.Fatalf("TaskList: wrong task. Want\n%#v\nGot\n%#v", task, &taskInspect)
 	}
-	request, _ = http.NewRequest("GET", `/tasks?filters={"label":["otherkey"]}`, nil)
+	filter = url.QueryEscape(`{"label":["otherkey"]}`)
+	request, _ = http.NewRequest("GET", "/tasks?filters="+filter, nil)
 	recorder = httptest.NewRecorder()
 	server.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
@@ -1049,7 +1052,7 @@ func TestServiceUpdate(t *testing.T) {
 	if len(server.services) != 1 || len(server.tasks) != 1 || len(server.containers) != 1 {
 		t.Fatalf("ServiceUpdate: wrong item count. Want 1. Got services: %d, tasks: %d, containers: %d.", len(server.services), len(server.tasks), len(server.containers))
 	}
-	cont := server.containers[0]
+	cont := getContainer(server)
 	expectedContainer := &docker.Container{
 		ID:      cont.ID,
 		Created: cont.Created,
@@ -1351,8 +1354,7 @@ func addTestService(server *DockerServer) (*swarm.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	var params io.Reader
-	params = bytes.NewBuffer(buf)
+	var params io.Reader = bytes.NewBuffer(buf)
 	request, _ := http.NewRequest("POST", "/services/create", params)
 	server.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {

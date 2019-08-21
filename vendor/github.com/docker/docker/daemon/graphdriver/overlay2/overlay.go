@@ -4,6 +4,7 @@ package overlay2 // import "github.com/docker/docker/daemon/graphdriver/overlay2
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -70,10 +71,13 @@ var (
 // that mounts do not fail due to length.
 
 const (
-	driverName = "overlay2"
-	linkDir    = "l"
-	lowerFile  = "lower"
-	maxDepth   = 128
+	driverName    = "overlay2"
+	linkDir       = "l"
+	diffDirName   = "diff"
+	workDirName   = "work"
+	mergedDirName = "merged"
+	lowerFile     = "lower"
+	maxDepth      = 128
 
 	// idLength represents the number of random characters
 	// which can be used to create the unique link identifier
@@ -105,11 +109,14 @@ type Driver struct {
 }
 
 var (
+	logger                = logrus.WithField("storage-driver", "overlay2")
 	backingFs             = "<unknown>"
 	projectQuotaSupported = false
 
 	useNaiveDiffLock sync.Once
 	useNaiveDiffOnly bool
+
+	indexOff string
 )
 
 func init() {
@@ -156,26 +163,26 @@ func Init(home string, options []string, uidMaps, gidMaps []idtools.IDMap) (grap
 
 	switch fsMagic {
 	case graphdriver.FsMagicAufs, graphdriver.FsMagicEcryptfs, graphdriver.FsMagicNfsFs, graphdriver.FsMagicOverlay, graphdriver.FsMagicZfs:
-		logrus.Errorf("'overlay2' is not supported over %s", backingFs)
+		logger.Errorf("'overlay2' is not supported over %s", backingFs)
 		return nil, graphdriver.ErrIncompatibleFS
 	case graphdriver.FsMagicBtrfs:
 		// Support for OverlayFS on BTRFS was added in kernel 4.7
 		// See https://btrfs.wiki.kernel.org/index.php/Changelog
 		if kernel.CompareKernelVersion(*v, kernel.VersionInfo{Kernel: 4, Major: 7, Minor: 0}) < 0 {
 			if !opts.overrideKernelCheck {
-				logrus.Errorf("'overlay2' requires kernel 4.7 to use on %s", backingFs)
+				logger.Errorf("'overlay2' requires kernel 4.7 to use on %s", backingFs)
 				return nil, graphdriver.ErrIncompatibleFS
 			}
-			logrus.Warn("Using pre-4.7.0 kernel for overlay2 on btrfs, may require kernel update")
+			logger.Warn("Using pre-4.7.0 kernel for overlay2 on btrfs, may require kernel update")
 		}
 	}
 
 	if kernel.CompareKernelVersion(*v, kernel.VersionInfo{Kernel: 4, Major: 0, Minor: 0}) < 0 {
 		if opts.overrideKernelCheck {
-			logrus.Warn("Using pre-4.0.0 kernel for overlay2, mount failures may require kernel update")
+			logger.Warn("Using pre-4.0.0 kernel for overlay2, mount failures may require kernel update")
 		} else {
 			if err := supportsMultipleLowerDir(testdir); err != nil {
-				logrus.Debugf("Multiple lower dirs not supported: %v", err)
+				logger.Debugf("Multiple lower dirs not supported: %v", err)
 				return nil, graphdriver.ErrNotSupported
 			}
 		}
@@ -189,7 +196,7 @@ func Init(home string, options []string, uidMaps, gidMaps []idtools.IDMap) (grap
 			return nil, overlayutils.ErrDTypeNotSupported("overlay2", backingFs)
 		}
 		// allow running without d_type only for existing setups (#27443)
-		logrus.Warn(overlayutils.ErrDTypeNotSupported("overlay2", backingFs))
+		logger.Warn(overlayutils.ErrDTypeNotSupported("overlay2", backingFs))
 	}
 
 	rootUID, rootGID, err := idtools.GetRootUIDGID(uidMaps, gidMaps)
@@ -197,7 +204,7 @@ func Init(home string, options []string, uidMaps, gidMaps []idtools.IDMap) (grap
 		return nil, err
 	}
 	// Create the driver home dir
-	if err := idtools.MkdirAllAndChown(path.Join(home, linkDir), 0700, idtools.IDPair{rootUID, rootGID}); err != nil {
+	if err := idtools.MkdirAllAndChown(path.Join(home, linkDir), 0700, idtools.Identity{UID: rootUID, GID: rootGID}); err != nil {
 		return nil, err
 	}
 
@@ -225,7 +232,18 @@ func Init(home string, options []string, uidMaps, gidMaps []idtools.IDMap) (grap
 		return nil, fmt.Errorf("Storage Option overlay2.size only supported for backingFS XFS. Found %v", backingFs)
 	}
 
-	logrus.Debugf("backingFs=%s,  projectQuotaSupported=%v", backingFs, projectQuotaSupported)
+	// figure out whether "index=off" option is recognized by the kernel
+	_, err = os.Stat("/sys/module/overlay/parameters/index")
+	switch {
+	case err == nil:
+		indexOff = "index=off,"
+	case os.IsNotExist(err):
+		// old kernel, no index -- do nothing
+	default:
+		logger.Warnf("Unable to detect whether overlay kernel module supports index parameter: %s", err)
+	}
+
+	logger.Debugf("backingFs=%s, projectQuotaSupported=%v, indexOff=%q", backingFs, projectQuotaSupported, indexOff)
 
 	return d, nil
 }
@@ -274,14 +292,14 @@ func supportsOverlay() error {
 			return nil
 		}
 	}
-	logrus.Error("'overlay' not found as a supported filesystem on this host. Please ensure kernel is new enough and has overlay support loaded.")
+	logger.Error("'overlay' not found as a supported filesystem on this host. Please ensure kernel is new enough and has overlay support loaded.")
 	return graphdriver.ErrNotSupported
 }
 
 func useNaiveDiff(home string) bool {
 	useNaiveDiffLock.Do(func() {
 		if err := doesSupportNativeDiff(home); err != nil {
-			logrus.Warnf("Not using native diff for overlay2, this may cause degraded performance for building images: %v", err)
+			logger.Warnf("Not using native diff for overlay2, this may cause degraded performance for building images: %v", err)
 			useNaiveDiffOnly = true
 		}
 	})
@@ -311,9 +329,9 @@ func (d *Driver) GetMetadata(id string) (map[string]string, error) {
 	}
 
 	metadata := map[string]string{
-		"WorkDir":   path.Join(dir, "work"),
-		"MergedDir": path.Join(dir, "merged"),
-		"UpperDir":  path.Join(dir, "diff"),
+		"WorkDir":   path.Join(dir, workDirName),
+		"MergedDir": path.Join(dir, mergedDirName),
+		"UpperDir":  path.Join(dir, diffDirName),
 	}
 
 	lowerDirs, err := d.getLowerDirs(id)
@@ -375,7 +393,7 @@ func (d *Driver) create(id, parent string, opts *graphdriver.CreateOpts) (retErr
 	if err != nil {
 		return err
 	}
-	root := idtools.IDPair{UID: rootUID, GID: rootGID}
+	root := idtools.Identity{UID: rootUID, GID: rootGID}
 
 	if err := idtools.MkdirAllAndChown(path.Dir(dir), 0700, root); err != nil {
 		return err
@@ -405,12 +423,12 @@ func (d *Driver) create(id, parent string, opts *graphdriver.CreateOpts) (retErr
 		}
 	}
 
-	if err := idtools.MkdirAndChown(path.Join(dir, "diff"), 0755, root); err != nil {
+	if err := idtools.MkdirAndChown(path.Join(dir, diffDirName), 0755, root); err != nil {
 		return err
 	}
 
 	lid := generateID(idLength)
-	if err := os.Symlink(path.Join("..", id, "diff"), path.Join(d.home, linkDir, lid)); err != nil {
+	if err := os.Symlink(path.Join("..", id, diffDirName), path.Join(d.home, linkDir, lid)); err != nil {
 		return err
 	}
 
@@ -424,7 +442,7 @@ func (d *Driver) create(id, parent string, opts *graphdriver.CreateOpts) (retErr
 		return nil
 	}
 
-	if err := idtools.MkdirAndChown(path.Join(dir, "work"), 0700, root); err != nil {
+	if err := idtools.MkdirAndChown(path.Join(dir, workDirName), 0700, root); err != nil {
 		return err
 	}
 
@@ -510,13 +528,18 @@ func (d *Driver) getLowerDirs(id string) ([]string, error) {
 
 // Remove cleans the directories that are created for this id.
 func (d *Driver) Remove(id string) error {
+	if id == "" {
+		return fmt.Errorf("refusing to remove the directories: id is empty")
+	}
 	d.locker.Lock(id)
 	defer d.locker.Unlock(id)
 	dir := d.dir(id)
 	lid, err := ioutil.ReadFile(path.Join(dir, "link"))
 	if err == nil {
-		if err := os.RemoveAll(path.Join(d.home, linkDir, string(lid))); err != nil {
-			logrus.Debugf("Failed to remove link: %v", err)
+		if len(lid) == 0 {
+			logger.Errorf("refusing to remove empty link for layer %v", id)
+		} else if err := os.RemoveAll(path.Join(d.home, linkDir, string(lid))); err != nil {
+			logger.Debugf("Failed to remove link: %v", err)
 		}
 	}
 
@@ -535,7 +558,7 @@ func (d *Driver) Get(id, mountLabel string) (_ containerfs.ContainerFS, retErr e
 		return nil, err
 	}
 
-	diffDir := path.Join(dir, "diff")
+	diffDir := path.Join(dir, diffDirName)
 	lowers, err := ioutil.ReadFile(path.Join(dir, lowerFile))
 	if err != nil {
 		// If no lower, just return diff directory
@@ -545,7 +568,7 @@ func (d *Driver) Get(id, mountLabel string) (_ containerfs.ContainerFS, retErr e
 		return nil, err
 	}
 
-	mergedDir := path.Join(dir, "merged")
+	mergedDir := path.Join(dir, mergedDirName)
 	if count := d.ctr.Increment(mergedDir); count > 1 {
 		return containerfs.NewLocalContainerFS(mergedDir), nil
 	}
@@ -553,23 +576,23 @@ func (d *Driver) Get(id, mountLabel string) (_ containerfs.ContainerFS, retErr e
 		if retErr != nil {
 			if c := d.ctr.Decrement(mergedDir); c <= 0 {
 				if mntErr := unix.Unmount(mergedDir, 0); mntErr != nil {
-					logrus.Errorf("error unmounting %v: %v", mergedDir, mntErr)
+					logger.Errorf("error unmounting %v: %v", mergedDir, mntErr)
 				}
 				// Cleanup the created merged directory; see the comment in Put's rmdir
 				if rmErr := unix.Rmdir(mergedDir); rmErr != nil && !os.IsNotExist(rmErr) {
-					logrus.Debugf("Failed to remove %s: %v: %v", id, rmErr, err)
+					logger.Debugf("Failed to remove %s: %v: %v", id, rmErr, err)
 				}
 			}
 		}
 	}()
 
-	workDir := path.Join(dir, "work")
+	workDir := path.Join(dir, workDirName)
 	splitLowers := strings.Split(string(lowers), ":")
 	absLowers := make([]string, len(splitLowers))
 	for i, s := range splitLowers {
 		absLowers[i] = path.Join(d.home, s)
 	}
-	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", strings.Join(absLowers, ":"), path.Join(dir, "diff"), path.Join(dir, "work"))
+	opts := indexOff + "lowerdir=" + strings.Join(absLowers, ":") + ",upperdir=" + diffDir + ",workdir=" + workDir
 	mountData := label.FormatMountLabel(opts, mountLabel)
 	mount := unix.Mount
 	mountTarget := mergedDir
@@ -578,27 +601,18 @@ func (d *Driver) Get(id, mountLabel string) (_ containerfs.ContainerFS, retErr e
 	if err != nil {
 		return nil, err
 	}
-	if err := idtools.MkdirAndChown(mergedDir, 0700, idtools.IDPair{rootUID, rootGID}); err != nil {
+	if err := idtools.MkdirAndChown(mergedDir, 0700, idtools.Identity{UID: rootUID, GID: rootGID}); err != nil {
 		return nil, err
 	}
 
 	pageSize := unix.Getpagesize()
-
-	// Go can return a larger page size than supported by the system
-	// as of go 1.7. This will be fixed in 1.8 and this block can be
-	// removed when building with 1.8.
-	// See https://github.com/golang/go/commit/1b9499b06989d2831e5b156161d6c07642926ee1
-	// See https://github.com/docker/docker/issues/27384
-	if pageSize > 4096 {
-		pageSize = 4096
-	}
 
 	// Use relative paths and mountFrom when the mount data has exceeded
 	// the page size. The mount syscall fails if the mount data cannot
 	// fit within a page and relative links make the mount data much
 	// smaller at the expense of requiring a fork exec to chroot.
 	if len(mountData) > pageSize {
-		opts = fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", string(lowers), path.Join(id, "diff"), path.Join(id, "work"))
+		opts = indexOff + "lowerdir=" + string(lowers) + ",upperdir=" + path.Join(id, diffDirName) + ",workdir=" + path.Join(id, workDirName)
 		mountData = label.FormatMountLabel(opts, mountLabel)
 		if len(mountData) > pageSize {
 			return nil, fmt.Errorf("cannot mount layer, mount label too large %d", len(mountData))
@@ -607,7 +621,7 @@ func (d *Driver) Get(id, mountLabel string) (_ containerfs.ContainerFS, retErr e
 		mount = func(source string, target string, mType string, flags uintptr, label string) error {
 			return mountFrom(d.home, source, target, mType, flags, label)
 		}
-		mountTarget = path.Join(id, "merged")
+		mountTarget = path.Join(id, mergedDirName)
 	}
 
 	if err := mount("overlay", mountTarget, "overlay", 0, mountData); err != nil {
@@ -616,7 +630,7 @@ func (d *Driver) Get(id, mountLabel string) (_ containerfs.ContainerFS, retErr e
 
 	// chown "workdir/work" to the remapped root UID/GID. Overlay fs inside a
 	// user namespace requires this to move a directory from lower to upper.
-	if err := os.Chown(path.Join(workDir, "work"), rootUID, rootGID); err != nil {
+	if err := os.Chown(path.Join(workDir, workDirName), rootUID, rootGID); err != nil {
 		return nil, err
 	}
 
@@ -639,12 +653,12 @@ func (d *Driver) Put(id string) error {
 		return err
 	}
 
-	mountpoint := path.Join(dir, "merged")
+	mountpoint := path.Join(dir, mergedDirName)
 	if count := d.ctr.Decrement(mountpoint); count > 0 {
 		return nil
 	}
 	if err := unix.Unmount(mountpoint, unix.MNT_DETACH); err != nil {
-		logrus.Debugf("Failed to unmount %s overlay: %s - %v", id, mountpoint, err)
+		logger.Debugf("Failed to unmount %s overlay: %s - %v", id, mountpoint, err)
 	}
 	// Remove the mountpoint here. Removing the mountpoint (in newer kernels)
 	// will cause all other instances of this mount in other mount namespaces
@@ -654,7 +668,7 @@ func (d *Driver) Put(id string) error {
 	// fail on older kernels which don't have
 	// torvalds/linux@8ed936b5671bfb33d89bc60bdcc7cf0470ba52fe applied.
 	if err := unix.Rmdir(mountpoint); err != nil && !os.IsNotExist(err) {
-		logrus.Debugf("Failed to remove %s overlay: %v", id, err)
+		logger.Debugf("Failed to remove %s overlay: %v", id, err)
 	}
 	return nil
 }
@@ -695,7 +709,7 @@ func (d *Driver) ApplyDiff(id string, parent string, diff io.Reader) (size int64
 
 	applyDir := d.getDiffPath(id)
 
-	logrus.Debugf("Applying tar in %s", applyDir)
+	logger.Debugf("Applying tar in %s", applyDir)
 	// Overlay doesn't need the parent id to apply the diff
 	if err := untar(diff, applyDir, &archive.TarOptions{
 		UIDMaps:        d.uidMaps,
@@ -706,13 +720,13 @@ func (d *Driver) ApplyDiff(id string, parent string, diff io.Reader) (size int64
 		return 0, err
 	}
 
-	return directory.Size(applyDir)
+	return directory.Size(context.TODO(), applyDir)
 }
 
 func (d *Driver) getDiffPath(id string) string {
 	dir := d.dir(id)
 
-	return path.Join(dir, "diff")
+	return path.Join(dir, diffDirName)
 }
 
 // DiffSize calculates the changes between the specified id
@@ -722,7 +736,7 @@ func (d *Driver) DiffSize(id, parent string) (size int64, err error) {
 	if useNaiveDiff(d.home) || !d.isParent(id, parent) {
 		return d.naiveDiff.DiffSize(id, parent)
 	}
-	return directory.Size(d.getDiffPath(id))
+	return directory.Size(context.TODO(), d.getDiffPath(id))
 }
 
 // Diff produces an archive of the changes between the specified
@@ -733,7 +747,7 @@ func (d *Driver) Diff(id, parent string) (io.ReadCloser, error) {
 	}
 
 	diffPath := d.getDiffPath(id)
-	logrus.Debugf("Tar with options on %s", diffPath)
+	logger.Debugf("Tar with options on %s", diffPath)
 	return archive.TarWithOptions(diffPath, &archive.TarOptions{
 		Compression:    archive.Uncompressed,
 		UIDMaps:        d.uidMaps,
@@ -745,16 +759,5 @@ func (d *Driver) Diff(id, parent string) (io.ReadCloser, error) {
 // Changes produces a list of changes between the specified layer and its
 // parent layer. If parent is "", then all changes will be ADD changes.
 func (d *Driver) Changes(id, parent string) ([]archive.Change, error) {
-	if useNaiveDiff(d.home) || !d.isParent(id, parent) {
-		return d.naiveDiff.Changes(id, parent)
-	}
-	// Overlay doesn't have snapshots, so we need to get changes from all parent
-	// layers.
-	diffPath := d.getDiffPath(id)
-	layers, err := d.getLowerDirs(id)
-	if err != nil {
-		return nil, err
-	}
-
-	return archive.OverlayChanges(layers, diffPath)
+	return d.naiveDiff.Changes(id, parent)
 }

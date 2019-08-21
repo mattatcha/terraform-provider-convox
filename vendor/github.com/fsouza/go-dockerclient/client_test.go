@@ -6,7 +6,9 @@ package docker
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -19,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/net/context"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 func TestNewAPIClient(t *testing.T) {
@@ -216,13 +218,17 @@ func TestNewClientInvalidEndpoint(t *testing.T) {
 		"https://localhost:-20",
 	}
 	for _, c := range cases {
-		client, err := NewClient(c)
-		if client != nil {
-			t.Errorf("Want <nil> client for invalid endpoint, got %#v.", client)
-		}
-		if !reflect.DeepEqual(err, ErrInvalidEndpoint) {
-			t.Errorf("NewClient(%q): Got invalid error for invalid endpoint. Want %#v. Got %#v.", c, ErrInvalidEndpoint, err)
-		}
+		testCase := c
+		t.Run(testCase, func(t *testing.T) {
+			t.Parallel()
+			client, err := NewClient(testCase)
+			if client != nil {
+				t.Errorf("Want <nil> client for invalid endpoint, got %#v.", client)
+			}
+			if !reflect.DeepEqual(err, ErrInvalidEndpoint) {
+				t.Errorf("NewClient(%q): Got invalid error for invalid endpoint. Want %#v. Got %#v.", testCase, ErrInvalidEndpoint, err)
+			}
+		})
 	}
 }
 
@@ -230,19 +236,22 @@ func TestNewClientNoSchemeEndpoint(t *testing.T) {
 	t.Parallel()
 	cases := []string{"localhost", "localhost:8080"}
 	for _, c := range cases {
-		client, err := NewClient(c)
-		if client == nil {
-			t.Errorf("Want client for scheme-less endpoint, got <nil>")
-		}
-		if err != nil {
-			t.Errorf("Got unexpected error scheme-less endpoint: %q", err)
-		}
+		testCase := c
+		t.Run(testCase, func(t *testing.T) {
+			client, err := NewClient(testCase)
+			if client == nil {
+				t.Errorf("Want client for scheme-less endpoint, got <nil>")
+			}
+			if err != nil {
+				t.Errorf("Got unexpected error scheme-less endpoint: %q", err)
+			}
+		})
 	}
 }
 
 func TestNewTLSClient(t *testing.T) {
 	t.Parallel()
-	var tests = []struct {
+	tests := []struct {
 		endpoint string
 		expected string
 	}{
@@ -252,14 +261,18 @@ func TestNewTLSClient(t *testing.T) {
 		{"http://localhost:4000", "https"},
 	}
 	for _, tt := range tests {
-		client, err := newTLSClient(tt.endpoint)
-		if err != nil {
-			t.Error(err)
-		}
-		got := client.endpointURL.Scheme
-		if got != tt.expected {
-			t.Errorf("endpointURL.Scheme: Got %s. Want %s.", got, tt.expected)
-		}
+		test := tt
+		t.Run(test.endpoint, func(t *testing.T) {
+			t.Parallel()
+			client, err := newTLSClient(test.endpoint)
+			if err != nil {
+				t.Error(err)
+			}
+			got := client.endpointURL.Scheme
+			if got != test.expected {
+				t.Errorf("endpointURL.Scheme: Got %s. Want %s.", got, test.expected)
+			}
+		})
 	}
 }
 
@@ -276,7 +289,7 @@ func TestEndpoint(t *testing.T) {
 
 func TestGetURL(t *testing.T) {
 	t.Parallel()
-	var tests = []struct {
+	tests := []struct {
 		endpoint string
 		path     string
 		expected string
@@ -289,19 +302,23 @@ func TestGetURL(t *testing.T) {
 		{nativeRealEndpoint, "/containers", "/containers"},
 	}
 	for _, tt := range tests {
-		client, _ := NewClient(tt.endpoint)
-		client.endpoint = tt.endpoint
-		client.SkipServerVersionCheck = true
-		got := client.getURL(tt.path)
-		if got != tt.expected {
-			t.Errorf("getURL(%q): Got %s. Want %s.", tt.path, got, tt.expected)
-		}
+		test := tt
+		t.Run(test.endpoint+test.path, func(t *testing.T) {
+			t.Parallel()
+			client, _ := NewClient(test.endpoint)
+			client.endpoint = test.endpoint
+			client.SkipServerVersionCheck = true
+			got := client.getURL(test.path)
+			if got != test.expected {
+				t.Errorf("getURL(%q): Got %s. Want %s.", test.path, got, test.expected)
+			}
+		})
 	}
 }
 
 func TestGetFakeNativeURL(t *testing.T) {
 	t.Parallel()
-	var tests = []struct {
+	tests := []struct {
 		endpoint string
 		path     string
 		expected string
@@ -311,13 +328,17 @@ func TestGetFakeNativeURL(t *testing.T) {
 		{nativeRealEndpoint, "/containers/ps", "http://unix.sock/containers/ps"},
 	}
 	for _, tt := range tests {
-		client, _ := NewClient(tt.endpoint)
-		client.endpoint = tt.endpoint
-		client.SkipServerVersionCheck = true
-		got := client.getFakeNativeURL(tt.path)
-		if got != tt.expected {
-			t.Errorf("getURL(%q): Got %s. Want %s.", tt.path, got, tt.expected)
-		}
+		test := tt
+		t.Run(test.path, func(t *testing.T) {
+			t.Parallel()
+			client, _ := NewClient(test.endpoint)
+			client.endpoint = test.endpoint
+			client.SkipServerVersionCheck = true
+			got := client.getFakeNativeURL(test.path)
+			if got != test.expected {
+				t.Errorf("getURL(%q): Got %s. Want %s.", test.path, got, test.expected)
+			}
+		})
 	}
 }
 
@@ -344,7 +365,7 @@ func TestQueryString(t *testing.T) {
 	v := float32(2.4)
 	f32QueryString := fmt.Sprintf("w=%s&x=10&y=10.35", strconv.FormatFloat(float64(v), 'f', -1, 64))
 	jsonPerson := url.QueryEscape(`{"Name":"gopher","age":4}`)
-	var tests = []struct {
+	tests := []struct {
 		input interface{}
 		want  string
 	}{
@@ -364,16 +385,20 @@ func TestQueryString(t *testing.T) {
 		{"not_a_struct", ""},
 	}
 	for _, tt := range tests {
-		got := queryString(tt.input)
-		if got != tt.want {
-			t.Errorf("queryString(%v). Want %q. Got %q.", tt.input, tt.want, got)
-		}
+		test := tt
+		t.Run("", func(t *testing.T) {
+			t.Parallel()
+			got := queryString(test.input)
+			if got != test.want {
+				t.Errorf("queryString(%v). Want %q. Got %q.", test.input, test.want, got)
+			}
+		})
 	}
 }
 
 func TestAPIVersions(t *testing.T) {
 	t.Parallel()
-	var tests = []struct {
+	tests := []struct {
 		a                              string
 		b                              string
 		expectedALessThanB             bool
@@ -401,21 +426,25 @@ func TestAPIVersions(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		a, _ := NewAPIVersion(tt.a)
-		b, _ := NewAPIVersion(tt.b)
+		test := tt
+		t.Run(test.a+test.b, func(t *testing.T) {
+			t.Parallel()
+			a, _ := NewAPIVersion(test.a)
+			b, _ := NewAPIVersion(test.b)
 
-		if tt.expectedALessThanB && !a.LessThan(b) {
-			t.Errorf("Expected %#v < %#v", a, b)
-		}
-		if tt.expectedALessThanOrEqualToB && !a.LessThanOrEqualTo(b) {
-			t.Errorf("Expected %#v <= %#v", a, b)
-		}
-		if tt.expectedAGreaterThanB && !a.GreaterThan(b) {
-			t.Errorf("Expected %#v > %#v", a, b)
-		}
-		if tt.expectedAGreaterThanOrEqualToB && !a.GreaterThanOrEqualTo(b) {
-			t.Errorf("Expected %#v >= %#v", a, b)
-		}
+			if test.expectedALessThanB && !a.LessThan(b) {
+				t.Errorf("Expected %#v < %#v", a, b)
+			}
+			if test.expectedALessThanOrEqualToB && !a.LessThanOrEqualTo(b) {
+				t.Errorf("Expected %#v <= %#v", a, b)
+			}
+			if test.expectedAGreaterThanB && !a.GreaterThan(b) {
+				t.Errorf("Expected %#v > %#v", a, b)
+			}
+			if test.expectedAGreaterThanOrEqualToB && !a.GreaterThanOrEqualTo(b) {
+				t.Errorf("Expected %#v >= %#v", a, b)
+			}
+		})
 	}
 }
 
@@ -490,6 +519,7 @@ func TestClientStreamTimeoutNotHit(t *testing.T) {
 			time.Sleep(100 * time.Millisecond)
 		}
 	}))
+	defer srv.Close()
 	client, err := NewClient(srv.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -521,6 +551,7 @@ func TestClientStreamInactivityTimeout(t *testing.T) {
 			time.Sleep(500 * time.Millisecond)
 		}
 	}))
+	defer srv.Close()
 	client, err := NewClient(srv.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -548,18 +579,19 @@ func TestClientStreamContextDeadline(t *testing.T) {
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(time.Second)
 		fmt.Fprint(w, "def\n")
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()
 		}
 	}))
+	defer srv.Close()
 	client, err := NewClient(srv.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var w bytes.Buffer
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
 	defer cancel()
 	err = client.stream("POST", "/image/create", streamOptions{
 		setRawTerminal: true,
@@ -589,6 +621,7 @@ func TestClientStreamContextCancel(t *testing.T) {
 			f.Flush()
 		}
 	}))
+	defer srv.Close()
 	client, err := NewClient(srv.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -651,6 +684,7 @@ func TestClientStreamJSONDecode(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(mockPullOutput))
 	}))
+	defer srv.Close()
 	client, err := NewClient(srv.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -699,10 +733,14 @@ func (b *terminalBuffer) IsTerminal() bool {
 }
 
 func TestClientStreamJSONDecodeWithTerminal(t *testing.T) {
+	if !terminal.IsTerminal(int(os.Stdout.Fd())) {
+		t.Skip("requires a terminal")
+	}
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(mockPullOutput))
 	}))
+	defer srv.Close()
 	client, err := NewClient(srv.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -723,7 +761,7 @@ func TestClientStreamJSONDecodeWithTerminal(t *testing.T) {
 		"Status: Downloaded newer image for 192.168.50.4:5000/tsuru/static\n"
 	result := w.String()
 	if result != expected {
-		t.Fatalf("expected stream result %q, got: %q", expected, result)
+		t.Fatalf("wrong stream result\nwant %v\ngot:  %v", expected, result)
 	}
 }
 
@@ -732,6 +770,7 @@ func TestClientDoContextDeadline(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(500 * time.Millisecond)
 	}))
+	defer srv.Close()
 	client, err := NewClient(srv.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -751,6 +790,7 @@ func TestClientDoContextCancel(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(500 * time.Millisecond)
 	}))
+	defer srv.Close()
 	client, err := NewClient(srv.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -793,7 +833,7 @@ func TestClientStreamTimeoutNativeClient(t *testing.T) {
 	err = client.stream("POST", "/image/create", streamOptions{
 		setRawTerminal:    true,
 		stdout:            &w,
-		inactivityTimeout: 100 * time.Millisecond,
+		inactivityTimeout: 50 * time.Millisecond,
 	})
 	if err != ErrInactivityTimeout {
 		t.Fatalf("expected request canceled error, got: %s", err)
@@ -804,6 +844,32 @@ func TestClientStreamTimeoutNativeClient(t *testing.T) {
 		t.Fatalf("expected stream result %q, got: %q", expected, result)
 	}
 }
+
+func TestClientStreamJSONDecoderFailingOutputWriter(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "{}")
+		time.Sleep(500 * time.Millisecond)
+	}))
+	defer srv.Close()
+	client, err := NewClient(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var w eofWriter
+	err = client.stream("POST", "/image/create", streamOptions{
+		setRawTerminal: true,
+		useJSONDecoder: true,
+		stdout:         &w,
+	})
+	if err != io.EOF {
+		t.Fatalf("expected eof error, got: %s", err)
+	}
+}
+
+type eofWriter struct{}
+
+func (w eofWriter) Write(b []byte) (int, error) { return len(b), io.EOF }
 
 type FakeRoundTripper struct {
 	message  string

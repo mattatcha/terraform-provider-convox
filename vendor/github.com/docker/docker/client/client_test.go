@@ -2,22 +2,24 @@ package client // import "github.com/docker/docker/client"
 
 import (
 	"bytes"
+	"context"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/docker/docker/api"
 	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/internal/testutil"
-	"github.com/gotestyourself/gotestyourself/assert"
-	is "github.com/gotestyourself/gotestyourself/assert/cmp"
-	"github.com/gotestyourself/gotestyourself/env"
-	"github.com/gotestyourself/gotestyourself/skip"
+	"gotest.tools/assert"
+	is "gotest.tools/assert/cmp"
+	"gotest.tools/env"
+	"gotest.tools/skip"
 )
 
-func TestNewEnvClient(t *testing.T) {
+func TestNewClientWithOpsFromEnv(t *testing.T) {
 	skip.If(t, runtime.GOOS == "windows")
 
 	testcases := []struct {
@@ -87,7 +89,7 @@ func TestNewEnvClient(t *testing.T) {
 	defer env.PatchAll(t, nil)()
 	for _, c := range testcases {
 		env.PatchAll(t, c.envs)
-		apiclient, err := NewEnvClient()
+		apiclient, err := NewClientWithOpts(FromEnv)
 		if c.expectedError != "" {
 			assert.Check(t, is.Error(err, c.expectedError), c.doc)
 		} else {
@@ -124,9 +126,10 @@ func TestGetAPIPath(t *testing.T) {
 		{"v1.22", "/networks/kiwl$%^", nil, "/v1.22/networks/kiwl$%25%5E"},
 	}
 
+	ctx := context.TODO()
 	for _, testcase := range testcases {
 		c := Client{version: testcase.version, basePath: "/"}
-		actual := c.getAPIPath(testcase.path, testcase.query)
+		actual := c.getAPIPath(ctx, testcase.path, testcase.query)
 		assert.Check(t, is.Equal(actual, testcase.expected))
 	}
 }
@@ -162,13 +165,13 @@ func TestParseHostURL(t *testing.T) {
 	for _, testcase := range testcases {
 		actual, err := ParseHostURL(testcase.host)
 		if testcase.expectedErr != "" {
-			testutil.ErrorContains(t, err, testcase.expectedErr)
+			assert.Check(t, is.ErrorContains(err, testcase.expectedErr))
 		}
 		assert.Check(t, is.DeepEqual(testcase.expected, actual))
 	}
 }
 
-func TestNewEnvClientSetsDefaultVersion(t *testing.T) {
+func TestNewClientWithOpsFromEnvSetsDefaultVersion(t *testing.T) {
 	defer env.PatchAll(t, map[string]string{
 		"DOCKER_HOST":        "",
 		"DOCKER_API_VERSION": "",
@@ -176,7 +179,7 @@ func TestNewEnvClientSetsDefaultVersion(t *testing.T) {
 		"DOCKER_CERT_PATH":   "",
 	})()
 
-	client, err := NewEnvClient()
+	client, err := NewClientWithOpts(FromEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +187,7 @@ func TestNewEnvClientSetsDefaultVersion(t *testing.T) {
 
 	expected := "1.22"
 	os.Setenv("DOCKER_API_VERSION", expected)
-	client, err = NewEnvClient()
+	client, err = NewClientWithOpts(FromEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,9 +197,9 @@ func TestNewEnvClientSetsDefaultVersion(t *testing.T) {
 // TestNegotiateAPIVersionEmpty asserts that client.Client can
 // negotiate a compatible APIVersion when omitted
 func TestNegotiateAPIVersionEmpty(t *testing.T) {
-	defer env.PatchAll(t, map[string]string{"DOCKER_API_VERSION": ""})
+	defer env.PatchAll(t, map[string]string{"DOCKER_API_VERSION": ""})()
 
-	client, err := NewEnvClient()
+	client, err := NewClientWithOpts(FromEnv)
 	assert.NilError(t, err)
 
 	ping := types.Ping{
@@ -220,7 +223,7 @@ func TestNegotiateAPIVersionEmpty(t *testing.T) {
 // TestNegotiateAPIVersion asserts that client.Client can
 // negotiate a compatible APIVersion with the server
 func TestNegotiateAPIVersion(t *testing.T) {
-	client, err := NewEnvClient()
+	client, err := NewClientWithOpts(FromEnv)
 	assert.NilError(t, err)
 
 	expected := "1.21"
@@ -252,7 +255,7 @@ func TestNegotiateAPVersionOverride(t *testing.T) {
 	expected := "9.99"
 	defer env.PatchAll(t, map[string]string{"DOCKER_API_VERSION": expected})()
 
-	client, err := NewEnvClient()
+	client, err := NewClientWithOpts(FromEnv)
 	assert.NilError(t, err)
 
 	ping := types.Ping{
@@ -264,6 +267,55 @@ func TestNegotiateAPVersionOverride(t *testing.T) {
 	// test that we honored the env var
 	client.NegotiateAPIVersionPing(ping)
 	assert.Check(t, is.Equal(expected, client.version))
+}
+
+func TestNegotiateAPIVersionAutomatic(t *testing.T) {
+	var pingVersion string
+	httpClient := newMockClient(func(req *http.Request) (*http.Response, error) {
+		resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}}
+		resp.Header.Set("API-Version", pingVersion)
+		resp.Body = ioutil.NopCloser(strings.NewReader("OK"))
+		return resp, nil
+	})
+
+	client, err := NewClientWithOpts(
+		WithHTTPClient(httpClient),
+		WithAPIVersionNegotiation(),
+	)
+	assert.NilError(t, err)
+
+	ctx := context.Background()
+	assert.Equal(t, client.ClientVersion(), api.DefaultVersion)
+
+	// First request should trigger negotiation
+	pingVersion = "1.35"
+	_, _ = client.Info(ctx)
+	assert.Equal(t, client.ClientVersion(), "1.35")
+
+	// Once successfully negotiated, subsequent requests should not re-negotiate
+	pingVersion = "1.25"
+	_, _ = client.Info(ctx)
+	assert.Equal(t, client.ClientVersion(), "1.35")
+}
+
+// TestNegotiateAPIVersionWithEmptyVersion asserts that initializing a client
+// with an empty version string does still allow API-version negotiation
+func TestNegotiateAPIVersionWithEmptyVersion(t *testing.T) {
+	client, err := NewClientWithOpts(WithVersion(""))
+	assert.NilError(t, err)
+
+	client.NegotiateAPIVersionPing(types.Ping{APIVersion: "1.35"})
+	assert.Equal(t, client.version, "1.35")
+}
+
+// TestNegotiateAPIVersionWithFixedVersion asserts that initializing a client
+// with an fixed version disables API-version negotiation
+func TestNegotiateAPIVersionWithFixedVersion(t *testing.T) {
+	client, err := NewClientWithOpts(WithVersion("1.35"))
+	assert.NilError(t, err)
+
+	client.NegotiateAPIVersionPing(types.Ping{APIVersion: "1.31"})
+	assert.Equal(t, client.version, "1.35")
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

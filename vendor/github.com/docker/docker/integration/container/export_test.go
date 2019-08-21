@@ -7,27 +7,25 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types"
-	containerTypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/integration-cli/daemon"
 	"github.com/docker/docker/integration/internal/container"
-	"github.com/docker/docker/integration/internal/request"
+	"github.com/docker/docker/internal/test/daemon"
 	"github.com/docker/docker/pkg/jsonmessage"
-	"github.com/gotestyourself/gotestyourself/assert"
-	is "github.com/gotestyourself/gotestyourself/assert/cmp"
-	"github.com/gotestyourself/gotestyourself/poll"
-	"github.com/gotestyourself/gotestyourself/skip"
+	"gotest.tools/assert"
+	is "gotest.tools/assert/cmp"
+	"gotest.tools/poll"
+	"gotest.tools/skip"
 )
 
 // export an image and try to import it into a new one
 func TestExportContainerAndImportImage(t *testing.T) {
-	skip.If(t, testEnv.DaemonInfo.OSType != "linux")
+	skip.If(t, testEnv.DaemonInfo.OSType == "windows")
 
 	defer setupTest(t)()
-	client := request.NewAPIClient(t)
+	client := testEnv.APIClient()
 	ctx := context.Background()
 
-	cID := container.Run(t, ctx, client, container.WithCmd("true"))
+	cID := container.Run(ctx, t, client, container.WithCmd("true"))
 	poll.WaitOn(t, container.IsStopped(ctx, client, cID), poll.WithDelay(100*time.Millisecond))
 
 	reference := "repo/testexp:v1"
@@ -59,26 +57,20 @@ func TestExportContainerAndImportImage(t *testing.T) {
 // can be exported (as reported in #36561). To satisfy this
 // condition, daemon restart is needed after container creation.
 func TestExportContainerAfterDaemonRestart(t *testing.T) {
-	skip.If(t, testEnv.DaemonInfo.OSType != "linux")
-	skip.If(t, testEnv.IsRemoteDaemon())
+	skip.If(t, testEnv.DaemonInfo.OSType == "windows")
+	skip.If(t, testEnv.IsRemoteDaemon)
 
-	d := daemon.New(t, "", "dockerd", daemon.Config{})
-	client, err := d.NewClient()
-	assert.NilError(t, err)
+	d := daemon.New(t)
+	c := d.NewClientT(t)
 
 	d.StartWithBusybox(t)
 	defer d.Stop(t)
 
 	ctx := context.Background()
-	cfg := containerTypes.Config{
-		Image: "busybox",
-		Cmd:   []string{"top"},
-	}
-	ctr, err := client.ContainerCreate(ctx, &cfg, nil, nil, "")
-	assert.NilError(t, err)
+	ctrID := container.Create(ctx, t, c)
 
 	d.Restart(t)
 
-	_, err = client.ContainerExport(ctx, ctr.ID)
+	_, err := c.ContainerExport(ctx, ctrID)
 	assert.NilError(t, err)
 }

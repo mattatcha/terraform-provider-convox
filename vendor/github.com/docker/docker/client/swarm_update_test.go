@@ -2,15 +2,15 @@ package client // import "github.com/docker/docker/client"
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strings"
 	"testing"
 
-	"golang.org/x/net/context"
-
 	"github.com/docker/docker/api/types/swarm"
+	"github.com/docker/docker/errdefs"
 )
 
 func TestSwarmUpdateError(t *testing.T) {
@@ -21,6 +21,9 @@ func TestSwarmUpdateError(t *testing.T) {
 	err := client.SwarmUpdate(context.Background(), swarm.Version{}, swarm.Spec{}, swarm.UpdateFlags{})
 	if err == nil || err.Error() != "Error response from daemon: Server error" {
 		t.Fatalf("expected a Server Error, got %v", err)
+	}
+	if !errdefs.IsSystem(err) {
+		t.Fatalf("expected a Server Error, got %T", err)
 	}
 }
 

@@ -1,6 +1,7 @@
 package dockerfile // import "github.com/docker/docker/builder/dockerfile"
 
 import (
+	"context"
 	"fmt"
 	"io"
 
@@ -11,7 +12,6 @@ import (
 	"github.com/docker/docker/pkg/stringid"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/net/context"
 )
 
 type containerManager struct {
@@ -29,7 +29,7 @@ func newContainerManager(docker builder.ExecBackend) *containerManager {
 
 // Create a container
 func (c *containerManager) Create(runConfig *container.Config, hostConfig *container.HostConfig) (container.ContainerCreateCreatedBody, error) {
-	container, err := c.backend.ContainerCreate(types.ContainerCreateConfig{
+	container, err := c.backend.ContainerCreateIgnoreImagesArgsEscaped(types.ContainerCreateConfig{
 		Config:     runConfig,
 		HostConfig: hostConfig,
 	})

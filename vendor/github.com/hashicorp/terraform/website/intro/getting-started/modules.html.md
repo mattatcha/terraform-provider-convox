@@ -53,7 +53,6 @@ provider "aws" {
 module "consul" {
   source = "hashicorp/consul/aws"
 
-  aws_region  = "us-east-1" # should match provider region
   num_servers = "3"
 }
 ```
@@ -181,7 +180,7 @@ a few minutes.
 ## Module Outputs
 
 Just as the module instance had input arguments such as `num_servers` above,
-module can also produce _output_ values, similar to resource attributes.
+a module can also produce _output_ values, similar to resource attributes.
 
 [The module's outputs reference](https://registry.terraform.io/modules/hashicorp/consul/aws?tab=outputs)
 describes all of the different values it produces. Overall, it exposes the

@@ -1,12 +1,11 @@
 package container // import "github.com/docker/docker/container"
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
-
-	"golang.org/x/net/context"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/go-units"
@@ -18,7 +17,7 @@ import (
 type State struct {
 	sync.Mutex
 	// Note that `Running` and `Paused` are not mutually exclusive:
-	// When pausing a container (on Linux), the cgroups freezer is used to suspend
+	// When pausing a container (on Linux), the freezer cgroup is used to suspend
 	// all processes in the container. Freezing the process requires the process to
 	// be running. As a result, paused containers are both `Running` _and_ `Paused`.
 	Running           bool

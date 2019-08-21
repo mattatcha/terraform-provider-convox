@@ -3,24 +3,26 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"path"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/api/types/swarm/runtime"
 	"github.com/docker/docker/integration-cli/checker"
+	"github.com/docker/docker/integration-cli/cli"
+	"github.com/docker/docker/integration-cli/cli/build"
 	"github.com/docker/docker/integration-cli/daemon"
-	"github.com/docker/docker/integration-cli/fixtures/plugin"
+	testdaemon "github.com/docker/docker/internal/test/daemon"
 	"github.com/go-check/check"
-	"golang.org/x/net/context"
 	"golang.org/x/sys/unix"
+	"gotest.tools/assert"
+	"gotest.tools/icmd"
 )
 
-func setPortConfig(portConfig []swarm.PortConfig) daemon.ServiceConstructor {
+func setPortConfig(portConfig []swarm.PortConfig) testdaemon.ServiceConstructor {
 	return func(s *swarm.Service) {
 		if s.Spec.EndpointSpec == nil {
 			s.Spec.EndpointSpec = &swarm.EndpointSpec{}
@@ -44,18 +46,18 @@ func (s *DockerSwarmSuite) TestAPIServiceUpdatePort(c *check.C) {
 
 	// Inspect the service and verify port mapping.
 	updatedService := d.GetService(c, serviceID)
-	c.Assert(updatedService.Spec.EndpointSpec, check.NotNil)
-	c.Assert(len(updatedService.Spec.EndpointSpec.Ports), check.Equals, 1)
-	c.Assert(updatedService.Spec.EndpointSpec.Ports[0].TargetPort, check.Equals, uint32(8083))
-	c.Assert(updatedService.Spec.EndpointSpec.Ports[0].PublishedPort, check.Equals, uint32(8082))
+	assert.Assert(c, updatedService.Spec.EndpointSpec != nil)
+	assert.Equal(c, len(updatedService.Spec.EndpointSpec.Ports), 1)
+	assert.Equal(c, updatedService.Spec.EndpointSpec.Ports[0].TargetPort, uint32(8083))
+	assert.Equal(c, updatedService.Spec.EndpointSpec.Ports[0].PublishedPort, uint32(8082))
 }
 
 func (s *DockerSwarmSuite) TestAPISwarmServicesEmptyList(c *check.C) {
 	d := s.AddDaemon(c, true, true)
 
 	services := d.ListServices(c)
-	c.Assert(services, checker.NotNil)
-	c.Assert(len(services), checker.Equals, 0, check.Commentf("services: %#v", services))
+	assert.Assert(c, services != nil)
+	assert.Assert(c, len(services) == 0, "services: %#v", services)
 }
 
 func (s *DockerSwarmSuite) TestAPISwarmServicesCreate(c *check.C) {
@@ -65,23 +67,22 @@ func (s *DockerSwarmSuite) TestAPISwarmServicesCreate(c *check.C) {
 	id := d.CreateService(c, simpleTestService, setInstances(instances))
 	waitAndAssert(c, defaultReconciliationTimeout, d.CheckActiveContainerCount, checker.Equals, instances)
 
-	cli, err := d.NewClient()
-	c.Assert(err, checker.IsNil)
-	defer cli.Close()
+	client := d.NewClientT(c)
+	defer client.Close()
 
 	options := types.ServiceInspectOptions{InsertDefaults: true}
 
 	// insertDefaults inserts UpdateConfig when service is fetched by ID
-	resp, _, err := cli.ServiceInspectWithRaw(context.Background(), id, options)
+	resp, _, err := client.ServiceInspectWithRaw(context.Background(), id, options)
 	out := fmt.Sprintf("%+v", resp)
-	c.Assert(err, checker.IsNil)
-	c.Assert(out, checker.Contains, "UpdateConfig")
+	assert.NilError(c, err)
+	assert.Assert(c, strings.Contains(out, "UpdateConfig"))
 
 	// insertDefaults inserts UpdateConfig when service is fetched by ID
-	resp, _, err = cli.ServiceInspectWithRaw(context.Background(), "top", options)
+	resp, _, err = client.ServiceInspectWithRaw(context.Background(), "top", options)
 	out = fmt.Sprintf("%+v", resp)
-	c.Assert(err, checker.IsNil)
-	c.Assert(string(out), checker.Contains, "UpdateConfig")
+	assert.NilError(c, err)
+	assert.Assert(c, strings.Contains(out, "UpdateConfig"))
 
 	service := d.GetService(c, id)
 	instances = 5
@@ -140,7 +141,7 @@ func (s *DockerSwarmSuite) TestAPISwarmServicesCreateGlobal(c *check.C) {
 
 func (s *DockerSwarmSuite) TestAPISwarmServicesUpdate(c *check.C) {
 	const nodeCount = 3
-	var daemons [nodeCount]*daemon.Swarm
+	var daemons [nodeCount]*daemon.Daemon
 	for i := 0; i < nodeCount; i++ {
 		daemons[i] = s.AddDaemon(c, true, i == 0)
 	}
@@ -155,7 +156,7 @@ func (s *DockerSwarmSuite) TestAPISwarmServicesUpdate(c *check.C) {
 	// create a different tag
 	for _, d := range daemons {
 		out, err := d.Cmd("tag", image1, image2)
-		c.Assert(err, checker.IsNil, check.Commentf(out))
+		assert.NilError(c, err, out)
 	}
 
 	// create service
@@ -187,7 +188,7 @@ func (s *DockerSwarmSuite) TestAPISwarmServicesUpdate(c *check.C) {
 	// Roll back to the previous version. This uses the CLI because
 	// rollback used to be a client-side operation.
 	out, err := daemons[0].Cmd("service", "update", "--detach", "--rollback", id)
-	c.Assert(err, checker.IsNil, check.Commentf(out))
+	assert.NilError(c, err, out)
 
 	// first batch
 	waitAndAssert(c, defaultReconciliationTimeout, daemons[0].CheckRunningTaskImages, checker.DeepEquals,
@@ -207,12 +208,12 @@ func (s *DockerSwarmSuite) TestAPISwarmServicesUpdateStartFirst(c *check.C) {
 	image2 := "testhealth:latest"
 
 	// service started from this image won't pass health check
-	_, _, err := d.BuildImageWithOut(image2,
-		`FROM busybox
+	result := cli.BuildCmd(c, image2, cli.Daemon(d),
+		build.WithDockerfile(`FROM busybox
 		HEALTHCHECK --interval=1s --timeout=30s --retries=1024 \
-		  CMD cat /status`,
-		true)
-	c.Check(err, check.IsNil)
+		  CMD cat /status`),
+	)
+	result.Assert(c, icmd.Success)
 
 	// create service
 	instances := 5
@@ -296,7 +297,7 @@ func (s *DockerSwarmSuite) TestAPISwarmServicesUpdateStartFirst(c *check.C) {
 	// Roll back to the previous version. This uses the CLI because
 	// rollback is a client-side operation.
 	out, err := d.Cmd("service", "update", "--detach", "--rollback", id)
-	c.Assert(err, checker.IsNil, check.Commentf(out))
+	assert.NilError(c, err, out)
 
 	// first batch
 	waitAndAssert(c, defaultReconciliationTimeout, d.CheckRunningTaskImages, checker.DeepEquals,
@@ -309,7 +310,7 @@ func (s *DockerSwarmSuite) TestAPISwarmServicesUpdateStartFirst(c *check.C) {
 
 func (s *DockerSwarmSuite) TestAPISwarmServicesFailedUpdate(c *check.C) {
 	const nodeCount = 3
-	var daemons [nodeCount]*daemon.Swarm
+	var daemons [nodeCount]*daemon.Daemon
 	for i := 0; i < nodeCount; i++ {
 		daemons[i] = s.AddDaemon(c, true, i == 0)
 	}
@@ -336,12 +337,12 @@ func (s *DockerSwarmSuite) TestAPISwarmServicesFailedUpdate(c *check.C) {
 	// should update 2 tasks and then pause
 	waitAndAssert(c, defaultReconciliationTimeout, daemons[0].CheckServiceUpdateState(id), checker.Equals, swarm.UpdateStatePaused)
 	v, _ := daemons[0].CheckServiceRunningTasks(id)(c)
-	c.Assert(v, checker.Equals, instances-2)
+	assert.Assert(c, v == instances-2)
 
 	// Roll back to the previous version. This uses the CLI because
 	// rollback used to be a client-side operation.
 	out, err := daemons[0].Cmd("service", "update", "--detach", "--rollback", id)
-	c.Assert(err, checker.IsNil, check.Commentf(out))
+	assert.NilError(c, err, out)
 
 	waitAndAssert(c, defaultReconciliationTimeout, daemons[0].CheckRunningTaskImages, checker.DeepEquals,
 		map[string]int{image1: instances})
@@ -349,7 +350,7 @@ func (s *DockerSwarmSuite) TestAPISwarmServicesFailedUpdate(c *check.C) {
 
 func (s *DockerSwarmSuite) TestAPISwarmServiceConstraintRole(c *check.C) {
 	const nodeCount = 3
-	var daemons [nodeCount]*daemon.Swarm
+	var daemons [nodeCount]*daemon.Daemon
 	for i := 0; i < nodeCount; i++ {
 		daemons[i] = s.AddDaemon(c, true, i == 0)
 	}
@@ -366,7 +367,7 @@ func (s *DockerSwarmSuite) TestAPISwarmServiceConstraintRole(c *check.C) {
 	tasks := daemons[0].GetServiceTasks(c, id)
 	for _, task := range tasks {
 		node := daemons[0].GetNode(c, task.NodeID)
-		c.Assert(node.Spec.Role, checker.Equals, swarm.NodeRoleWorker)
+		assert.Equal(c, node.Spec.Role, swarm.NodeRoleWorker)
 	}
 	//remove service
 	daemons[0].RemoveService(c, id)
@@ -380,7 +381,7 @@ func (s *DockerSwarmSuite) TestAPISwarmServiceConstraintRole(c *check.C) {
 	// validate tasks are running on manager nodes
 	for _, task := range tasks {
 		node := daemons[0].GetNode(c, task.NodeID)
-		c.Assert(node.Spec.Role, checker.Equals, swarm.NodeRoleManager)
+		assert.Equal(c, node.Spec.Role, swarm.NodeRoleManager)
 	}
 	//remove service
 	daemons[0].RemoveService(c, id)
@@ -395,20 +396,20 @@ func (s *DockerSwarmSuite) TestAPISwarmServiceConstraintRole(c *check.C) {
 	// validate tasks are not assigned to any node
 	tasks = daemons[0].GetServiceTasks(c, id)
 	for _, task := range tasks {
-		c.Assert(task.NodeID, checker.Equals, "")
+		assert.Equal(c, task.NodeID, "")
 	}
 }
 
 func (s *DockerSwarmSuite) TestAPISwarmServiceConstraintLabel(c *check.C) {
 	const nodeCount = 3
-	var daemons [nodeCount]*daemon.Swarm
+	var daemons [nodeCount]*daemon.Daemon
 	for i := 0; i < nodeCount; i++ {
 		daemons[i] = s.AddDaemon(c, true, i == 0)
 	}
 	// wait for nodes ready
 	waitAndAssert(c, 5*time.Second, daemons[0].CheckNodeReadyCount, checker.Equals, nodeCount)
 	nodes := daemons[0].ListNodes(c)
-	c.Assert(len(nodes), checker.Equals, nodeCount)
+	assert.Equal(c, len(nodes), nodeCount)
 
 	// add labels to nodes
 	daemons[0].UpdateNode(c, nodes[0].ID, func(n *swarm.Node) {
@@ -433,7 +434,7 @@ func (s *DockerSwarmSuite) TestAPISwarmServiceConstraintLabel(c *check.C) {
 	tasks := daemons[0].GetServiceTasks(c, id)
 	// validate all tasks are running on nodes[0]
 	for _, task := range tasks {
-		c.Assert(task.NodeID, checker.Equals, nodes[0].ID)
+		assert.Assert(c, task.NodeID == nodes[0].ID)
 	}
 	//remove service
 	daemons[0].RemoveService(c, id)
@@ -446,7 +447,7 @@ func (s *DockerSwarmSuite) TestAPISwarmServiceConstraintLabel(c *check.C) {
 	tasks = daemons[0].GetServiceTasks(c, id)
 	// validate all tasks are NOT running on nodes[0]
 	for _, task := range tasks {
-		c.Assert(task.NodeID, checker.Not(checker.Equals), nodes[0].ID)
+		assert.Assert(c, task.NodeID != nodes[0].ID)
 	}
 	//remove service
 	daemons[0].RemoveService(c, id)
@@ -460,7 +461,7 @@ func (s *DockerSwarmSuite) TestAPISwarmServiceConstraintLabel(c *check.C) {
 	tasks = daemons[0].GetServiceTasks(c, id)
 	// validate tasks are not assigned
 	for _, task := range tasks {
-		c.Assert(task.NodeID, checker.Equals, "")
+		assert.Assert(c, task.NodeID == "")
 	}
 	//remove service
 	daemons[0].RemoveService(c, id)
@@ -478,7 +479,7 @@ func (s *DockerSwarmSuite) TestAPISwarmServiceConstraintLabel(c *check.C) {
 	tasks = daemons[0].GetServiceTasks(c, id)
 	// validate tasks are not assigned
 	for _, task := range tasks {
-		c.Assert(task.NodeID, checker.Equals, "")
+		assert.Assert(c, task.NodeID == "")
 	}
 	// make nodes[1] fulfills the constraints
 	daemons[0].UpdateNode(c, nodes[1].ID, func(n *swarm.Node) {
@@ -490,20 +491,20 @@ func (s *DockerSwarmSuite) TestAPISwarmServiceConstraintLabel(c *check.C) {
 	waitAndAssert(c, defaultReconciliationTimeout, daemons[0].CheckServiceRunningTasks(id), checker.Equals, instances)
 	tasks = daemons[0].GetServiceTasks(c, id)
 	for _, task := range tasks {
-		c.Assert(task.NodeID, checker.Equals, nodes[1].ID)
+		assert.Assert(c, task.NodeID == nodes[1].ID)
 	}
 }
 
 func (s *DockerSwarmSuite) TestAPISwarmServicePlacementPrefs(c *check.C) {
 	const nodeCount = 3
-	var daemons [nodeCount]*daemon.Swarm
+	var daemons [nodeCount]*daemon.Daemon
 	for i := 0; i < nodeCount; i++ {
 		daemons[i] = s.AddDaemon(c, true, i == 0)
 	}
 	// wait for nodes ready
 	waitAndAssert(c, 5*time.Second, daemons[0].CheckNodeReadyCount, checker.Equals, nodeCount)
 	nodes := daemons[0].ListNodes(c)
-	c.Assert(len(nodes), checker.Equals, nodeCount)
+	assert.Equal(c, len(nodes), nodeCount)
 
 	// add labels to nodes
 	daemons[0].UpdateNode(c, nodes[0].ID, func(n *swarm.Node) {
@@ -531,13 +532,13 @@ func (s *DockerSwarmSuite) TestAPISwarmServicePlacementPrefs(c *check.C) {
 	for _, task := range tasks {
 		tasksOnNode[task.NodeID]++
 	}
-	c.Assert(tasksOnNode[nodes[0].ID], checker.Equals, 2)
-	c.Assert(tasksOnNode[nodes[1].ID], checker.Equals, 1)
-	c.Assert(tasksOnNode[nodes[2].ID], checker.Equals, 1)
+	assert.Assert(c, tasksOnNode[nodes[0].ID] == 2)
+	assert.Assert(c, tasksOnNode[nodes[1].ID] == 1)
+	assert.Assert(c, tasksOnNode[nodes[2].ID] == 1)
 }
 
 func (s *DockerSwarmSuite) TestAPISwarmServicesStateReporting(c *check.C) {
-	testRequires(c, SameHostDaemon)
+	testRequires(c, testEnv.IsLocalDaemon)
 	testRequires(c, DaemonIsLinux)
 
 	d1 := s.AddDaemon(c, true, true)
@@ -551,10 +552,10 @@ func (s *DockerSwarmSuite) TestAPISwarmServicesStateReporting(c *check.C) {
 
 	waitAndAssert(c, defaultReconciliationTimeout, reducedCheck(sumAsIntegers, d1.CheckActiveContainerCount, d2.CheckActiveContainerCount, d3.CheckActiveContainerCount), checker.Equals, instances)
 
-	getContainers := func() map[string]*daemon.Swarm {
-		m := make(map[string]*daemon.Swarm)
-		for _, d := range []*daemon.Swarm{d1, d2, d3} {
-			for _, id := range d.ActiveContainers() {
+	getContainers := func() map[string]*daemon.Daemon {
+		m := make(map[string]*daemon.Daemon)
+		for _, d := range []*daemon.Daemon{d1, d2, d3} {
+			for _, id := range d.ActiveContainers(c) {
 				m[id] = d
 			}
 		}
@@ -562,24 +563,24 @@ func (s *DockerSwarmSuite) TestAPISwarmServicesStateReporting(c *check.C) {
 	}
 
 	containers := getContainers()
-	c.Assert(containers, checker.HasLen, instances)
+	assert.Assert(c, len(containers) == instances)
 	var toRemove string
 	for i := range containers {
 		toRemove = i
 	}
 
 	_, err := containers[toRemove].Cmd("stop", toRemove)
-	c.Assert(err, checker.IsNil)
+	assert.NilError(c, err)
 
 	waitAndAssert(c, defaultReconciliationTimeout, reducedCheck(sumAsIntegers, d1.CheckActiveContainerCount, d2.CheckActiveContainerCount, d3.CheckActiveContainerCount), checker.Equals, instances)
 
 	containers2 := getContainers()
-	c.Assert(containers2, checker.HasLen, instances)
+	assert.Assert(c, len(containers2) == instances)
 	for i := range containers {
 		if i == toRemove {
-			c.Assert(containers2[i], checker.IsNil)
+			assert.Assert(c, containers2[i] == nil)
 		} else {
-			c.Assert(containers2[i], checker.NotNil)
+			assert.Assert(c, containers2[i] != nil)
 		}
 	}
 
@@ -590,97 +591,22 @@ func (s *DockerSwarmSuite) TestAPISwarmServicesStateReporting(c *check.C) {
 
 	// try with killing process outside of docker
 	pidStr, err := containers[toRemove].Cmd("inspect", "-f", "{{.State.Pid}}", toRemove)
-	c.Assert(err, checker.IsNil)
+	assert.NilError(c, err)
 	pid, err := strconv.Atoi(strings.TrimSpace(pidStr))
-	c.Assert(err, checker.IsNil)
-	c.Assert(unix.Kill(pid, unix.SIGKILL), checker.IsNil)
+	assert.NilError(c, err)
+	assert.NilError(c, unix.Kill(pid, unix.SIGKILL))
 
 	time.Sleep(time.Second) // give some time to handle the signal
 
 	waitAndAssert(c, defaultReconciliationTimeout, reducedCheck(sumAsIntegers, d1.CheckActiveContainerCount, d2.CheckActiveContainerCount, d3.CheckActiveContainerCount), checker.Equals, instances)
 
 	containers2 = getContainers()
-	c.Assert(containers2, checker.HasLen, instances)
+	assert.Assert(c, len(containers2) == instances)
 	for i := range containers {
 		if i == toRemove {
-			c.Assert(containers2[i], checker.IsNil)
+			assert.Assert(c, containers2[i] == nil)
 		} else {
-			c.Assert(containers2[i], checker.NotNil)
+			assert.Assert(c, containers2[i] != nil)
 		}
 	}
-}
-
-// Test plugins deployed via swarm services
-func (s *DockerSwarmSuite) TestAPISwarmServicesPlugin(c *check.C) {
-	testRequires(c, ExperimentalDaemon, DaemonIsLinux, IsAmd64)
-
-	reg := setupRegistry(c, false, "", "")
-	defer reg.Close()
-
-	repo := path.Join(privateRegistryURL, "swarm", "test:v1")
-	repo2 := path.Join(privateRegistryURL, "swarm", "test:v2")
-	name := "test"
-
-	err := plugin.CreateInRegistry(context.Background(), repo, nil)
-	c.Assert(err, checker.IsNil, check.Commentf("failed to create plugin"))
-	err = plugin.CreateInRegistry(context.Background(), repo2, nil)
-	c.Assert(err, checker.IsNil, check.Commentf("failed to create plugin"))
-
-	d1 := s.AddDaemon(c, true, true)
-	d2 := s.AddDaemon(c, true, true)
-	d3 := s.AddDaemon(c, true, false)
-
-	makePlugin := func(repo, name string, constraints []string) func(*swarm.Service) {
-		return func(s *swarm.Service) {
-			s.Spec.TaskTemplate.Runtime = "plugin"
-			s.Spec.TaskTemplate.PluginSpec = &runtime.PluginSpec{
-				Name:   name,
-				Remote: repo,
-			}
-			if constraints != nil {
-				s.Spec.TaskTemplate.Placement = &swarm.Placement{
-					Constraints: constraints,
-				}
-			}
-		}
-	}
-
-	id := d1.CreateService(c, makePlugin(repo, name, nil))
-	waitAndAssert(c, defaultReconciliationTimeout, d1.CheckPluginRunning(name), checker.True)
-	waitAndAssert(c, defaultReconciliationTimeout, d2.CheckPluginRunning(name), checker.True)
-	waitAndAssert(c, defaultReconciliationTimeout, d3.CheckPluginRunning(name), checker.True)
-
-	service := d1.GetService(c, id)
-	d1.UpdateService(c, service, makePlugin(repo2, name, nil))
-	waitAndAssert(c, defaultReconciliationTimeout, d1.CheckPluginImage(name), checker.Equals, repo2)
-	waitAndAssert(c, defaultReconciliationTimeout, d2.CheckPluginImage(name), checker.Equals, repo2)
-	waitAndAssert(c, defaultReconciliationTimeout, d3.CheckPluginImage(name), checker.Equals, repo2)
-	waitAndAssert(c, defaultReconciliationTimeout, d1.CheckPluginRunning(name), checker.True)
-	waitAndAssert(c, defaultReconciliationTimeout, d2.CheckPluginRunning(name), checker.True)
-	waitAndAssert(c, defaultReconciliationTimeout, d3.CheckPluginRunning(name), checker.True)
-
-	d1.RemoveService(c, id)
-	waitAndAssert(c, defaultReconciliationTimeout, d1.CheckPluginRunning(name), checker.False)
-	waitAndAssert(c, defaultReconciliationTimeout, d2.CheckPluginRunning(name), checker.False)
-	waitAndAssert(c, defaultReconciliationTimeout, d3.CheckPluginRunning(name), checker.False)
-
-	// constrain to managers only
-	id = d1.CreateService(c, makePlugin(repo, name, []string{"node.role==manager"}))
-	waitAndAssert(c, defaultReconciliationTimeout, d1.CheckPluginRunning(name), checker.True)
-	waitAndAssert(c, defaultReconciliationTimeout, d2.CheckPluginRunning(name), checker.True)
-	waitAndAssert(c, defaultReconciliationTimeout, d3.CheckPluginRunning(name), checker.False) // Not a manager, not running it
-	d1.RemoveService(c, id)
-	waitAndAssert(c, defaultReconciliationTimeout, d1.CheckPluginRunning(name), checker.False)
-	waitAndAssert(c, defaultReconciliationTimeout, d2.CheckPluginRunning(name), checker.False)
-	waitAndAssert(c, defaultReconciliationTimeout, d3.CheckPluginRunning(name), checker.False)
-
-	// with no name
-	id = d1.CreateService(c, makePlugin(repo, "", nil))
-	waitAndAssert(c, defaultReconciliationTimeout, d1.CheckPluginRunning(repo), checker.True)
-	waitAndAssert(c, defaultReconciliationTimeout, d2.CheckPluginRunning(repo), checker.True)
-	waitAndAssert(c, defaultReconciliationTimeout, d3.CheckPluginRunning(repo), checker.True)
-	d1.RemoveService(c, id)
-	waitAndAssert(c, defaultReconciliationTimeout, d1.CheckPluginRunning(repo), checker.False)
-	waitAndAssert(c, defaultReconciliationTimeout, d2.CheckPluginRunning(repo), checker.False)
-	waitAndAssert(c, defaultReconciliationTimeout, d3.CheckPluginRunning(repo), checker.False)
 }

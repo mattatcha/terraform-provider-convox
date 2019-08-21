@@ -1,3 +1,19 @@
+/*
+   Copyright The containerd Authors.
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
 package fstest
 
 import (
@@ -26,7 +42,17 @@ type resourceListDifference struct {
 }
 
 func (l resourceListDifference) HasDiff() bool {
-	return len(l.Additions) > 0 || len(l.Deletions) > 0 || len(l.Updates) > 0
+	if len(l.Deletions) > 0 || len(l.Updates) > 0 || (len(metadataFiles) == 0 && len(l.Additions) > 0) {
+		return true
+	}
+
+	for _, add := range l.Additions {
+		if ok, _ := metadataFiles[add.Path()]; !ok {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (l resourceListDifference) String() string {

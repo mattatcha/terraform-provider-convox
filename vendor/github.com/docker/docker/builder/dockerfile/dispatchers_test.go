@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/docker/docker/api/types"
@@ -11,26 +12,28 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/strslice"
 	"github.com/docker/docker/builder"
-	"github.com/docker/docker/builder/dockerfile/instructions"
-	"github.com/docker/docker/builder/dockerfile/shell"
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/pkg/system"
 	"github.com/docker/go-connections/nat"
-	"github.com/gotestyourself/gotestyourself/assert"
-	is "github.com/gotestyourself/gotestyourself/assert/cmp"
+	"github.com/moby/buildkit/frontend/dockerfile/instructions"
+	"github.com/moby/buildkit/frontend/dockerfile/parser"
+	"github.com/moby/buildkit/frontend/dockerfile/shell"
+	"gotest.tools/assert"
+	is "gotest.tools/assert/cmp"
 )
 
 func newBuilderWithMockBackend() *Builder {
 	mockBackend := &MockBackend{}
+	opts := &types.ImageBuildOptions{}
 	ctx := context.Background()
 	b := &Builder{
-		options:       &types.ImageBuildOptions{Platform: runtime.GOOS},
+		options:       opts,
 		docker:        mockBackend,
 		Stdout:        new(bytes.Buffer),
 		clientCtx:     ctx,
 		disableCommit: true,
 		imageSources: newImageSources(ctx, builderOptions{
-			Options: &types.ImageBuildOptions{Platform: runtime.GOOS},
+			Options: opts,
 			Backend: mockBackend,
 		}),
 		imageProber:      newImageProber(mockBackend, nil, false),
@@ -41,7 +44,7 @@ func newBuilderWithMockBackend() *Builder {
 
 func TestEnv2Variables(t *testing.T) {
 	b := newBuilderWithMockBackend()
-	sb := newDispatchRequest(b, '\\', nil, newBuildArgs(make(map[string]*string)), newStagesBuildResults())
+	sb := newDispatchRequest(b, '\\', nil, NewBuildArgs(make(map[string]*string)), newStagesBuildResults())
 	envCommand := &instructions.EnvCommand{
 		Env: instructions.KeyValuePairs{
 			instructions.KeyValuePair{Key: "var1", Value: "val1"},
@@ -60,7 +63,7 @@ func TestEnv2Variables(t *testing.T) {
 
 func TestEnvValueWithExistingRunConfigEnv(t *testing.T) {
 	b := newBuilderWithMockBackend()
-	sb := newDispatchRequest(b, '\\', nil, newBuildArgs(make(map[string]*string)), newStagesBuildResults())
+	sb := newDispatchRequest(b, '\\', nil, NewBuildArgs(make(map[string]*string)), newStagesBuildResults())
 	sb.state.runConfig.Env = []string{"var1=old", "var2=fromenv"}
 	envCommand := &instructions.EnvCommand{
 		Env: instructions.KeyValuePairs{
@@ -79,7 +82,7 @@ func TestEnvValueWithExistingRunConfigEnv(t *testing.T) {
 func TestMaintainer(t *testing.T) {
 	maintainerEntry := "Some Maintainer <maintainer@example.com>"
 	b := newBuilderWithMockBackend()
-	sb := newDispatchRequest(b, '\\', nil, newBuildArgs(make(map[string]*string)), newStagesBuildResults())
+	sb := newDispatchRequest(b, '\\', nil, NewBuildArgs(make(map[string]*string)), newStagesBuildResults())
 	cmd := &instructions.MaintainerCommand{Maintainer: maintainerEntry}
 	err := dispatch(sb, cmd)
 	assert.NilError(t, err)
@@ -91,7 +94,7 @@ func TestLabel(t *testing.T) {
 	labelValue := "value"
 
 	b := newBuilderWithMockBackend()
-	sb := newDispatchRequest(b, '\\', nil, newBuildArgs(make(map[string]*string)), newStagesBuildResults())
+	sb := newDispatchRequest(b, '\\', nil, NewBuildArgs(make(map[string]*string)), newStagesBuildResults())
 	cmd := &instructions.LabelCommand{
 		Labels: instructions.KeyValuePairs{
 			instructions.KeyValuePair{Key: labelName, Value: labelValue},
@@ -106,14 +109,14 @@ func TestLabel(t *testing.T) {
 
 func TestFromScratch(t *testing.T) {
 	b := newBuilderWithMockBackend()
-	sb := newDispatchRequest(b, '\\', nil, newBuildArgs(make(map[string]*string)), newStagesBuildResults())
+	sb := newDispatchRequest(b, '\\', nil, NewBuildArgs(make(map[string]*string)), newStagesBuildResults())
 	cmd := &instructions.Stage{
 		BaseName: "scratch",
 	}
 	err := initializeStage(sb, cmd)
 
 	if runtime.GOOS == "windows" && !system.LCOWSupported() {
-		assert.Check(t, is.Error(err, "Windows does not support FROM scratch"))
+		assert.Check(t, is.Error(err, "Linux containers are not supported on this system"))
 		return
 	}
 
@@ -133,13 +136,13 @@ func TestFromWithArg(t *testing.T) {
 	}
 	b := newBuilderWithMockBackend()
 	b.docker.(*MockBackend).getImageFunc = getImage
-	args := newBuildArgs(make(map[string]*string))
+	args := NewBuildArgs(make(map[string]*string))
 
 	val := "sometag"
-	metaArg := instructions.ArgCommand{
+	metaArg := instructions.ArgCommand{KeyValuePairOptional: instructions.KeyValuePairOptional{
 		Key:   "THETAG",
 		Value: &val,
-	}
+	}}
 	cmd := &instructions.Stage{
 		BaseName: "alpine:${THETAG}",
 	}
@@ -156,6 +159,22 @@ func TestFromWithArg(t *testing.T) {
 	assert.Check(t, is.Len(sb.state.buildArgs.GetAllMeta(), 1))
 }
 
+func TestFromWithArgButBuildArgsNotGiven(t *testing.T) {
+	b := newBuilderWithMockBackend()
+	args := NewBuildArgs(make(map[string]*string))
+
+	metaArg := instructions.ArgCommand{}
+	cmd := &instructions.Stage{
+		BaseName: "${THETAG}",
+	}
+	err := processMetaArg(metaArg, shell.NewLex('\\'), args)
+
+	sb := newDispatchRequest(b, '\\', nil, args, newStagesBuildResults())
+	assert.NilError(t, err)
+	err = initializeStage(sb, cmd)
+	assert.Error(t, err, "base name (${THETAG}) should not be blank")
+}
+
 func TestFromWithUndefinedArg(t *testing.T) {
 	tag, expected := "sometag", "expectedthisid"
 
@@ -165,7 +184,7 @@ func TestFromWithUndefinedArg(t *testing.T) {
 	}
 	b := newBuilderWithMockBackend()
 	b.docker.(*MockBackend).getImageFunc = getImage
-	sb := newDispatchRequest(b, '\\', nil, newBuildArgs(make(map[string]*string)), newStagesBuildResults())
+	sb := newDispatchRequest(b, '\\', nil, NewBuildArgs(make(map[string]*string)), newStagesBuildResults())
 
 	b.options.BuildArgs = map[string]*string{"THETAG": &tag}
 
@@ -182,8 +201,8 @@ func TestFromMultiStageWithNamedStage(t *testing.T) {
 	firstFrom := &instructions.Stage{BaseName: "someimg", Name: "base"}
 	secondFrom := &instructions.Stage{BaseName: "base"}
 	previousResults := newStagesBuildResults()
-	firstSB := newDispatchRequest(b, '\\', nil, newBuildArgs(make(map[string]*string)), previousResults)
-	secondSB := newDispatchRequest(b, '\\', nil, newBuildArgs(make(map[string]*string)), previousResults)
+	firstSB := newDispatchRequest(b, '\\', nil, NewBuildArgs(make(map[string]*string)), previousResults)
+	secondSB := newDispatchRequest(b, '\\', nil, NewBuildArgs(make(map[string]*string)), previousResults)
 	err := initializeStage(firstSB, firstFrom)
 	assert.NilError(t, err)
 	assert.Check(t, firstSB.state.hasFromImage())
@@ -196,7 +215,7 @@ func TestFromMultiStageWithNamedStage(t *testing.T) {
 
 func TestOnbuild(t *testing.T) {
 	b := newBuilderWithMockBackend()
-	sb := newDispatchRequest(b, '\\', nil, newBuildArgs(make(map[string]*string)), newStagesBuildResults())
+	sb := newDispatchRequest(b, '\\', nil, NewBuildArgs(make(map[string]*string)), newStagesBuildResults())
 	cmd := &instructions.OnbuildCommand{
 		Expression: "ADD . /app/src",
 	}
@@ -207,7 +226,7 @@ func TestOnbuild(t *testing.T) {
 
 func TestWorkdir(t *testing.T) {
 	b := newBuilderWithMockBackend()
-	sb := newDispatchRequest(b, '`', nil, newBuildArgs(make(map[string]*string)), newStagesBuildResults())
+	sb := newDispatchRequest(b, '`', nil, NewBuildArgs(make(map[string]*string)), newStagesBuildResults())
 	sb.state.baseImage = &mockImage{}
 	workingDir := "/app"
 	if runtime.GOOS == "windows" {
@@ -224,7 +243,7 @@ func TestWorkdir(t *testing.T) {
 
 func TestCmd(t *testing.T) {
 	b := newBuilderWithMockBackend()
-	sb := newDispatchRequest(b, '`', nil, newBuildArgs(make(map[string]*string)), newStagesBuildResults())
+	sb := newDispatchRequest(b, '`', nil, NewBuildArgs(make(map[string]*string)), newStagesBuildResults())
 	sb.state.baseImage = &mockImage{}
 	command := "./executable"
 
@@ -250,7 +269,7 @@ func TestCmd(t *testing.T) {
 
 func TestHealthcheckNone(t *testing.T) {
 	b := newBuilderWithMockBackend()
-	sb := newDispatchRequest(b, '`', nil, newBuildArgs(make(map[string]*string)), newStagesBuildResults())
+	sb := newDispatchRequest(b, '`', nil, NewBuildArgs(make(map[string]*string)), newStagesBuildResults())
 	cmd := &instructions.HealthCheckCommand{
 		Health: &container.HealthConfig{
 			Test: []string{"NONE"},
@@ -266,7 +285,7 @@ func TestHealthcheckNone(t *testing.T) {
 func TestHealthcheckCmd(t *testing.T) {
 
 	b := newBuilderWithMockBackend()
-	sb := newDispatchRequest(b, '`', nil, newBuildArgs(make(map[string]*string)), newStagesBuildResults())
+	sb := newDispatchRequest(b, '`', nil, NewBuildArgs(make(map[string]*string)), newStagesBuildResults())
 	expectedTest := []string{"CMD-SHELL", "curl -f http://localhost/ || exit 1"}
 	cmd := &instructions.HealthCheckCommand{
 		Health: &container.HealthConfig{
@@ -282,7 +301,7 @@ func TestHealthcheckCmd(t *testing.T) {
 
 func TestEntrypoint(t *testing.T) {
 	b := newBuilderWithMockBackend()
-	sb := newDispatchRequest(b, '`', nil, newBuildArgs(make(map[string]*string)), newStagesBuildResults())
+	sb := newDispatchRequest(b, '`', nil, NewBuildArgs(make(map[string]*string)), newStagesBuildResults())
 	sb.state.baseImage = &mockImage{}
 	entrypointCmd := "/usr/sbin/nginx"
 
@@ -307,7 +326,7 @@ func TestEntrypoint(t *testing.T) {
 
 func TestExpose(t *testing.T) {
 	b := newBuilderWithMockBackend()
-	sb := newDispatchRequest(b, '`', nil, newBuildArgs(make(map[string]*string)), newStagesBuildResults())
+	sb := newDispatchRequest(b, '`', nil, NewBuildArgs(make(map[string]*string)), newStagesBuildResults())
 
 	exposedPort := "80"
 	cmd := &instructions.ExposeCommand{
@@ -326,7 +345,7 @@ func TestExpose(t *testing.T) {
 
 func TestUser(t *testing.T) {
 	b := newBuilderWithMockBackend()
-	sb := newDispatchRequest(b, '`', nil, newBuildArgs(make(map[string]*string)), newStagesBuildResults())
+	sb := newDispatchRequest(b, '`', nil, NewBuildArgs(make(map[string]*string)), newStagesBuildResults())
 
 	cmd := &instructions.UserCommand{
 		User: "test",
@@ -338,7 +357,7 @@ func TestUser(t *testing.T) {
 
 func TestVolume(t *testing.T) {
 	b := newBuilderWithMockBackend()
-	sb := newDispatchRequest(b, '`', nil, newBuildArgs(make(map[string]*string)), newStagesBuildResults())
+	sb := newDispatchRequest(b, '`', nil, NewBuildArgs(make(map[string]*string)), newStagesBuildResults())
 
 	exposedVolume := "/foo"
 
@@ -358,7 +377,7 @@ func TestStopSignal(t *testing.T) {
 		return
 	}
 	b := newBuilderWithMockBackend()
-	sb := newDispatchRequest(b, '`', nil, newBuildArgs(make(map[string]*string)), newStagesBuildResults())
+	sb := newDispatchRequest(b, '`', nil, NewBuildArgs(make(map[string]*string)), newStagesBuildResults())
 	sb.state.baseImage = &mockImage{}
 	signal := "SIGKILL"
 
@@ -372,11 +391,11 @@ func TestStopSignal(t *testing.T) {
 
 func TestArg(t *testing.T) {
 	b := newBuilderWithMockBackend()
-	sb := newDispatchRequest(b, '`', nil, newBuildArgs(make(map[string]*string)), newStagesBuildResults())
+	sb := newDispatchRequest(b, '`', nil, NewBuildArgs(make(map[string]*string)), newStagesBuildResults())
 
 	argName := "foo"
 	argVal := "bar"
-	cmd := &instructions.ArgCommand{Key: argName, Value: &argVal}
+	cmd := &instructions.ArgCommand{KeyValuePairOptional: instructions.KeyValuePairOptional{Key: argName, Value: &argVal}}
 	err := dispatch(sb, cmd)
 	assert.NilError(t, err)
 
@@ -386,7 +405,7 @@ func TestArg(t *testing.T) {
 
 func TestShell(t *testing.T) {
 	b := newBuilderWithMockBackend()
-	sb := newDispatchRequest(b, '`', nil, newBuildArgs(make(map[string]*string)), newStagesBuildResults())
+	sb := newDispatchRequest(b, '`', nil, NewBuildArgs(make(map[string]*string)), newStagesBuildResults())
 
 	shellCmd := "powershell"
 	cmd := &instructions.ShellCommand{Shell: strslice.StrSlice{shellCmd}}
@@ -399,7 +418,7 @@ func TestShell(t *testing.T) {
 }
 
 func TestPrependEnvOnCmd(t *testing.T) {
-	buildArgs := newBuildArgs(nil)
+	buildArgs := NewBuildArgs(nil)
 	buildArgs.AddArg("NO_PROXY", nil)
 
 	args := []string{"sorted=nope", "args=not", "http_proxy=foo", "NO_PROXY=YA"}
@@ -412,14 +431,21 @@ func TestPrependEnvOnCmd(t *testing.T) {
 
 func TestRunWithBuildArgs(t *testing.T) {
 	b := newBuilderWithMockBackend()
-	args := newBuildArgs(make(map[string]*string))
+	args := NewBuildArgs(make(map[string]*string))
 	args.argsFromOptions["HTTP_PROXY"] = strPtr("FOO")
 	b.disableCommit = false
 	sb := newDispatchRequest(b, '`', nil, args, newStagesBuildResults())
 
 	runConfig := &container.Config{}
 	origCmd := strslice.StrSlice([]string{"cmd", "in", "from", "image"})
-	cmdWithShell := strslice.StrSlice(append(getShell(runConfig, runtime.GOOS), "echo foo"))
+
+	var cmdWithShell strslice.StrSlice
+	if runtime.GOOS == "windows" {
+		cmdWithShell = strslice.StrSlice([]string{strings.Join(append(getShell(runConfig, runtime.GOOS), []string{"echo foo"}...), " ")})
+	} else {
+		cmdWithShell = strslice.StrSlice(append(getShell(runConfig, runtime.GOOS), "echo foo"))
+	}
+
 	envVars := []string{"|1", "one=two"}
 	cachedCmd := strslice.StrSlice(append(envVars, cmdWithShell...))
 
@@ -461,6 +487,80 @@ func TestRunWithBuildArgs(t *testing.T) {
 	err := initializeStage(sb, from)
 	assert.NilError(t, err)
 	sb.state.buildArgs.AddArg("one", strPtr("two"))
+
+	// This is hugely annoying. On the Windows side, it relies on the
+	// RunCommand being able to emit String() and Name() (as implemented by
+	// withNameAndCode). Unfortunately, that is internal, and no way to directly
+	// set. However, we can fortunately use ParseInstruction in the instructions
+	// package to parse a fake node which can be used as our instructions.RunCommand
+	// instead.
+	node := &parser.Node{
+		Original: `RUN echo foo`,
+		Value:    "run",
+	}
+	runint, err := instructions.ParseInstruction(node)
+	assert.NilError(t, err)
+	runinst := runint.(*instructions.RunCommand)
+	runinst.CmdLine = strslice.StrSlice{"echo foo"}
+	runinst.PrependShell = true
+
+	assert.NilError(t, dispatch(sb, runinst))
+
+	// Check that runConfig.Cmd has not been modified by run
+	assert.Check(t, is.DeepEqual(origCmd, sb.state.runConfig.Cmd))
+}
+
+func TestRunIgnoresHealthcheck(t *testing.T) {
+	b := newBuilderWithMockBackend()
+	args := NewBuildArgs(make(map[string]*string))
+	sb := newDispatchRequest(b, '`', nil, args, newStagesBuildResults())
+	b.disableCommit = false
+
+	origCmd := strslice.StrSlice([]string{"cmd", "in", "from", "image"})
+
+	imageCache := &mockImageCache{
+		getCacheFunc: func(parentID string, cfg *container.Config) (string, error) {
+			return "", nil
+		},
+	}
+
+	mockBackend := b.docker.(*MockBackend)
+	mockBackend.makeImageCacheFunc = func(_ []string) builder.ImageCache {
+		return imageCache
+	}
+	b.imageProber = newImageProber(mockBackend, nil, false)
+	mockBackend.getImageFunc = func(_ string) (builder.Image, builder.ROLayer, error) {
+		return &mockImage{
+			id:     "abcdef",
+			config: &container.Config{Cmd: origCmd},
+		}, nil, nil
+	}
+	mockBackend.containerCreateFunc = func(config types.ContainerCreateConfig) (container.ContainerCreateCreatedBody, error) {
+		return container.ContainerCreateCreatedBody{ID: "12345"}, nil
+	}
+	mockBackend.commitFunc = func(cfg backend.CommitConfig) (image.ID, error) {
+		return "", nil
+	}
+	from := &instructions.Stage{BaseName: "abcdef"}
+	err := initializeStage(sb, from)
+	assert.NilError(t, err)
+
+	expectedTest := []string{"CMD-SHELL", "curl -f http://localhost/ || exit 1"}
+	cmd := &instructions.HealthCheckCommand{
+		Health: &container.HealthConfig{
+			Test: expectedTest,
+		},
+	}
+	assert.NilError(t, dispatch(sb, cmd))
+	assert.Assert(t, sb.state.runConfig.Healthcheck != nil)
+
+	mockBackend.containerCreateFunc = func(config types.ContainerCreateConfig) (container.ContainerCreateCreatedBody, error) {
+		// Check the Healthcheck is disabled.
+		assert.Check(t, is.DeepEqual([]string{"NONE"}, config.Config.Healthcheck.Test))
+		return container.ContainerCreateCreatedBody{ID: "123456"}, nil
+	}
+
+	sb.state.buildArgs.AddArg("one", strPtr("two"))
 	run := &instructions.RunCommand{
 		ShellDependantCmdLine: instructions.ShellDependantCmdLine{
 			CmdLine:      strslice.StrSlice{"echo foo"},
@@ -468,7 +568,5 @@ func TestRunWithBuildArgs(t *testing.T) {
 		},
 	}
 	assert.NilError(t, dispatch(sb, run))
-
-	// Check that runConfig.Cmd has not been modified by run
-	assert.Check(t, is.DeepEqual(origCmd, sb.state.runConfig.Cmd))
+	assert.Check(t, is.DeepEqual(expectedTest, sb.state.runConfig.Healthcheck.Test))
 }

@@ -17,7 +17,7 @@ func init() {
 	}
 }
 
-const fixtureDir = "./test-fixtures"
+const fixtureDir = "./testdata"
 
 func tempDir(t *testing.T) string {
 	t.Helper()
@@ -44,5 +44,5 @@ func testConfig(t *testing.T, n string) *config.Config {
 
 func testStorage(t *testing.T, d *disco.Disco) *Storage {
 	t.Helper()
-	return NewStorage(tempDir(t), d, nil)
+	return NewStorage(tempDir(t), d)
 }

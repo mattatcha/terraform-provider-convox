@@ -6,21 +6,21 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/integration/internal/container"
-	"github.com/docker/docker/integration/internal/request"
-	"github.com/docker/docker/internal/testutil"
-	"github.com/gotestyourself/gotestyourself/assert"
-	is "github.com/gotestyourself/gotestyourself/assert/cmp"
+	"gotest.tools/assert"
+	is "gotest.tools/assert/cmp"
+	"gotest.tools/skip"
 )
 
 func TestRemoveImageOrphaning(t *testing.T) {
+	skip.If(t, testEnv.DaemonInfo.OSType == "windows", "FIXME")
 	defer setupTest(t)()
 	ctx := context.Background()
-	client := request.NewAPIClient(t)
+	client := testEnv.APIClient()
 
 	img := "test-container-orphaning"
 
 	// Create a container from busybox, and commit a small change so we have a new image
-	cID1 := container.Create(t, ctx, client, container.WithCmd(""))
+	cID1 := container.Create(ctx, t, client, container.WithCmd(""))
 	commitResp1, err := client.ContainerCommit(ctx, cID1, types.ContainerCommitOptions{
 		Changes:   []string{`ENTRYPOINT ["true"]`},
 		Reference: img,
@@ -33,7 +33,7 @@ func TestRemoveImageOrphaning(t *testing.T) {
 	assert.Check(t, is.Equal(resp.ID, commitResp1.ID))
 
 	// Create a container from created image, and commit a small change with same reference name
-	cID2 := container.Create(t, ctx, client, container.WithImage(img), container.WithCmd(""))
+	cID2 := container.Create(ctx, t, client, container.WithImage(img), container.WithCmd(""))
 	commitResp2, err := client.ContainerCommit(ctx, cID2, types.ContainerCommitOptions{
 		Changes:   []string{`LABEL Maintainer="Integration Tests"`},
 		Reference: img,
@@ -56,5 +56,5 @@ func TestRemoveImageOrphaning(t *testing.T) {
 
 	// check if the second image has been deleted
 	_, _, err = client.ImageInspectWithRaw(ctx, commitResp2.ID)
-	testutil.ErrorContains(t, err, "No such image:")
+	assert.Check(t, is.ErrorContains(err, "No such image:"))
 }

@@ -2,6 +2,7 @@ package client // import "github.com/docker/docker/client"
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -11,7 +12,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	volumetypes "github.com/docker/docker/api/types/volume"
-	"golang.org/x/net/context"
+	"github.com/docker/docker/errdefs"
 )
 
 func TestVolumeCreateError(t *testing.T) {
@@ -19,9 +20,12 @@ func TestVolumeCreateError(t *testing.T) {
 		client: newMockClient(errorMock(http.StatusInternalServerError, "Server error")),
 	}
 
-	_, err := client.VolumeCreate(context.Background(), volumetypes.VolumesCreateBody{})
+	_, err := client.VolumeCreate(context.Background(), volumetypes.VolumeCreateBody{})
 	if err == nil || err.Error() != "Error response from daemon: Server error" {
 		t.Fatalf("expected a Server Error, got %v", err)
+	}
+	if !errdefs.IsSystem(err) {
+		t.Fatalf("expected a Server Error, got %T", err)
 	}
 }
 
@@ -53,7 +57,7 @@ func TestVolumeCreate(t *testing.T) {
 		}),
 	}
 
-	volume, err := client.VolumeCreate(context.Background(), volumetypes.VolumesCreateBody{
+	volume, err := client.VolumeCreate(context.Background(), volumetypes.VolumeCreateBody{
 		Name:   "myvolume",
 		Driver: "mydriver",
 		DriverOpts: map[string]string{

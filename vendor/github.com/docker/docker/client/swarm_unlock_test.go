@@ -2,15 +2,15 @@ package client // import "github.com/docker/docker/client"
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strings"
 	"testing"
 
-	"golang.org/x/net/context"
-
 	"github.com/docker/docker/api/types/swarm"
+	"github.com/docker/docker/errdefs"
 )
 
 func TestSwarmUnlockError(t *testing.T) {
@@ -18,9 +18,12 @@ func TestSwarmUnlockError(t *testing.T) {
 		client: newMockClient(errorMock(http.StatusInternalServerError, "Server error")),
 	}
 
-	err := client.SwarmUnlock(context.Background(), swarm.UnlockRequest{"SWMKEY-1-y6guTZNTwpQeTL5RhUfOsdBdXoQjiB2GADHSRJvbXeU"})
+	err := client.SwarmUnlock(context.Background(), swarm.UnlockRequest{UnlockKey: "SWMKEY-1-y6guTZNTwpQeTL5RhUfOsdBdXoQjiB2GADHSRJvbXeU"})
 	if err == nil || err.Error() != "Error response from daemon: Server error" {
 		t.Fatalf("expected a Server Error, got %v", err)
+	}
+	if !errdefs.IsSystem(err) {
+		t.Fatalf("expected a Server Error, got %T", err)
 	}
 }
 
@@ -42,7 +45,7 @@ func TestSwarmUnlock(t *testing.T) {
 		}),
 	}
 
-	err := client.SwarmUnlock(context.Background(), swarm.UnlockRequest{"SWMKEY-1-y6guTZNTwpQeTL5RhUfOsdBdXoQjiB2GADHSRJvbXeU"})
+	err := client.SwarmUnlock(context.Background(), swarm.UnlockRequest{UnlockKey: "SWMKEY-1-y6guTZNTwpQeTL5RhUfOsdBdXoQjiB2GADHSRJvbXeU"})
 	if err != nil {
 		t.Fatal(err)
 	}

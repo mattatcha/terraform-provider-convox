@@ -15,7 +15,6 @@ func getImplementer(err error) error {
 		ErrForbidden,
 		ErrSystem,
 		ErrNotModified,
-		ErrAlreadyExists,
 		ErrNotImplemented,
 		ErrCancelled,
 		ErrDeadline,
@@ -47,7 +46,7 @@ func IsConflict(err error) bool {
 	return ok
 }
 
-// IsUnauthorized returns if the the passed in error is an ErrUnauthorized
+// IsUnauthorized returns if the passed in error is an ErrUnauthorized
 func IsUnauthorized(err error) bool {
 	_, ok := getImplementer(err).(ErrUnauthorized)
 	return ok
@@ -74,12 +73,6 @@ func IsSystem(err error) bool {
 // IsNotModified returns if the passed in error is a NotModified error
 func IsNotModified(err error) bool {
 	_, ok := getImplementer(err).(ErrNotModified)
-	return ok
-}
-
-// IsAlreadyExists returns if the passed in error is a AlreadyExists error
-func IsAlreadyExists(err error) bool {
-	_, ok := getImplementer(err).(ErrAlreadyExists)
 	return ok
 }
 

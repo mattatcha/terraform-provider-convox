@@ -2,7 +2,7 @@
 set -e -u -o pipefail
 
 ARCH=$(uname -m)
-if [ "$ARCH" == "x86_64" ]; then
+if [ "$ARCH" = "x86_64" ]; then
   ARCH="amd64"
 fi
 
@@ -17,12 +17,17 @@ integration_api_dirs=${TEST_INTEGRATION_DIR:-"$(
 	grep -vE '(^/tests/integration($|/internal)|/testdata)')"}
 
 run_test_integration() {
-	[[ "$TESTFLAGS" != *-check.f* ]] && run_test_integration_suites
-	run_test_integration_legacy_suites
+	set_platform_timeout
+	if [[ "$TESTFLAGS" != *-check.f* ]]; then
+		run_test_integration_suites
+	fi
+	if [[ "$TESTFLAGS" != *-test.run* ]]; then
+		run_test_integration_legacy_suites
+	fi
 }
 
 run_test_integration_suites() {
-	local flags="-test.v -test.timeout=${TIMEOUT:=10m} $TESTFLAGS"
+	local flags="-test.v -test.timeout=${TIMEOUT:-10m} $TESTFLAGS"
 	for dir in $integration_api_dirs; do
 		if ! (
 			cd $dir
@@ -34,7 +39,7 @@ run_test_integration_suites() {
 
 run_test_integration_legacy_suites() {
 	(
-		flags="-check.v -check.timeout=${TIMEOUT} -test.timeout=360m $TESTFLAGS"
+		flags="-check.v -check.timeout=${TIMEOUT:-200m} -test.timeout=360m $TESTFLAGS"
 		cd /tests/integration-cli
 		echo "Running $PWD"
 		test_env ./test.main $flags
@@ -68,4 +73,16 @@ test_env() {
 	)
 }
 
+set_platform_timeout() {
+	# Test timeout.
+	if [ "${DOCKER_ENGINE_GOARCH}" = "arm64" ] || [ "${DOCKER_ENGINE_GOARCH}" = "arm" ]; then
+		: ${TIMEOUT:=10m}
+	elif [ "${DOCKER_ENGINE_GOARCH}" = "windows" ]; then
+		: ${TIMEOUT:=8m}
+	else
+		: ${TIMEOUT:=5m}
+	fi
+}
+
+sh /scripts/ensure-emptyfs.sh
 run_test_integration
