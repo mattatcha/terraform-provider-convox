@@ -66,7 +66,7 @@ func formURLString(d *schema.ResourceData) string {
 
 func readResourceStateFunc(c structs.Provider, resourceName string) resource.StateRefreshFunc {
 	return func() (interface{}, string, error) {
-		resource, err := c.ResourceGet(resourceName)
+		resource, err := c.SystemResourceGet(resourceName)
 		if err != nil {
 			return resource, "", err
 		}
@@ -104,7 +104,7 @@ func ResourceConvoxSyslogCreateFactory(clientUnpacker ClientUnpacker) schema.Cre
 			Parameters: parameters,
 		}
 		log.Printf("[INFO] Calling Convox CreateResource...")
-		_, err = c.ResourceCreate("syslog", options)
+		_, err = c.SystemResourceCreate("syslog", options)
 		if err != nil {
 			return fmt.Errorf("Error calling CreateResource: %s -- %v", err.Error(), options)
 		}
@@ -146,7 +146,7 @@ func ResourceConvoxSyslogReadFactory(clientUnpacker ClientUnpacker) schema.ReadF
 
 		name := d.Get("name").(string)
 		log.Printf("[INFO] Calling Convox GetResource(%s)...", name)
-		convoxResource, err := c.ResourceGet(name)
+		convoxResource, err := c.SystemResourceGet(name)
 		if err != nil {
 			return fmt.Errorf("Error calling GetResource: %s", err.Error())
 		}
@@ -186,7 +186,7 @@ func ResourceConvoxSyslogUpdateFactory(clientUnpacker ClientUnpacker) schema.Upd
 
 		name := d.Get("name").(string)
 		log.Printf("[INFO] Calling Convox UpdateResource(%s, <options>)...", name)
-		_, err = c.ResourceUpdate(name, options)
+		_, err = c.SystemResourceUpdate(name, options)
 		if err != nil {
 			return fmt.Errorf("Error calling UpdateResource: %s -- %v", err.Error(), options)
 		}
@@ -226,7 +226,7 @@ func ResourceConvoxSyslogDeleteFactory(clientUnpacker ClientUnpacker) schema.Del
 
 		name := d.Get("name").(string)
 		log.Printf("[INFO] Calling Convox DeleteResource(%s)...", name)
-		err = c.ResourceDelete(name)
+		err = c.SystemResourceDelete(name)
 		if err != nil {
 			return fmt.Errorf("Error calling DeleteResource: %s", err.Error())
 		}

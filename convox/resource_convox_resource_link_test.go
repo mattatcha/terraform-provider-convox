@@ -46,8 +46,8 @@ var _ = Describe("ResourceConvoxResourceLink", func() {
 		Describe("creating the resource", func() {
 
 			BeforeEach(func() {
-				convoxClient.On("ResourceGet", mock.Anything).Return(&structs.Resource{Status: "running"}, nil)
-				convoxClient.On("ResourceLink", mock.Anything, mock.Anything).Return(nil, nil)
+				convoxClient.On("SystemResourceGet", mock.Anything).Return(&structs.Resource{Status: "running"}, nil)
+				convoxClient.On("SystemResourceLink", mock.Anything, mock.Anything).Return(nil, nil)
 
 				Expect(cut(resourceData, "")).To(BeNil())
 			})
@@ -75,8 +75,8 @@ var _ = Describe("ResourceConvoxResourceLink", func() {
 
 		Describe("deleting the resource", func() {
 			BeforeEach(func() {
-				convoxClient.On("ResourceGet", mock.Anything).Return(&structs.Resource{Status: "running"}, nil)
-				convoxClient.On("ResourceUnlink", mock.Anything, mock.Anything).Return(nil, nil)
+				convoxClient.On("SystemResourceGet", mock.Anything).Return(&structs.Resource{Status: "running"}, nil)
+				convoxClient.On("SystemResourceUnlink", mock.Anything, mock.Anything).Return(nil, nil)
 
 				Expect(cut(resourceData, "")).To(BeNil())
 			})

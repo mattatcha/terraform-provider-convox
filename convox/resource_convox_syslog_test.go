@@ -47,11 +47,11 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 		Describe("creating the resource", func() {
 
 			BeforeEach(func() {
-				convoxClient.On("ResourceGet", mock.Anything).Return(&structs.Resource{
+				convoxClient.On("SystemResourceGet", mock.Anything).Return(&structs.Resource{
 					Status: "running",
 				}, nil)
 
-				convoxClient.On("ResourceCreate", mock.Anything, mock.Anything).Return(&structs.Resource{
+				convoxClient.On("SystemResourceCreate", mock.Anything, mock.Anything).Return(&structs.Resource{
 					Name:   "test",
 					Status: "running",
 					Url:    "tcp://1.1.1.1:1111",
@@ -104,7 +104,7 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 
 		Describe("Reading state", func() {
 			BeforeEach(func() {
-				convoxClient.On("ResourceGet", mock.Anything).Return(&structs.Resource{
+				convoxClient.On("SystemResourceGet", mock.Anything).Return(&structs.Resource{
 					Name:   "test",
 					Status: "running",
 					Url:    "tcp://192.168.1.23:4567",
@@ -141,11 +141,11 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 			BeforeEach(func() {
 				requestedName = ""
 
-				convoxClient.On("ResourceGet", mock.Anything).Return(&structs.Resource{
+				convoxClient.On("SystemResourceGet", mock.Anything).Return(&structs.Resource{
 					Status: "running",
 				}, nil)
 
-				convoxClient.On("ResourceUpdate", mock.Anything, mock.Anything).Return(&structs.Resource{
+				convoxClient.On("SystemResourceUpdate", mock.Anything, mock.Anything).Return(&structs.Resource{
 					Name:   "test",
 					Status: "running",
 					Url:    "tcp://192.168.1.23:4567",
@@ -186,7 +186,7 @@ var _ = Describe("ResourceConvoxSyslog", func() {
 
 			BeforeEach(func() {
 
-				convoxClient.On("ResourceDelete", mock.Anything).Return(nil)
+				convoxClient.On("SystemResourceDelete", mock.Anything).Return(nil)
 
 				Expect(cut(resourceData, resourceData)).To(BeNil())
 			})
