@@ -11,8 +11,14 @@ import (
 	yaml "gopkg.in/yaml.v2"
 )
 
+var (
+	DefaultCpu = 256
+	DefaultMem = 512
+)
+
 type Manifest struct {
 	Environment Environment `yaml:"environment,omitempty"`
+	Params      Params      `yaml:"params,omitempty"`
 	Resources   Resources   `yaml:"resources,omitempty"`
 	Services    Services    `yaml:"services,omitempty"`
 	Timers      Timers      `yaml:"timers,omitempty"`
@@ -243,6 +249,10 @@ func (m *Manifest) ApplyDefaults() error {
 			m.Services[i].Health.Timeout = m.Services[i].Health.Interval - 1
 		}
 
+		if s.Port.Port > 0 && s.Port.Scheme == "" {
+			m.Services[i].Port.Scheme = "http"
+		}
+
 		sp := fmt.Sprintf("services.%s.scale", s.Name)
 
 		// if no scale attributes set
@@ -256,11 +266,11 @@ func (m *Manifest) ApplyDefaults() error {
 		}
 
 		if m.Services[i].Scale.Cpu == 0 {
-			m.Services[i].Scale.Cpu = 256
+			m.Services[i].Scale.Cpu = DefaultCpu
 		}
 
 		if m.Services[i].Scale.Memory == 0 {
-			m.Services[i].Scale.Memory = 512
+			m.Services[i].Scale.Memory = DefaultMem
 		}
 
 		if !m.AttributeSet(fmt.Sprintf("services.%s.sticky", s.Name)) {

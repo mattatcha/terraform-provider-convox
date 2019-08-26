@@ -2,6 +2,7 @@
 
 package structs
 
+import context "context"
 import io "io"
 import mock "github.com/stretchr/testify/mock"
 
@@ -761,6 +762,29 @@ func (_m *MockProvider) ProcessList(app string, opts ProcessListOptions) (Proces
 	return r0, r1
 }
 
+// ProcessLogs provides a mock function with given fields: app, pid, opts
+func (_m *MockProvider) ProcessLogs(app string, pid string, opts LogsOptions) (io.ReadCloser, error) {
+	ret := _m.Called(app, pid, opts)
+
+	var r0 io.ReadCloser
+	if rf, ok := ret.Get(0).(func(string, string, LogsOptions) io.ReadCloser); ok {
+		r0 = rf(app, pid, opts)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(io.ReadCloser)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(string, string, LogsOptions) error); ok {
+		r1 = rf(app, pid, opts)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // ProcessRun provides a mock function with given fields: app, service, opts
 func (_m *MockProvider) ProcessRun(app string, service string, opts ProcessRunOptions) (*Process, error) {
 	ret := _m.Called(app, service, opts)
@@ -798,13 +822,13 @@ func (_m *MockProvider) ProcessStop(app string, pid string) error {
 	return r0
 }
 
-// Proxy provides a mock function with given fields: host, port, rw
-func (_m *MockProvider) Proxy(host string, port int, rw io.ReadWriter) error {
-	ret := _m.Called(host, port, rw)
+// Proxy provides a mock function with given fields: host, port, rw, opts
+func (_m *MockProvider) Proxy(host string, port int, rw io.ReadWriter, opts ProxyOptions) error {
+	ret := _m.Called(host, port, rw, opts)
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(string, int, io.ReadWriter) error); ok {
-		r0 = rf(host, port, rw)
+	if rf, ok := ret.Get(0).(func(string, int, io.ReadWriter, ProxyOptions) error); ok {
+		r0 = rf(host, port, rw, opts)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -941,13 +965,13 @@ func (_m *MockProvider) ReleaseList(app string, opts ReleaseListOptions) (Releas
 	return r0, r1
 }
 
-// ReleasePromote provides a mock function with given fields: app, id
-func (_m *MockProvider) ReleasePromote(app string, id string) error {
-	ret := _m.Called(app, id)
+// ReleasePromote provides a mock function with given fields: app, id, opts
+func (_m *MockProvider) ReleasePromote(app string, id string, opts ReleasePromoteOptions) error {
+	ret := _m.Called(app, id, opts)
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(string, string) error); ok {
-		r0 = rf(app, id)
+	if rf, ok := ret.Get(0).(func(string, string, ReleasePromoteOptions) error); ok {
+		r0 = rf(app, id, opts)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -955,73 +979,13 @@ func (_m *MockProvider) ReleasePromote(app string, id string) error {
 	return r0
 }
 
-// ResourceCreate provides a mock function with given fields: kind, opts
-func (_m *MockProvider) ResourceCreate(kind string, opts ResourceCreateOptions) (*Resource, error) {
-	ret := _m.Called(kind, opts)
-
-	var r0 *Resource
-	if rf, ok := ret.Get(0).(func(string, ResourceCreateOptions) *Resource); ok {
-		r0 = rf(kind, opts)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*Resource)
-		}
-	}
-
-	var r1 error
-	if rf, ok := ret.Get(1).(func(string, ResourceCreateOptions) error); ok {
-		r1 = rf(kind, opts)
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
-}
-
-// ResourceDelete provides a mock function with given fields: name
-func (_m *MockProvider) ResourceDelete(name string) error {
-	ret := _m.Called(name)
-
-	var r0 error
-	if rf, ok := ret.Get(0).(func(string) error); ok {
-		r0 = rf(name)
-	} else {
-		r0 = ret.Error(0)
-	}
-
-	return r0
-}
-
-// ResourceGet provides a mock function with given fields: name
-func (_m *MockProvider) ResourceGet(name string) (*Resource, error) {
-	ret := _m.Called(name)
-
-	var r0 *Resource
-	if rf, ok := ret.Get(0).(func(string) *Resource); ok {
-		r0 = rf(name)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*Resource)
-		}
-	}
-
-	var r1 error
-	if rf, ok := ret.Get(1).(func(string) error); ok {
-		r1 = rf(name)
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
-}
-
-// ResourceLink provides a mock function with given fields: name, app
-func (_m *MockProvider) ResourceLink(name string, app string) (*Resource, error) {
-	ret := _m.Called(name, app)
+// ResourceGet provides a mock function with given fields: app, name
+func (_m *MockProvider) ResourceGet(app string, name string) (*Resource, error) {
+	ret := _m.Called(app, name)
 
 	var r0 *Resource
 	if rf, ok := ret.Get(0).(func(string, string) *Resource); ok {
-		r0 = rf(name, app)
+		r0 = rf(app, name)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*Resource)
@@ -1030,7 +994,7 @@ func (_m *MockProvider) ResourceLink(name string, app string) (*Resource, error)
 
 	var r1 error
 	if rf, ok := ret.Get(1).(func(string, string) error); ok {
-		r1 = rf(name, app)
+		r1 = rf(app, name)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -1038,13 +1002,13 @@ func (_m *MockProvider) ResourceLink(name string, app string) (*Resource, error)
 	return r0, r1
 }
 
-// ResourceList provides a mock function with given fields:
-func (_m *MockProvider) ResourceList() (Resources, error) {
-	ret := _m.Called()
+// ResourceList provides a mock function with given fields: app
+func (_m *MockProvider) ResourceList(app string) (Resources, error) {
+	ret := _m.Called(app)
 
 	var r0 Resources
-	if rf, ok := ret.Get(0).(func() Resources); ok {
-		r0 = rf()
+	if rf, ok := ret.Get(0).(func(string) Resources); ok {
+		r0 = rf(app)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(Resources)
@@ -1052,77 +1016,8 @@ func (_m *MockProvider) ResourceList() (Resources, error) {
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func() error); ok {
-		r1 = rf()
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
-}
-
-// ResourceTypes provides a mock function with given fields:
-func (_m *MockProvider) ResourceTypes() (ResourceTypes, error) {
-	ret := _m.Called()
-
-	var r0 ResourceTypes
-	if rf, ok := ret.Get(0).(func() ResourceTypes); ok {
-		r0 = rf()
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(ResourceTypes)
-		}
-	}
-
-	var r1 error
-	if rf, ok := ret.Get(1).(func() error); ok {
-		r1 = rf()
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
-}
-
-// ResourceUnlink provides a mock function with given fields: name, app
-func (_m *MockProvider) ResourceUnlink(name string, app string) (*Resource, error) {
-	ret := _m.Called(name, app)
-
-	var r0 *Resource
-	if rf, ok := ret.Get(0).(func(string, string) *Resource); ok {
-		r0 = rf(name, app)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*Resource)
-		}
-	}
-
-	var r1 error
-	if rf, ok := ret.Get(1).(func(string, string) error); ok {
-		r1 = rf(name, app)
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
-}
-
-// ResourceUpdate provides a mock function with given fields: name, opts
-func (_m *MockProvider) ResourceUpdate(name string, opts ResourceUpdateOptions) (*Resource, error) {
-	ret := _m.Called(name, opts)
-
-	var r0 *Resource
-	if rf, ok := ret.Get(0).(func(string, ResourceUpdateOptions) *Resource); ok {
-		r0 = rf(name, opts)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*Resource)
-		}
-	}
-
-	var r1 error
-	if rf, ok := ret.Get(1).(func(string, ResourceUpdateOptions) error); ok {
-		r1 = rf(name, opts)
+	if rf, ok := ret.Get(1).(func(string) error); ok {
+		r1 = rf(app)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -1303,6 +1198,181 @@ func (_m *MockProvider) SystemReleases() (Releases, error) {
 	return r0, r1
 }
 
+// SystemResourceCreate provides a mock function with given fields: kind, opts
+func (_m *MockProvider) SystemResourceCreate(kind string, opts ResourceCreateOptions) (*Resource, error) {
+	ret := _m.Called(kind, opts)
+
+	var r0 *Resource
+	if rf, ok := ret.Get(0).(func(string, ResourceCreateOptions) *Resource); ok {
+		r0 = rf(kind, opts)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*Resource)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(string, ResourceCreateOptions) error); ok {
+		r1 = rf(kind, opts)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// SystemResourceDelete provides a mock function with given fields: name
+func (_m *MockProvider) SystemResourceDelete(name string) error {
+	ret := _m.Called(name)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(string) error); ok {
+		r0 = rf(name)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// SystemResourceGet provides a mock function with given fields: name
+func (_m *MockProvider) SystemResourceGet(name string) (*Resource, error) {
+	ret := _m.Called(name)
+
+	var r0 *Resource
+	if rf, ok := ret.Get(0).(func(string) *Resource); ok {
+		r0 = rf(name)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*Resource)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(string) error); ok {
+		r1 = rf(name)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// SystemResourceLink provides a mock function with given fields: name, app
+func (_m *MockProvider) SystemResourceLink(name string, app string) (*Resource, error) {
+	ret := _m.Called(name, app)
+
+	var r0 *Resource
+	if rf, ok := ret.Get(0).(func(string, string) *Resource); ok {
+		r0 = rf(name, app)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*Resource)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(string, string) error); ok {
+		r1 = rf(name, app)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// SystemResourceList provides a mock function with given fields:
+func (_m *MockProvider) SystemResourceList() (Resources, error) {
+	ret := _m.Called()
+
+	var r0 Resources
+	if rf, ok := ret.Get(0).(func() Resources); ok {
+		r0 = rf()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(Resources)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func() error); ok {
+		r1 = rf()
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// SystemResourceTypes provides a mock function with given fields:
+func (_m *MockProvider) SystemResourceTypes() (ResourceTypes, error) {
+	ret := _m.Called()
+
+	var r0 ResourceTypes
+	if rf, ok := ret.Get(0).(func() ResourceTypes); ok {
+		r0 = rf()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(ResourceTypes)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func() error); ok {
+		r1 = rf()
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// SystemResourceUnlink provides a mock function with given fields: name, app
+func (_m *MockProvider) SystemResourceUnlink(name string, app string) (*Resource, error) {
+	ret := _m.Called(name, app)
+
+	var r0 *Resource
+	if rf, ok := ret.Get(0).(func(string, string) *Resource); ok {
+		r0 = rf(name, app)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*Resource)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(string, string) error); ok {
+		r1 = rf(name, app)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// SystemResourceUpdate provides a mock function with given fields: name, opts
+func (_m *MockProvider) SystemResourceUpdate(name string, opts ResourceUpdateOptions) (*Resource, error) {
+	ret := _m.Called(name, opts)
+
+	var r0 *Resource
+	if rf, ok := ret.Get(0).(func(string, ResourceUpdateOptions) *Resource); ok {
+		r0 = rf(name, opts)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*Resource)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(string, ResourceUpdateOptions) error); ok {
+		r1 = rf(name, opts)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // SystemUninstall provides a mock function with given fields: name, w, opts
 func (_m *MockProvider) SystemUninstall(name string, w io.Writer, opts SystemUninstallOptions) error {
 	ret := _m.Called(name, w, opts)
@@ -1326,6 +1396,22 @@ func (_m *MockProvider) SystemUpdate(opts SystemUpdateOptions) error {
 		r0 = rf(opts)
 	} else {
 		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// WithContext provides a mock function with given fields: ctx
+func (_m *MockProvider) WithContext(ctx context.Context) Provider {
+	ret := _m.Called(ctx)
+
+	var r0 Provider
+	if rf, ok := ret.Get(0).(func(context.Context) Provider); ok {
+		r0 = rf(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(Provider)
+		}
 	}
 
 	return r0
